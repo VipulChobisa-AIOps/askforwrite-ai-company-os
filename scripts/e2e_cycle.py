@@ -17,15 +17,23 @@ Cycle Steps:
 import hashlib
 import hmac
 import json
+import os
 import sys
 import time
 
 import httpx
 
-API_URL = "http://localhost:8000"
-MANAGER_KEY = "sk_manager_prod_deploy_secure_key_2026"
-OWNER_KEY = "sk_owner_prod_deploy_secure_key_2026"
-ASK4_SECRET = "ask4_webhook_secret_for_production_testing"
+API_URL = os.environ.get("API_URL", "http://localhost:8000")
+MANAGER_KEY = os.environ.get("MANAGER_API_KEY", "")
+OWNER_KEY = os.environ.get("OWNER_API_KEY", "")
+ASK4_SECRET = os.environ.get("ASK4_WEBHOOK_SECRET", "")
+
+if not MANAGER_KEY or not OWNER_KEY:
+    print("ERROR: Set MANAGER_API_KEY and OWNER_API_KEY environment variables before running.")
+    print("  Example:  set MANAGER_API_KEY=sk_manager_...  (Windows)")
+    print("            export MANAGER_API_KEY=sk_manager_...  (Linux/Mac)")
+    sys.exit(1)
+
 
 
 def sign_payload(payload_str: str, secret: str) -> str:

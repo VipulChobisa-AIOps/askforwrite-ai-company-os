@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -9,15 +9,17 @@ RUN apt-get update && \
 
 # Install Python dependencies
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir . && \
+RUN pip install --no-cache-dir ".[dev]" && \
     pip install --no-cache-dir gunicorn
 
 # Copy application code
 COPY alembic.ini ./
 COPY migrations/ ./migrations/
 COPY app/ ./app/
-COPY keys/ ./keys/
 COPY scripts/ ./scripts/
+
+# Create keys directory (mounted at runtime via Docker secret or volume)
+RUN mkdir -p ./keys && chmod 700 ./keys
 
 # Run migrations and start server
 EXPOSE 8000

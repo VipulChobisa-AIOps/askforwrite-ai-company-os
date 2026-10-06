@@ -1,15 +1,48 @@
+# Secrets and local config — NEVER commit
 .env
+.env.production
+.env.local
+
+# Allow only example/template files
 !.env.example
-!.env.production
+!.env.production.example
+
+# Python virtual environment
 .venv/
+venv/
+
+# Python cache
 __pycache__/
 .pytest_cache/
 *.py[cod]
+*.pyo
+*.pyd
+
+# Database files (runtime data)
 *.db
+*.sqlite
+*.sqlite3
+
+# Cryptographic keys (mount at runtime via Docker secrets or volume)
 keys/
 *.pem
+*.key
+*.crt
+*.p12
+
+# Package build artifacts
 *.egg-info/
-backups/
-build/
 dist/
+build/
 *.spec
+
+# Backups and logs
+backups/
+*.log
+logs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
