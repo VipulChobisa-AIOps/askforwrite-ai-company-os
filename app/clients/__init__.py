@@ -1,0 +1,1 @@
+"""Clients for approved existing application capabilities."""

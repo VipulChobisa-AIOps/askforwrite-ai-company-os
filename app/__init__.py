@@ -1,0 +1,1 @@
+"""AskforWrite AI Company OS gateway."""

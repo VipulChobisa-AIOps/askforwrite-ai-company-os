@@ -1,0 +1,137 @@
+"""Production startup script for AskforWrite AI Company OS.
+
+Validates environment, runs migrations, seeds genesis block, and starts Uvicorn.
+"""
+
+import os
+import subprocess
+import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+REQUIRED_VARS = [
+    "DATABASE_URL",
+    "MANAGER_API_KEY",
+    "OWNER_API_KEY",
+]
+
+OPTIONAL_VARS = [
+    "FIELD_FORCE_BASE_URL",
+    "FIELD_FORCE_SERVICE_TOKEN",
+    "ALLOWED_ORIGINS",
+    "UVICORN_WORKERS",
+    "APP_PORT",
+]
+
+
+def validate_environment() -> list[str]:
+    """Ensure all required environment variables are set and meet constraints."""
+    errors: list[str] = []
+
+    for var in REQUIRED_VARS:
+        value = os.environ.get(var, "")
+        if not value:
+            errors.append(f"  [ERR] {var} is not set")
+        elif var in ("MANAGER_API_KEY", "OWNER_API_KEY") and len(value) < 32:
+            errors.append(f"  [ERR] {var} must be at least 32 characters (got {len(value)})")
+        else:
+            # Mask secrets in output
+            masked = value[:4] + "..." + value[-4:] if len(value) > 8 else "****"
+            print(f"  [OK] {var} = {masked}")
+
+    db_url = os.environ.get("DATABASE_URL", "")
+    if db_url and not db_url.startswith(("postgresql://", "postgresql+psycopg://", "sqlite:///")):
+        errors.append(f"  [ERR] DATABASE_URL must be PostgreSQL or SQLite URL (got {db_url[:20]}...)")
+
+    app_env = os.environ.get("APP_ENV", "development")
+    print(f"  [OK] APP_ENV = {app_env}")
+
+    for var in OPTIONAL_VARS:
+        value = os.environ.get(var, "")
+        status = "[OK]" if value else "[INFO]"
+        print(f"  {status} {var} = {value or '(not set)'}")
+
+    return errors
+
+
+def run_migrations() -> None:
+    """Execute Alembic migrations to bring database to head."""
+    db_url = os.environ.get("DATABASE_URL", "")
+    if db_url.startswith("sqlite"):
+        print("\n-- Skipping Alembic migrations (SQLite handles schema natively) --")
+        return
+        
+    print("\n-- Running Alembic migrations --")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"  [ERR] Migration failed:\n{result.stderr}")
+        sys.exit(1)
+    print(f"  [OK] Migrations complete\n{result.stdout.strip()}")
+
+
+def seed_genesis_block() -> None:
+    """Ensure the trust chain genesis block exists."""
+    print("\n-- Seeding genesis block --")
+    try:
+        from app.db.database import SessionLocal
+        from app.db.models import TrustBlock  # noqa: F401 — ensure model is registered
+        from app.security.trust_chain import ensure_genesis_block
+
+        session = SessionLocal()
+        try:
+            ensure_genesis_block(session)
+            session.commit()
+            count = session.query(TrustBlock).count()
+            print(f"  [OK] Trust chain initialized ({count} block(s))")
+        finally:
+            session.close()
+    except Exception as exc:
+        print(f"  [ERR] Genesis seeding failed: {exc}")
+        sys.exit(1)
+
+
+def start_server() -> None:
+    """Start Uvicorn with production configuration."""
+    workers = int(os.environ.get("UVICORN_WORKERS", "4"))
+    port = int(os.environ.get("APP_PORT", "8000"))
+
+    print(f"\n-- Starting Uvicorn (workers={workers}, port={port}) --\n")
+    import subprocess
+    subprocess.run(
+        [
+            sys.executable, "-m", "uvicorn",
+            "app.main:app",
+            "--host", "0.0.0.0",
+            "--port", str(port),
+            "--workers", str(workers),
+            "--access-log",
+            "--log-level", "info",
+        ]
+    )
+
+
+def main() -> None:
+    print("=" * 60)
+    print("  AskforWrite AI Company OS — Production Startup")
+    print("=" * 60)
+
+    print("\n-- Validating environment --")
+    errors = validate_environment()
+    if errors:
+        print("\n[ERR] Environment validation failed:")
+        for error in errors:
+            print(error)
+        sys.exit(1)
+
+    run_migrations()
+    seed_genesis_block()
+    start_server()
+
+
+if __name__ == "__main__":
+    main()
