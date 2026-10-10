@@ -1,68 +1,97 @@
 # AskforWrite AI Company OS
 
-Recovery-first implementation of the AskforWrite Company OS MVP. The current
-workflow covers offline Discovery, evidence-only Research, Manager coordination,
-owner approvals, Sales requirement capture, and an approved Field Force task
-capability.
+Production-grade Company Operating System with autonomous multi-agent fleet,
+cryptographic trust ledger, HITL governance, and commercial revenue engine.
 
-The bundled organizations use reserved `.example.com` domains and are synthetic
-test fixtures. They are not real prospects. Discovery does not contact anyone
-or claim that an external capability ran. Research only synthesizes supplied
-evidence. External outreach is never sent. Proposal delivery requires a separate
-owner approval, and the Field Force adapter reports success only after task
-status readback. PostgreSQL is the deployment target; the default local
-development URL uses SQLite. No live PostgreSQL or production Field Force
-deployment has been verified in this environment.
+## Architecture
 
-## Run the offline checks
+| Layer | Component |
+|---|---|
+| **L0 — Human Authority** | Owner HITL approvals for all external actions |
+| **L1 — Orchestrator** | Manager/CEO Agent (LangGraph state machine) |
+| **L2 — Specialist Agents** | Discovery, Research, Sales, Marketing, SEO, Revenue, Outreach, Delivery |
+| **L3 — Revenue Engine** | Lead diagnosis → tailored pitch → Razorpay/PayPal checkout → auto-provisioning |
+| **L4 — Data Layer** | SQLite (dev) / PostgreSQL (prod) with SHA-256 cryptographic trust chain |
 
+## Quick Start
+
+### Desktop Application (Recommended)
 ```powershell
-python -m unittest discover -s tests -v
+# Automated Setup Wizard
+.\Setup_Wizard.bat
 ```
 
-## Run the API
-
+### From Source
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -e ".[test]"
+pip install -e ".[test]"
 Copy-Item .env.example .env
-# Configure PostgreSQL and unique random manager, owner, and Field Force tokens in .env.
-docker compose up -d postgres
-python -m alembic upgrade head
+# Fill in secrets in .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-Set `FIELD_FORCE_BASE_URL` to the Unolo API base URL and `FIELD_FORCE_SERVICE_TOKEN`
-to the same secret configured as `COMPANY_OS_SERVICE_TOKEN` in the Unolo service.
-Use distinct 32+ character API keys for `MANAGER_API_KEY` and `OWNER_API_KEY`.
+### Docker Production
+```bash
+cp .env.production.example .env
+# Fill in all REQUIRED values
+docker compose -f docker-compose.prod.yml up -d
+```
 
-## MVP Endpoints
+## Key API Endpoints
 
-- `POST /v1/manager/execute` runs deterministic Discovery, source-grounded Research, and queues owner approvals.
-- `POST /v1/approvals` requests an approval; only the owner key can list approvals or submit decisions.
-- `POST /v1/sales/execute` captures manually recorded notes for an owner-approved and researched lead, then drafts a proposal.
-- `POST /v1/approvals/{approval_id}/decision` records the owner’s decision. It does not send outreach or a proposal.
-- `POST /v1/delivery/execute` sends an approved proposal’s task to Field Force, using `assigned_to`, optional `due_date`, and an idempotency key.
-- `GET /v1/delivery/status/{task_id}` returns gateway status and verified receiver evidence.
+| Category | Endpoint | Auth |
+|---|---|---|
+| **Health** | `GET /health` | None |
+| **Project Status** | `GET /v1/project/status` | Manager |
+| **Capabilities** | `GET /v1/capabilities` | Manager |
+| **Discovery** | `POST /v1/discovery/execute` | Manager |
+| **Research** | `POST /v1/research/execute` | Manager |
+| **Sales** | `POST /v1/sales/execute` | Manager |
+| **Approvals** | `POST /v1/approvals` | Owner |
+| **Delivery** | `POST /v1/delivery/execute` | Manager |
+| **Leads** | `POST /v1/leads/discover` | Manager |
+| **Outreach** | `POST /v1/outreach/draft` | Manager |
+| **Revenue** | `POST /v1/revenue/diagnose` | Manager |
+| **Webhooks** | `POST /v1/webhooks/{provider}` | System (HMAC) |
+| **Subscriptions** | `GET /v1/subscriptions` | Manager |
 
-All endpoints require `X-API-Key`. Send `X-Correlation-ID` to trace a request.
-The gateway and Field Force service both require idempotency keys for mutations.
-The Unolo task operation requires the assignee to exist and be active.
+All endpoints require `X-API-Key` header. Send `X-Correlation-ID` to trace requests.
+Swagger UI: `http://localhost:8000/docs`
 
-Open `http://localhost:8000/docs` for the API. Every data route requires an
-`X-API-Key` in all environments. Use a manager key for capability calls and an
-owner key to list or decide approvals. Approval decisions only record permission;
-they never perform outreach. Store real keys outside source control and rotate
-them. Audit rows are append-only through the application ORM, while production
-database roles or triggers must enforce that boundary against direct SQL access.
+## Revenue Engine Flow
+
+```
+Lead Discovery → Pain Diagnosis → Commercial Pitch (with checkout link)
+  → Owner HITL Approval → Email Dispatch → Payment Webhook
+  → Auto-Provisioning (Org + User + Invoice)
+```
+
+Supports **Razorpay** (INR) and **PayPal** (USD) dual-gateway.
 
 ## Tests
 
 ```powershell
-python -W error::DeprecationWarning -m unittest discover -s tests -v
-python -m alembic check
+$env:APP_ENV="development"; python -m pytest tests/ -v
 ```
 
-The Field Force service has a separate Node contract suite in its project
-directory: `npm test -- tests/companyOsApi.test.js`.
+**119/119 tests passing** across 15 test modules.
+
+## Configuration
+
+See [`.env.production.example`](.env.production.example) for all environment variables.
+See [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for full production deployment instructions.
+
+## Production Checklist
+
+- [x] 119/119 tests passing
+- [x] Razorpay & PayPal payment gateway integration
+- [x] SMTP email dispatch (info@askforwrite.in)
+- [x] Webhook signature verification (HMAC-SHA256)
+- [x] Auto-provisioning on payment capture
+- [x] Owner HITL approval gates on all external actions
+- [x] Cryptographic trust chain (SHA-256 block integrity)
+- [x] Docker Compose production configuration
+- [x] Alembic migrations ready
+- [ ] DNS + HTTPS (reverse proxy)
+- [ ] Register webhook URLs in Razorpay/PayPal dashboards

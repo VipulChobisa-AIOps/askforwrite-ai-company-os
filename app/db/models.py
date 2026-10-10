@@ -23,8 +23,13 @@ class TaskRecord(Base):
 
 class LeadRecordRow(Base):
     __tablename__ = "leads"
+    __table_args__ = (
+        UniqueConstraint("org_id", "domain", name="uq_leads_org_domain"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    domain: Mapped[str | None] = mapped_column(String(250), nullable=True, index=True)
     task_id: Mapped[str] = mapped_column(String(36), index=True)
     company: Mapped[str] = mapped_column(String(250))
     website: Mapped[str] = mapped_column(String(2048))
@@ -228,6 +233,157 @@ class MarketingCampaignRecord(Base):
     approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrganizationRecord(Base):
+    """Multi-tenant organization entity."""
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name: Mapped[str] = mapped_column(String(200))
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    tier: Mapped[str] = mapped_column(String(50), default="free")  # "free" | "starter" | "pro" | "enterprise"
+    lead_credits_limit: Mapped[int] = mapped_column(Integer, default=50)
+    lead_credits_used: Mapped[int] = mapped_column(Integer, default=0)
+    outreach_credits_limit: Mapped[int] = mapped_column(Integer, default=20)
+    outreach_credits_used: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class UserRecord(Base):
+    """Team user belonging to an organization."""
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("org_id", "email", name="uq_user_org_email"),
+        Index("ix_users_org", "org_id"),
+        Index("ix_users_email", "email"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36))
+    email: Mapped[str] = mapped_column(String(250))
+    full_name: Mapped[str] = mapped_column(String(250))
+    role: Mapped[str] = mapped_column(String(32), default="member")  # "owner" | "admin" | "member" | "customer"
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class InvoiceRecord(Base):
+    """Invoice / receipt record for billing transactions."""
+    __tablename__ = "invoice_records"
+    __table_args__ = (
+        Index("ix_invoice_org", "org_id"),
+        Index("ix_invoice_customer", "customer_id"),
+        Index("ix_invoice_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36))
+    customer_id: Mapped[str] = mapped_column(String(36))
+    subscription_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    provider: Mapped[str] = mapped_column(String(32))  # "razorpay" | "paypal"
+    provider_invoice_id: Mapped[str] = mapped_column(String(200), index=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer)  # in paise / cents
+    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    status: Mapped[str] = mapped_column(String(32))  # "issued" | "paid" | "failed" | "cancelled" | "refunded"
+    billing_period_start: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    billing_period_end: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hosted_invoice_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    pdf_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class CustomerRecord(Base):
+    """Payment customer synced from Razorpay / PayPal."""
+    __tablename__ = "customer_records"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_customer_id", name="uq_customer_provider_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    email: Mapped[str] = mapped_column(String(250), index=True)
+    name: Mapped[str] = mapped_column(String(250))
+    provider: Mapped[str] = mapped_column(String(32))  # "razorpay" | "paypal"
+    provider_customer_id: Mapped[str] = mapped_column(String(200), index=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class SubscriptionRecord(Base):
+    """Subscription synced from Razorpay / PayPal."""
+    __tablename__ = "subscription_records"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subscription_id", name="uq_sub_provider_id"),
+        Index("ix_sub_customer", "customer_id"),
+        Index("ix_sub_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    customer_id: Mapped[str] = mapped_column(String(36), index=True)
+    plan_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32))  # "razorpay" | "paypal"
+    provider_subscription_id: Mapped[str] = mapped_column(String(200), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    current_period_start: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_period_end: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payment_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class WebhookEventRecord(Base):
+    """Persisted payment webhook events for audit trail."""
+    __tablename__ = "webhook_event_records"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_event_id", name="uq_webhook_provider_event"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider: Mapped[str] = mapped_column(String(32))
+    provider_event_id: Mapped[str] = mapped_column(String(200), index=True)
+    event_type: Mapped[str] = mapped_column(String(100), index=True)
+    raw_event_type: Mapped[str] = mapped_column(String(100))
+    resource_id: Mapped[str] = mapped_column(String(200), index=True)
+    resource_type: Mapped[str] = mapped_column(String(50))
+    payload: Mapped[dict] = mapped_column(JSON)
+    processed: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class OutreachRecord(Base):
+    """Owner-governed customer outreach message entity."""
+    __tablename__ = "outreach_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    lead_id: Mapped[str] = mapped_column(String(36), index=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True)
+    recipient_email: Mapped[str] = mapped_column(String(250))
+    recipient_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    subject: Mapped[str] = mapped_column(String(300))
+    body_text: Mapped[str] = mapped_column(Text)
+    channel: Mapped[str] = mapped_column(String(32), default="email")
+    status: Mapped[str] = mapped_column(String(32), index=True, default="PENDING_APPROVAL")
+    approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(200), index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 def _reject_audit_mutation(mapper, connection, target) -> None:

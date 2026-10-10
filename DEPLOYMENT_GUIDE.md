@@ -96,3 +96,47 @@ If you wish to distribute a single setup wizard installer (`Setup_AskforWrite_Co
 1. Install [Inno Setup 6](https://jrsoftware.org/isdl.php).
 2. Right-click `installer_script.iss` and select **Compile**.
 3. The installer executable will be generated in `dist_installer\Setup_AskforWrite_Company_OS.exe`.
+
+---
+
+## 6. Commercial Revenue Engine & Webhook Configuration
+
+The **Company OS Revenue Engine** converts prospects into paying customers through an autonomous diagnosis, tailored commercial pitch, and automated multi-tenant customer provisioning.
+
+### 6.1 Webhook Endpoints
+Configure your payment provider dashboards to deliver webhook events to the following URLs:
+
+| Provider | Webhook URL | Required Header | Verification |
+|---|---|---|---|
+| **Razorpay** | `POST https://<your-domain>/v1/webhooks/razorpay` | `X-Razorpay-Signature` | HMAC-SHA256 (`RAZORPAY_KEY_SECRET` or `RAZORPAY_WEBHOOK_SECRET`) |
+| **PayPal** | `POST https://<your-domain>/v1/webhooks/paypal` | `paypal-transmission-sig` | PayPal REST API verification endpoint / Transmission ID |
+
+### 6.2 Supported Events & Auto-Provisioning
+When an event of type `payment.captured` or `payment.sale.completed` is received:
+1. Webhook signature is cryptographically validated.
+2. The payment record is logged in `WebhookEventRecord` for idempotency and audit.
+3. The customer organization is auto-provisioned (`OrganizationRecord`, `UserRecord`, `CustomerRecord`).
+4. An `InvoiceRecord` is automatically generated with currency, amount, and `paid` status.
+
+### 6.3 Owner HITL Outbound Outreach
+Outreach messages are subject to strict Human-In-The-Loop authorization:
+1. **Drafting**: The agent diagnoses the prospect, identifies the best-fit modular tool, generates a pitch with an embedded Razorpay or PayPal checkout link, and stores the outreach in `drafted` state.
+2. **Approval Gate**: The Owner reviews and approves via `POST /v1/outreach/{outreach_id}/approve` (requires `OWNER_API_KEY`).
+3. **Dispatch**: Once approved, the outreach is dispatched via SMTP (`POST /v1/outreach/{outreach_id}/dispatch`).
+
+---
+
+## 7. Production Checklist
+
+Before switching `APP_ENV=production`:
+- [ ] Set `APP_ENV=production` in `.env`.
+- [ ] Configure PostgreSQL database connection (`DATABASE_URL=postgresql+psycopg://...`).
+- [ ] Run Alembic migrations: `alembic upgrade head`.
+- [ ] Set `MANAGER_API_KEY` and `OWNER_API_KEY` (minimum 32 random characters).
+- [ ] Add production domain to `ALLOWED_ORIGINS`.
+- [ ] Configure `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, and `RAZORPAY_WEBHOOK_SECRET`.
+- [ ] Configure `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, and `PAYPAL_WEBHOOK_ID`.
+- [ ] Set `OUTREACH_DISPATCH_PROVIDER=smtp` and supply SMTP credentials.
+- [ ] Verify health status endpoint: `GET /health` returns `{"status": "healthy", "database": "connected"}`.
+- [ ] Verify capability registry: `GET /v1/capabilities`.
+

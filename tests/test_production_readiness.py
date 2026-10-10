@@ -19,18 +19,44 @@ class ProductionReadinessTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        os.environ.setdefault("APP_ENV", "development")
-        os.environ.setdefault("MANAGER_API_KEY", "test-manager-key-that-is-long-enough-for-validation")
-        os.environ.setdefault("OWNER_API_KEY", "test-owner-key-that-is-long-enough-for-validation-x")
+        os.environ["APP_ENV"] = "development"
+        cls.manager_key = "test-manager-key-that-is-long-enough-for-validation"
+        cls.owner_key = "test-owner-key-that-is-long-enough-for-validation-x"
+        os.environ["MANAGER_API_KEY"] = cls.manager_key
+        os.environ["OWNER_API_KEY"] = cls.owner_key
 
-        from app.db.database import Base, engine
-        from app.db.models import TrustBlock  # noqa: F401 — register model
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+        from app.db.database import Base, get_db
+        import app.db.models  # noqa: F401
         from app.main import app
 
-        Base.metadata.create_all(bind=engine)
+        cls.engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=cls.engine)
+        cls.session_factory = sessionmaker(bind=cls.engine, autoflush=False, expire_on_commit=False)
+
+        def override_get_db():
+            session = cls.session_factory()
+            try:
+                yield session
+            finally:
+                session.close()
+
+        app.dependency_overrides[get_db] = override_get_db
         cls.client = TestClient(app)
-        cls.manager_key = os.environ["MANAGER_API_KEY"]
-        cls.owner_key = os.environ["OWNER_API_KEY"]
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.db.database import Base, get_db
+        from app.main import app
+
+        app.dependency_overrides.pop(get_db, None)
+        Base.metadata.drop_all(bind=cls.engine)
 
     # ── Database Configuration ────────────────────────────────────────
 

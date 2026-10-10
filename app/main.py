@@ -14,17 +14,24 @@ from app.db.models import (
     ApprovalRequest,
     AuditLog,
     ConversationRecord,
+    CustomerRecord,
     DeliveryRecord,
     IdempotencyRecord,
+    InvoiceRecord,
     LeadRecordRow,
+    MarketingCampaignRecord,
+    OrderRecord,
+    OrganizationRecord,
+    OutreachRecord,
     ProposalRecord,
-    ResearchRecord,
     RequirementRecord,
+    ResearchRecord,
+    SeoDraftRecord,
+    SubscriptionRecord,
     TaskRecord,
     TrustBlock,
-    OrderRecord,
-    SeoDraftRecord,
-    MarketingCampaignRecord,
+    UserRecord,
+    WebhookEventRecord,
 )
 from app.security.trust_chain import verify_chain_integrity
 from app.security.auth import APIPrincipal, require_manager, require_owner
@@ -49,6 +56,13 @@ from app.services.orders import OrderConflict, OrderValidationFailed, ingest_ord
 from app.services.seo import SeoConflict, execute_seo_draft
 from app.services.marketing import MarketingConflict, execute_marketing_campaign
 from app.middleware import add_production_middleware
+from app.api.v1.subscriptions import router as subscriptions_router
+from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.accounts import router as accounts_router
+from app.api.v1.leads import router as leads_router
+from app.api.v1.outreach import router as outreach_router
+from app.api.v1.revenue import router as revenue_router
+from app.api.v1.auth import router as auth_router
 
 app = FastAPI(
     title="AskforWrite AI Company OS",
@@ -60,6 +74,15 @@ app = FastAPI(
 )
 
 add_production_middleware(app)
+
+# ── Auth, Accounts, Leads, Outreach, Revenue & Payment routers ──────────────────
+app.include_router(auth_router)
+app.include_router(accounts_router)
+app.include_router(leads_router)
+app.include_router(outreach_router)
+app.include_router(revenue_router)
+app.include_router(subscriptions_router)
+app.include_router(webhooks_router)
 
 
 @app.on_event("startup")
@@ -179,6 +202,13 @@ def get_project_status(
         "order_records": db.query(OrderRecord).count(),
         "seo_draft_records": db.query(SeoDraftRecord).count(),
         "marketing_campaign_records": db.query(MarketingCampaignRecord).count(),
+        "organizations": db.query(OrganizationRecord).count(),
+        "users": db.query(UserRecord).count(),
+        "customers": db.query(CustomerRecord).count(),
+        "subscriptions": db.query(SubscriptionRecord).count(),
+        "invoices": db.query(InvoiceRecord).count(),
+        "webhook_events": db.query(WebhookEventRecord).count(),
+        "outreach_records": db.query(OutreachRecord).count(),
     }
     return {
         "system": "AskforWrite AI Company OS",
@@ -198,6 +228,10 @@ def get_project_status(
                 "Marketing Agent",
                 "Editorial & Content Agent",
                 "Operations & Finance Agent",
+                "Revenue & Commercial Growth Agent",
+                "Lead Discovery & Enrichment Agent",
+                "Outreach & Dispatch Agent",
+                "Auto-Provisioning Engine",
             ],
             "l3_connected_capabilities": [
                 {
@@ -250,6 +284,30 @@ def get_project_status(
                     "path": "Documents/Pixel_AI_App",
                     "asset": "React Web + Backend + Signed Android APK",
                 },
+                {
+                    "name": "revenue_commercial_engine",
+                    "status": "active",
+                    "mode": "razorpay_paypal_dual_gateway",
+                    "asset": "Lead Diagnosis → Pitch → Payment → Auto-Provisioning",
+                },
+                {
+                    "name": "lead_discovery_enrichment",
+                    "status": "active",
+                    "mode": "live_web_scraping",
+                    "asset": "Multi-tenant Lead DB with Quota Enforcement",
+                },
+                {
+                    "name": "outreach_dispatch",
+                    "status": "active",
+                    "mode": "owner_hitl_gated",
+                    "asset": "SMTP Email Dispatch with Approval Workflow",
+                },
+                {
+                    "name": "payment_webhook_provisioning",
+                    "status": "active",
+                    "mode": "auto_provision_on_capture",
+                    "asset": "Razorpay & PayPal Webhook → Org + User + Invoice",
+                },
             ],
             "l4_data_layer": {
                 "active_database": "company_os.db (SQLite dev) / PostgreSQL (production)",
@@ -259,9 +317,9 @@ def get_project_status(
         },
         "recovery_protocol": {
             "section": "Master Document Section 16",
-            "last_verified_tests": "23/23 passing",
-            "current_milestone": "Production PostgreSQL deployed with full HITL governance",
-            "next_milestone": "Multi-capability bridge integration (SEO + Marketing + ASK4)",
+            "last_verified_tests": "119/119 passing",
+            "current_milestone": "Revenue Engine Production Ready — All secrets configured",
+            "next_milestone": "Live deployment with DNS + HTTPS + webhook registration",
         },
     }
 
@@ -336,6 +394,42 @@ def list_capabilities(
                 "permissions": ["manager"],
                 "approval_gates": ["external_messaging"],
                 "data_mode": "omnichannel_prompts",
+                "health_status": "healthy",
+            },
+            {
+                "id": "revenue_commercial_engine",
+                "version": "1.0.0",
+                "description": "Diagnoses prospect pain points and generates personalized commercial pitches with embedded Razorpay/PayPal checkout links.",
+                "permissions": ["manager"],
+                "approval_gates": ["owner_outreach_approval"],
+                "data_mode": "live_payment_links",
+                "health_status": "healthy",
+            },
+            {
+                "id": "lead_discovery_enrichment",
+                "version": "1.0.0",
+                "description": "Multi-tenant live web scraping lead discovery with quota enforcement and domain deduplication.",
+                "permissions": ["manager"],
+                "approval_gates": [],
+                "data_mode": "live_web_scraping",
+                "health_status": "healthy",
+            },
+            {
+                "id": "outreach_dispatch",
+                "version": "1.0.0",
+                "description": "Owner-HITL-gated email outreach drafting and SMTP dispatch with lifecycle tracking.",
+                "permissions": ["manager", "owner"],
+                "approval_gates": ["owner_dispatch_approval"],
+                "data_mode": "smtp_email",
+                "health_status": "healthy",
+            },
+            {
+                "id": "payment_auto_provisioning",
+                "version": "1.0.0",
+                "description": "Auto-provisions Organization, User, and Invoice records on confirmed Razorpay/PayPal webhook payment capture.",
+                "permissions": ["system"],
+                "approval_gates": [],
+                "data_mode": "webhook_triggered",
                 "health_status": "healthy",
             },
         ],

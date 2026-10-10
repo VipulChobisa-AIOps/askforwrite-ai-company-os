@@ -18,6 +18,22 @@ PRODUCT_KEYWORDS = {
 }
 
 
+def normalize_domain(url_or_domain: str) -> str:
+    """Normalize a URL or domain string into a clean hostname without www or ports."""
+    if not url_or_domain:
+        return ""
+    val = url_or_domain.strip().lower()
+    if not val.startswith(("http://", "https://")):
+        val = "https://" + val
+    parsed = urlsplit(val)
+    host = parsed.netloc or parsed.path
+    if ":" in host:
+        host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host.strip("/").strip()
+
+
 @dataclass(frozen=True)
 class LeadRecord:
     lead_id: str
@@ -34,6 +50,7 @@ class LeadRecord:
     recommended_next_step: str
     do_not_contact: bool
     status: str
+    domain: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -96,6 +113,7 @@ def _to_lead(candidate: SignalBundle, data_mode: str) -> LeadRecord:
         lead_id=lead_id,
         company=candidate.company,
         website=candidate.website,
+        domain=normalize_domain(candidate.website),
         industry=candidate.industry,
         geography=candidate.geography,
         observed_signals=candidate.signals,

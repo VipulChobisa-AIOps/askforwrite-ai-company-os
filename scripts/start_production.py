@@ -16,12 +16,34 @@ REQUIRED_VARS = [
     "OWNER_API_KEY",
 ]
 
+# Revenue engine secrets — validated with warnings (not blocking)
+REVENUE_VARS = [
+    "RAZORPAY_KEY_ID",
+    "RAZORPAY_KEY_SECRET",
+    "PAYPAL_CLIENT_ID",
+    "PAYPAL_CLIENT_SECRET",
+    "SMTP_USERNAME",
+    "SMTP_PASSWORD",
+]
+
 OPTIONAL_VARS = [
     "FIELD_FORCE_BASE_URL",
     "FIELD_FORCE_SERVICE_TOKEN",
     "ALLOWED_ORIGINS",
     "UVICORN_WORKERS",
     "APP_PORT",
+    "PAYMENT_PROVIDER",
+    "RAZORPAY_WEBHOOK_SECRET",
+    "PAYPAL_WEBHOOK_ID",
+    "PAYPAL_WEBHOOK_SECRET",
+    "OUTREACH_DISPATCH_PROVIDER",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "OUTREACH_FROM_EMAIL",
+    "GOOGLE_API_KEY",
+    "GEMINI_MODEL",
+    "LANGSMITH_API_KEY",
+    "LANGSMITH_PROJECT",
 ]
 
 
@@ -46,6 +68,19 @@ def validate_environment() -> list[str]:
 
     app_env = os.environ.get("APP_ENV", "development")
     print(f"  [OK] APP_ENV = {app_env}")
+
+    # Revenue engine vars — warn but don't block startup
+    missing_revenue = []
+    for var in REVENUE_VARS:
+        value = os.environ.get(var, "")
+        if not value:
+            missing_revenue.append(var)
+            print(f"  [WARN] {var} is not set (revenue features will be degraded)")
+        else:
+            masked = value[:4] + "..." + value[-4:] if len(value) > 8 else "****"
+            print(f"  [OK] {var} = {masked}")
+    if missing_revenue:
+        print(f"  [WARN] {len(missing_revenue)} revenue secret(s) missing — payment/outreach may fail")
 
     for var in OPTIONAL_VARS:
         value = os.environ.get(var, "")
