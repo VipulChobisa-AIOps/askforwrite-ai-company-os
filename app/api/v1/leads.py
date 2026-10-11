@@ -32,7 +32,7 @@ from app.schemas.lead import (
     LeadResponse,
     LeadUpdateRequest,
 )
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager
 from app.services.discovery import IdempotencyConflict, execute_discovery
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,11 @@ def discover_leads(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Execute customer discovery with organizational quota checking and domain deduplication."""
+    # Enforce tenant boundary
+    target_org_id = payload.org_id or principal.org_id
+    if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
+        enforce_tenant_access(principal, payload.org_id)
+
     correlation_id = x_correlation_id or str(uuid.uuid4())
     if len(correlation_id) > 128:
         raise HTTPException(
@@ -56,6 +61,7 @@ def discover_leads(
         )
 
     provider = LiveEnrichmentLeadSource() if payload.live_source else OfflineSignalProvider()
+
 
     try:
         return execute_discovery(
@@ -95,10 +101,16 @@ def list_leads(
     db: Session = Depends(get_db),
 ) -> LeadListResponse:
     """List and filter leads with multi-tenant scoping and search."""
+    # Scope to principal org if tenant-bound
+    effective_org_id = org_id
+    if principal.org_id:
+        enforce_tenant_access(principal, org_id)
+        effective_org_id = principal.org_id
+
     query = db.query(LeadRecordRow).filter(LeadRecordRow.fit_score >= min_fit)
 
-    if org_id:
-        query = query.filter(LeadRecordRow.org_id == org_id)
+    if effective_org_id:
+        query = query.filter(LeadRecordRow.org_id == effective_org_id)
     if status_filter:
         query = query.filter(LeadRecordRow.status == status_filter)
     if search:
@@ -113,8 +125,8 @@ def list_leads(
     leads = query.order_by(LeadRecordRow.fit_score.desc()).offset(offset).limit(limit).all()
 
     credits_remaining = None
-    if org_id:
-        org = db.get(OrganizationRecord, org_id)
+    if effective_org_id:
+        org = db.get(OrganizationRecord, effective_org_id)
         if org:
             credits_remaining = max(0, org.lead_credits_limit - org.lead_credits_used)
 
@@ -136,6 +148,8 @@ def get_lead(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    if lead.org_id:
+        enforce_tenant_access(principal, lead.org_id)
     return LeadResponse.model_validate(lead)
 
 
@@ -150,6 +164,9 @@ def update_lead(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    if lead.org_id:
+        enforce_tenant_access(principal, lead.org_id)
+
 
     if payload.status is not None:
         lead.status = payload.status

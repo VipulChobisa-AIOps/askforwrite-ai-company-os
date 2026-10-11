@@ -18,7 +18,7 @@ from app.schemas.outreach import (
     OutreachListResponse,
     OutreachResponse,
 )
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
 from app.services.approvals import ApprovalConflict, ApprovalNotFound
 from app.services.outreach import dispatch_outreach, draft_outreach
 
@@ -35,12 +35,15 @@ def draft_outreach_endpoint(
     db: Session = Depends(get_db),
 ) -> OutreachDraftResponse:
     """Draft personalized customer outreach and generate a durable owner approval request."""
+    if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
+        enforce_tenant_access(principal, payload.org_id)
+
     correlation_id = x_correlation_id or str(uuid.uuid4())
     try:
         draft = draft_outreach(
             db=db,
             lead_id=payload.lead_id,
-            org_id=payload.org_id,
+            org_id=payload.org_id or principal.org_id,
             recipient_email=payload.recipient_email,
             recipient_name=payload.recipient_name,
             custom_notes=payload.custom_notes,
@@ -72,9 +75,14 @@ def list_outreach_records(
     db: Session = Depends(get_db),
 ) -> OutreachListResponse:
     """List outreach messages filtered by organization, lead, or delivery status."""
+    effective_org_id = org_id
+    if principal.org_id:
+        enforce_tenant_access(principal, org_id)
+        effective_org_id = principal.org_id
+
     query = db.query(OutreachRecord)
-    if org_id:
-        query = query.filter(OutreachRecord.org_id == org_id)
+    if effective_org_id:
+        query = query.filter(OutreachRecord.org_id == effective_org_id)
     if lead_id:
         query = query.filter(OutreachRecord.lead_id == lead_id)
     if status_filter:
@@ -100,6 +108,8 @@ def get_outreach_record(
     record = db.get(OutreachRecord, outreach_id)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outreach record not found")
+    if record.org_id:
+        enforce_tenant_access(principal, record.org_id)
     return OutreachResponse.model_validate(record)
 
 
@@ -111,7 +121,14 @@ def dispatch_outreach_endpoint(
     db: Session = Depends(get_db),
 ) -> OutreachDispatchResponse:
     """Dispatch an owner-approved outreach message. Only the Owner can authorize dispatch."""
+    record = db.get(OutreachRecord, outreach_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outreach record not found")
+    if record.org_id:
+        enforce_tenant_access(principal, record.org_id)
+
     correlation_id = x_correlation_id or str(uuid.uuid4())
+
     try:
         result = dispatch_outreach(
             db=db,

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -53,9 +54,17 @@ def execute_discovery(
     org_id: str | None = None,
     provider: SourceProvider | None = None,
 ) -> dict[str, object]:
+    app_env = os.getenv("APP_ENV", "development").lower()
+    if app_env == "production" and provider is not None and getattr(provider, "data_mode", "") == "offline_synthetic":
+        raise ValueError(
+            "Synthetic lead discovery is strictly prohibited in production (APP_ENV=production). "
+            "Use live verified lead sources (live_source=True)."
+        )
+
     normalized_key = idempotency_key.strip()
     if not normalized_key:
         raise ValueError("idempotency_key must not be empty")
+
 
     normalized_objective = objective.strip()
     request_hash = _request_hash(normalized_objective, limit, org_id=org_id)

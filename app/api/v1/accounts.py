@@ -38,11 +38,12 @@ from app.schemas.account import (
     UserCreate,
     UserResponse,
 )
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/accounts", tags=["accounts"])
+
 
 # Tier credit allowances
 TIER_QUOTAS = {
@@ -127,6 +128,8 @@ def get_organization_summary(
     db: Session = Depends(get_db),
 ):
     """Retrieve organization summary including active subscription and recent invoices."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -174,9 +177,12 @@ def update_organization(
     db: Session = Depends(get_db),
 ):
     """Update organization settings, tier, or quotas (owner authorization required)."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+
 
     if payload.name is not None:
         org.name = payload.name
@@ -211,6 +217,8 @@ def add_user_to_org(
     db: Session = Depends(get_db),
 ):
     """Add a new member to an organization."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -240,6 +248,8 @@ def list_org_users(
     db: Session = Depends(get_db),
 ):
     """List active members of an organization."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -255,7 +265,10 @@ def remove_org_user(
     db: Session = Depends(get_db),
 ):
     """Deactivate/remove an organization member."""
+    enforce_tenant_access(principal, org_id)
+
     user = db.query(UserRecord).filter_by(org_id=org_id, id=user_id).first()
+
     if not user:
         raise HTTPException(status_code=404, detail=f"User {user_id} not found in org {org_id}")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -79,6 +80,17 @@ def draft_outreach(
     target_email = (recipient_email or lead.public_contact_channel or "").strip()
     if not target_email or "@" not in target_email:
         raise ValueError("A valid recipient email is required to draft outreach")
+
+    # Safety: Prevent demo leads and fake .example domains from entering real outreach
+    app_env = os.getenv("APP_ENV", "development").lower()
+    lead_domain = (lead.domain or "").lower()
+    lead_email_domain = target_email.split("@")[-1].lower() if "@" in target_email else ""
+    if lead_domain.endswith(".example.com") or lead_email_domain.endswith(".example.com"):
+        if app_env == "production":
+            raise ValueError(
+                f"Outreach to synthetic / demo domain '{lead_domain or lead_email_domain}' is strictly prohibited in production."
+            )
+
 
     # Check organizational credit limit
     org: OrganizationRecord | None = None

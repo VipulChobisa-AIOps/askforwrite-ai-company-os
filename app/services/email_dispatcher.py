@@ -48,6 +48,13 @@ class MockEmailDispatcher:
         body_text: str,
         from_email: str | None = None,
     ) -> dict[str, object]:
+        app_env = os.getenv("APP_ENV", "development").lower()
+        if app_env == "production":
+            raise RuntimeError(
+                "Mock email dispatcher is prohibited in production (APP_ENV=production). "
+                "Configure real SMTP credentials (SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD)."
+            )
+
         sender = from_email or os.getenv("OUTREACH_FROM_EMAIL", "outreach@askforwrite.com")
         message = DispatchedMessage(
             recipient_email=recipient_email,
@@ -56,14 +63,16 @@ class MockEmailDispatcher:
             from_email=sender,
         )
         self.sent_messages.append(message)
-        logger.info("MockEmailDispatcher dispatched to %s with subject: %s", recipient_email, subject)
+        logger.info("MockEmailDispatcher (SIMULATED) dispatched to %s with subject: %s", recipient_email, subject)
         return {
             "provider": "mock",
-            "status": "delivered",
+            "status": "simulated_delivered",
+            "simulated": True,
             "recipient": recipient_email,
             "sender": sender,
             "message_id": f"mock-{len(self.sent_messages)}",
         }
+
 
 
 class SmtpEmailDispatcher:
@@ -122,7 +131,18 @@ _default_mock_dispatcher = MockEmailDispatcher()
 
 def get_email_dispatcher() -> EmailDispatcher:
     """Factory to retrieve configured email dispatcher based on environment settings."""
-    provider = os.getenv("OUTREACH_DISPATCH_PROVIDER", "mock").lower()
+    app_env = os.getenv("APP_ENV", "development").lower()
+    provider = os.getenv("OUTREACH_DISPATCH_PROVIDER", "smtp" if app_env == "production" else "mock").lower()
+
+    if app_env == "production":
+        if provider != "smtp" or not os.getenv("SMTP_HOST"):
+            raise RuntimeError(
+                "Production environment requires OUTREACH_DISPATCH_PROVIDER=smtp and a valid SMTP_HOST. "
+                "Simulated / mock dispatchers are strictly disabled in production."
+            )
+        return SmtpEmailDispatcher()
+
     if provider == "smtp" and os.getenv("SMTP_HOST"):
         return SmtpEmailDispatcher()
     return _default_mock_dispatcher
+

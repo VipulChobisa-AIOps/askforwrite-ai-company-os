@@ -378,6 +378,26 @@ class OutreachServiceTests(unittest.TestCase):
         self.assertEqual(get_one.status_code, 200)
         self.assertEqual(get_one.json()["subject"], "Test subject")
 
+    def test_mock_dispatcher_reports_simulated_and_blocks_in_production(self):
+        """Verify MockEmailDispatcher reports simulated_delivered and raises error in APP_ENV=production."""
+        mock_disp = MockEmailDispatcher()
+        
+        # In development, it returns honest simulated_delivered status
+        os.environ["APP_ENV"] = "development"
+        receipt = mock_disp.send("prospect@realcorp.com", "Test", "Body")
+        self.assertEqual(receipt["status"], "simulated_delivered")
+        self.assertTrue(receipt["simulated"])
+
+        # In production, MockEmailDispatcher is strictly forbidden
+        os.environ["APP_ENV"] = "production"
+        with self.assertRaises(RuntimeError) as ctx:
+            mock_disp.send("prospect@realcorp.com", "Test", "Body")
+        self.assertIn("Mock email dispatcher is prohibited in production", str(ctx.exception))
+        
+        # Reset back to development for subsequent test isolation
+        os.environ["APP_ENV"] = "development"
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -263,3 +263,46 @@ class AccountServiceTests(unittest.TestCase):
             json={"credit_type": "outreach", "amount": 1},
         )
         self.assertEqual(resp.status_code, 403)
+
+    def test_cross_tenant_isolation_enforcement(self):
+        """Verify that a bearer token tied to Org A is strictly forbidden from accessing Org B."""
+        from app.security.auth import create_access_token
+
+        # Create Org A and Org B
+        org_a = self.client.post(
+            "/v1/accounts/orgs",
+            headers=MANAGER_HEADERS,
+            json={"name": "Tenant Alpha"},
+        ).json()
+        org_b = self.client.post(
+            "/v1/accounts/orgs",
+            headers=MANAGER_HEADERS,
+            json={"name": "Tenant Beta"},
+        ).json()
+
+        # Generate access token for Tenant Alpha member
+        alpha_token = create_access_token(
+            user_id="user-alpha-1",
+            email="manager@alpha.com",
+            role="manager",
+            org_id=org_a["id"],
+        )
+        alpha_headers = {"Authorization": f"Bearer {alpha_token}"}
+
+        # 1. Tenant Alpha can access their own org summary
+        resp_own = self.client.get(f"/v1/accounts/orgs/{org_a['id']}", headers=alpha_headers)
+        self.assertEqual(resp_own.status_code, 200)
+
+        # 2. Tenant Alpha is BLOCKED from accessing Tenant Beta summary (403 Forbidden)
+        resp_cross = self.client.get(f"/v1/accounts/orgs/{org_b['id']}", headers=alpha_headers)
+        self.assertEqual(resp_cross.status_code, 403)
+        self.assertIn("Access denied", resp_cross.json()["detail"])
+
+        # 3. Tenant Alpha is BLOCKED from adding members to Tenant Beta
+        resp_cross_user = self.client.post(
+            f"/v1/accounts/orgs/{org_b['id']}/users",
+            headers=alpha_headers,
+            json={"email": "attacker@beta.com", "full_name": "Attacker", "role": "admin"},
+        )
+        self.assertEqual(resp_cross_user.status_code, 403)
+
