@@ -20,6 +20,7 @@ from app.api.v1.customer_portal import router as customer_portal_router
 from app.api.v1.field_force import router as field_force_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.legal import router as legal_router
+from app.api.v1.mobile_bridge import router as mobile_bridge_router
 from app.api.v1.outreach import router as outreach_router
 from app.api.v1.revenue import router as revenue_router
 from app.api.v1.subscriptions import router as subscriptions_router
@@ -150,21 +151,52 @@ app.include_router(subscriptions_router)
 app.include_router(webhooks_router)
 app.include_router(field_force_router)
 
-# ── Phase 4 Routers: Customer Portal, Audit Export, Legal ────────────────────
+# ── Phase 4 Routers: Customer Portal, Audit Export, Legal, Mobile Bridge ────
 app.include_router(customer_portal_router)
 app.include_router(audit_export_router)
 app.include_router(legal_router)
+app.include_router(mobile_bridge_router)
 
-# ── Admin Dashboard Static Frontend ──────────────────────────────────────────
+# ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
 if dashboard_dir.exists():
     app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
+
+
+@app.get("/portal", include_in_schema=False)
+@app.get("/app", include_in_schema=False)
+def portal_redirect() -> RedirectResponse:
+    """Redirect /portal and /app directly to the unified frontend portal."""
+    return RedirectResponse(url="/dashboard/#portal")
 
 
 @app.get("/admin", include_in_schema=False)
 def admin_redirect() -> RedirectResponse:
     """Redirect /admin directly to the dashboard interface."""
     return RedirectResponse(url="/dashboard/")
+
+
+@app.get("/mobile/manifest.json", include_in_schema=False)
+def mobile_manifest() -> dict[str, object]:
+    """Progressive Web App (PWA) manifest for Android and iOS home screen installation."""
+    return {
+        "name": "AskforWrite Company OS — Field & Mobile",
+        "short_name": "AFW OS",
+        "description": "Pixel AI & Field Force mobile operations portal with offline GPS check-in",
+        "start_url": "/dashboard/#mobile",
+        "display": "standalone",
+        "background_color": "#0b0f19",
+        "theme_color": "#4f46e5",
+        "icons": [
+            {
+                "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234f46e5'/><text x='50' y='65' font-size='50' font-family='sans-serif' fill='white' text-anchor='middle'>AFW</text></svg>",
+                "sizes": "192x192 512x512",
+                "type": "image/svg+xml",
+                "purpose": "any maskable"
+            }
+        ]
+    }
+
 
 
 class DiscoveryRequest(BaseModel):

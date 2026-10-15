@@ -62,14 +62,17 @@ class ProductionReadinessTests(unittest.TestCase):
     # ── Database Configuration ────────────────────────────────────────
 
     def test_non_development_rejects_sqlite(self):
+        from unittest.mock import patch
         from app.db.database import validate_database_configuration
 
-        with self.assertRaises(ValueError):
-            validate_database_configuration("production", "sqlite:///test.db")
-        with self.assertRaises(ValueError):
-            validate_database_configuration("staging", "sqlite:///test.db")
-        # development is fine with SQLite
-        validate_database_configuration("development", "sqlite:///test.db")
+        with patch.dict(os.environ, {"ALLOW_SQLITE_PRODUCTION": ""}):
+            with self.assertRaises(ValueError):
+                validate_database_configuration("production", "sqlite:///test.db")
+            with self.assertRaises(ValueError):
+                validate_database_configuration("staging", "sqlite:///test.db")
+            # development is fine with SQLite
+            validate_database_configuration("development", "sqlite:///test.db")
+
 
     def test_postgresql_url_accepted_for_all_environments(self):
         from app.db.database import validate_database_configuration

@@ -162,7 +162,7 @@ def step_4_owner_approvals(owner_client: httpx.Client, mkt_approval_id: str, seo
         )
         print(f"  HTTP {resp.status_code}")
         if resp.status_code == 200:
-            print(f"  -> Marketing campaign APPROVED by Owner")
+            print("  -> Marketing campaign APPROVED by Owner")
         else:
             print(f"  -> Decision response: {resp.json()}")
 
@@ -175,7 +175,7 @@ def step_4_owner_approvals(owner_client: httpx.Client, mkt_approval_id: str, seo
         )
         print(f"  HTTP {resp.status_code}")
         if resp.status_code == 200:
-            print(f"  -> SEO draft APPROVED by Owner for live publishing")
+            print("  -> SEO draft APPROVED by Owner for live publishing")
         else:
             print(f"  -> Decision response: {resp.json()}")
 
@@ -228,7 +228,7 @@ def step_6_trust_verification(client: httpx.Client) -> dict:
         if errors:
             print(f"     ERRORS: {errors}")
         else:
-            print(f"     All blocks verified: SHA-256 hash-chain + ECDSA NIST P-256 signatures OK")
+            print("     All blocks verified: SHA-256 hash-chain + ECDSA NIST P-256 signatures OK")
     return data
 
 
@@ -256,7 +256,7 @@ def step_7_fleet_status(client: httpx.Client) -> dict:
 
         data_layer = model.get("l4_data_layer", {})
         counts = data_layer.get("counts", {})
-        print(f"\n  Database Counts:")
+        print("\n  Database Counts:")
         for table, count in counts.items():
             print(f"    {table}: {count}")
     return data
@@ -304,15 +304,15 @@ def run_cycle():
     separator("CYCLE COMPLETE - SUMMARY")
     chain_valid = trust_data.get("chain_valid", False)
     total_blocks = trust_data.get("total_blocks", 0)
-    print(f"  Orders ingested:     1 (ASK4 webhook, HMAC verified)")
-    print(f"  Marketing campaigns: 1 (Owner APPROVED)")
-    print(f"  SEO drafts:          1 (Owner APPROVED)")
-    print(f"  Manager workflows:   1 (Multi-agent orchestration)")
+    print("  Orders ingested:     1 (ASK4 webhook, HMAC verified)")
+    print("  Marketing campaigns: 1 (Owner APPROVED)")
+    print("  SEO drafts:          1 (Owner APPROVED)")
+    print("  Manager workflows:   1 (Multi-agent orchestration)")
     print(f"  Trust blocks sealed: {total_blocks}")
     print(f"  Chain integrity:     {'VALID' if chain_valid else 'BROKEN'}")
-    print(f"\n  All HITL governance gates exercised.")
-    print(f"  Cryptographic trust ledger verified end-to-end.")
-    print(f"\n  System is PRODUCTION READY.")
+    print("\n  All HITL governance gates exercised.")
+    print("  Cryptographic trust ledger verified end-to-end.")
+    print("\n  System is PRODUCTION READY.")
     print("=" * 60)
 
     manager_client.close()

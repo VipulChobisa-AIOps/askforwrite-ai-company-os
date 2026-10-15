@@ -53,6 +53,18 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span>Field Force</span>
       </a>
+      <a href="#" class="nav-item" data-page="portal" id="nav-portal">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Customer Portal</span>
+      </a>
+      <a href="#" class="nav-item" data-page="mobile" id="nav-mobile">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        <span>Pixel AI Mobile</span>
+      </a>
+      <a href="#" class="nav-item" data-page="trust-chain" id="nav-trust-chain">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Trust Ledger</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -351,6 +363,262 @@
           </div>
         </div>
       </section>
+
+      <!-- ══════ CUSTOMER PORTAL PAGE ══════ -->
+      <section class="page" id="page-portal">
+        <div class="portal-header-card">
+          <div class="portal-org-info">
+            <div class="portal-avatar">🏢</div>
+            <div>
+              <h2 id="portal-org-name">Enterprise Organization</h2>
+              <div class="portal-meta">
+                <span class="status-pill pro" id="portal-tier-badge">Enterprise Tier</span>
+                <span class="portal-org-id" id="portal-org-id">org_live_askforwrite</span>
+              </div>
+            </div>
+          </div>
+          <div class="portal-header-actions">
+            <button class="primary-btn" id="btn-portal-upgrade">⚡ Upgrade Plan</button>
+            <button class="icon-btn" id="btn-portal-refresh" title="Refresh Profile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Usage Meters -->
+        <div class="stats-grid" style="margin-top:20px">
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Lead Credits</span>
+              <span class="stat-badge" id="portal-lead-badge">85% Left</span>
+            </div>
+            <div class="stat-value" id="portal-stat-leads">85 / 100</div>
+            <div class="progress-bar-bg" style="margin-top:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px">
+              <div class="progress-bar-fill" id="portal-fill-leads" style="width:85%;height:100%;background:var(--cyan);border-radius:3px"></div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Outreach Quota</span>
+              <span class="stat-badge" id="portal-outreach-badge">Active</span>
+            </div>
+            <div class="stat-value" id="portal-stat-outreach">120 / 500</div>
+            <div class="progress-bar-bg" style="margin-top:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px">
+              <div class="progress-bar-fill" id="portal-fill-outreach" style="width:24%;height:100%;background:var(--purple);border-radius:3px"></div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Rate Limit Pool</span>
+              <span class="stat-badge">2,400 req/min</span>
+            </div>
+            <div class="stat-value" id="portal-stat-ratelimit">Normal</div>
+            <div class="progress-bar-bg" style="margin-top:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px">
+              <div class="progress-bar-fill" style="width:10%;height:100%;background:var(--green);border-radius:3px"></div>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Active Field Staff</span>
+              <span class="stat-badge">Unlimited</span>
+            </div>
+            <div class="stat-value" id="portal-stat-staff">12 Agents</div>
+            <div class="progress-bar-bg" style="margin-top:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:3px">
+              <div class="progress-bar-fill" style="width:60%;height:100%;background:var(--amber);border-radius:3px"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Credentials Card -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <h3>🔑 API Credentials & SDK Authentication</h3>
+            <button class="primary-btn" id="btn-copy-token" style="padding:6px 14px;font-size:0.8rem">Copy Bearer Token</button>
+          </div>
+          <div class="card-body" style="padding:16px 20px">
+            <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px">Use this signed Bearer Token or API key to connect your mobile client, external CRM, or scripts to <code>https://os.askforwrite.com</code>.</p>
+            <div style="display:flex;gap:12px;align-items:center">
+              <input type="password" id="portal-token-display" readonly value="afw_live_token_77ab860f_enterprise_p256_sig_valid" style="flex:1;background:var(--bg-input);border:1px solid var(--glass-border);padding:10px 14px;border-radius:var(--radius-sm);color:var(--text-primary);font-family:monospace;font-size:0.85rem">
+              <button class="icon-btn" id="btn-toggle-portal-token" title="Show/Hide">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Invoices & Billing Table -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header">
+            <h3>📑 Billing & Invoices History</h3>
+            <span class="status-pill approved" style="font-size:0.75rem">Auto-Reconciled</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Invoice ID</th>
+                  <th>Plan Package</th>
+                  <th>Amount</th>
+                  <th>Provider</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="portal-invoices-tbody">
+                <tr>
+                  <td><code>INV-2026-001</code></td>
+                  <td>Modular Field Force Ops Suite</td>
+                  <td>₹12,000 / $149</td>
+                  <td>Razorpay (rzp_live)</td>
+                  <td><span class="status-pill approved">PAID</span></td>
+                  <td><a href="https://razorpay.me/@askforwrite" target="_blank" class="text-btn">Receipt ↗</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════ PIXEL AI MOBILE & PWA PAGE ══════ -->
+      <section class="page" id="page-mobile">
+        <div class="mobile-grid">
+          <!-- Left: PWA Integration & Features -->
+          <div class="mobile-info-col">
+            <div class="card">
+              <div class="card-header">
+                <h3>📱 Pixel AI Mobile Ecosystem (Capacitor & PWA)</h3>
+                <span class="status-pill approved">BRIDGE ONLINE</span>
+              </div>
+              <div class="card-body" style="padding:16px 20px">
+                <p style="color:var(--text-secondary);line-height:1.6;margin-bottom:16px">
+                  AskforWrite Field Force features work natively on Android and iOS through our signed APK (<a href="file:///c:/Users/vipul/AI/Documents/Pixel_AI_App/project_code/afwpixelai/afwaipixel_v2_backend_migrated.apk" style="color:var(--cyan);text-decoration:underline">Download APK</a>) or through zero-friction <strong>Progressive Web App (PWA)</strong> installation.
+                </p>
+
+                <div class="feature-badges" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+                  <span class="stat-badge" style="background:rgba(16,185,129,0.15);color:var(--green)">✓ Anti-Spoof GPS</span>
+                  <span class="stat-badge" style="background:rgba(6,182,212,0.15);color:var(--cyan)">✓ Photo Evidence OCR</span>
+                  <span class="stat-badge" style="background:rgba(168,85,247,0.15);color:var(--purple)">✓ Geo-OTP Verification</span>
+                  <span class="stat-badge" style="background:rgba(245,158,11,0.15);color:var(--amber)">✓ Offline-First Cache</span>
+                  <span class="stat-badge" style="background:rgba(239,68,68,0.15);color:var(--red)">✓ ECDSA Sealed Blocks</span>
+                </div>
+
+                <div class="pwa-install-box" style="background:rgba(255,255,255,0.03);border:1px dashed var(--glass-border);padding:16px;border-radius:var(--radius-sm);display:flex;align-items:center;gap:16px">
+                  <div style="font-size:2rem">📲</div>
+                  <div style="flex:1">
+                    <div style="font-weight:600;color:var(--text-primary)">Install Field Agent PWA</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">Scan or visit <code>os.askforwrite.com/dashboard/#mobile</code> on mobile and tap "Add to Home Screen".</div>
+                  </div>
+                  <a href="/mobile/manifest.json" target="_blank" class="primary-btn" style="padding:8px 14px;font-size:0.8rem;white-space:nowrap">Manifest JSON</a>
+                </div>
+              </div>
+            </div>
+
+            <!-- PixelBot Interactive Console -->
+            <div class="card" style="margin-top:20px">
+              <div class="card-header">
+                <h3>💬 PixelBot Mobile Voice & Text Copilot</h3>
+                <span class="status-pill pro">Gemini 2.0 Flash</span>
+              </div>
+              <div class="card-body" style="padding:16px 20px">
+                <div id="pixelbot-messages" style="height:180px;overflow-y:auto;background:var(--bg-primary);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px">
+                  <div style="align-self:flex-start;background:rgba(168,85,247,0.15);border:1px solid var(--purple-glow);padding:8px 12px;border-radius:8px;font-size:0.85rem;max-width:85%">
+                    🤖 <strong>PixelBot:</strong> Greetings! I am your mobile operations copilot. Try asking: <em>"What are my visits today?"</em> or <em>"Check me in"</em>.
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <input type="text" id="pixelbot-input" placeholder="Type or speak a field instruction..." style="flex:1;background:var(--bg-input);border:1px solid var(--glass-border);padding:10px 14px;border-radius:var(--radius-sm);color:var(--text-primary)">
+                  <button class="primary-btn" id="btn-pixelbot-send" style="padding:10px 18px">Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Mobile Device Live Simulator -->
+          <div class="mobile-phone-col">
+            <div class="phone-frame">
+              <div class="phone-notch"></div>
+              <div class="phone-screen">
+                <div class="phone-header">
+                  <span>09:41</span>
+                  <span>5G 📶 100%</span>
+                </div>
+                <div class="phone-app-bar">
+                  <div class="phone-brand">Pixel Field AI</div>
+                  <span class="phone-badge">LIVE GPS</span>
+                </div>
+
+                <div class="phone-content">
+                  <!-- Quick Check-In Card -->
+                  <div class="phone-card">
+                    <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px">📍 Daily Attendance</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px">Current: 26.9124° N, 75.7873° E (Jaipur Hub)</div>
+                    <button class="phone-action-btn primary" id="btn-phone-checkin">⚡ One-Tap GPS Check-In</button>
+                  </div>
+
+                  <!-- Quick Client Visit Card -->
+                  <div class="phone-card">
+                    <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px">📸 Proof-of-Visit Verification</div>
+                    <input type="text" id="phone-client-id" placeholder="Client Name or ID" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);padding:6px 8px;border-radius:4px;color:white;font-size:0.75rem;margin-bottom:6px">
+                    <input type="text" id="phone-otp-code" placeholder="4-Digit Client Geo-OTP" style="width:100%;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);padding:6px 8px;border-radius:4px;color:white;font-size:0.75rem;margin-bottom:8px">
+                    <button class="phone-action-btn secondary" id="btn-phone-submit-visit">Submit Visit & Photo Evidence</button>
+                  </div>
+
+                  <!-- Conveyance Claim Card -->
+                  <div class="phone-card">
+                    <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px">⛽ Conveyance / Mileage</div>
+                    <div style="display:flex;gap:6px;margin-bottom:6px">
+                      <input type="number" id="phone-distance-km" placeholder="Distance (km)" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);padding:6px 8px;border-radius:4px;color:white;font-size:0.75rem">
+                      <input type="text" id="phone-purpose" placeholder="Client Visit" style="flex:1;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);padding:6px 8px;border-radius:4px;color:white;font-size:0.75rem">
+                    </div>
+                    <button class="phone-action-btn outline" id="btn-phone-claim">Claim Reimbursement</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════ TRUST CHAIN EXPLORER PAGE ══════ -->
+      <section class="page" id="page-trust-chain">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>🛡️ Cryptographic SHA-256 Merkle Trust Ledger</h3>
+              <div style="font-size:0.8rem;color:var(--text-muted)">Zero-trust state transitions sealed with NIST P-256 ECDSA keypairs</div>
+            </div>
+            <button class="primary-btn" id="btn-verify-chain" style="padding:8px 16px;font-size:0.82rem">✓ Verify Entire Ledger Integrity</button>
+          </div>
+          <div class="card-body" style="padding:16px 20px">
+            <div id="trust-chain-summary" style="margin-bottom:20px;padding:12px;background:rgba(16,185,129,0.08);border:1px solid var(--green-glow);border-radius:var(--radius-sm);display:flex;align-items:center;gap:12px">
+              <span style="font-size:1.5rem">🔒</span>
+              <div>
+                <div style="font-weight:600;color:var(--green)">Genesis Block #0 Verified Active</div>
+                <div style="font-size:0.8rem;color:var(--text-muted)">Protocol: AFW-COMPANY-OS-TRUST-CHAIN-V2 • Algorithm: ECDSA P-256 / SHA-256</div>
+              </div>
+            </div>
+
+            <!-- Trust Blocks Timeline -->
+            <div class="trust-blocks-list" id="trust-blocks-container">
+              <div class="trust-block-card">
+                <div class="trust-block-header">
+                  <span class="block-badge">Block #0 (Genesis)</span>
+                  <span class="status-pill approved">SEALED</span>
+                </div>
+                <div class="trust-block-hash"><code>0000000000000000000000000000000000000000000000000000000000000000</code></div>
+                <div class="trust-block-details">
+                  <div><strong>Capability:</strong> genesis_sealing</div>
+                  <div><strong>Sealed By:</strong> AFW-COMPANY-OS-GENESIS</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
 
     </div>
   </main>
