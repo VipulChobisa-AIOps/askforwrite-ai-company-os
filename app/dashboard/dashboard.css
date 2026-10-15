@@ -783,6 +783,7 @@ body::before {
   font-weight: 700;
   background: linear-gradient(135deg, var(--purple), var(--cyan));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .phone-badge {
