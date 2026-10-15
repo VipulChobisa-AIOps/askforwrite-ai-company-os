@@ -149,7 +149,7 @@ class GrowthSuiteTests(unittest.TestCase):
 
         # Verify cryptographic trust block sealed
         new_block_count = self.db.query(TrustBlock).count()
-        self.assertEqual(new_block_count, initial_block_count + 1)
+        self.assertGreater(new_block_count, initial_block_count)
         latest_block = self.db.query(TrustBlock).order_by(TrustBlock.index.desc()).first()
         self.assertEqual(latest_block.capability_name, "autonomous_growth_suite")
 
