@@ -57,8 +57,8 @@ def generate(
     if system_instruction:
         config.system_instruction = system_instruction
 
-    from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
-    from google.genai.errors import ServerError, ClientError, APIError
+    from google.genai.errors import APIError, ClientError, ServerError
+    from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
     @retry(
         stop=stop_after_attempt(3), 

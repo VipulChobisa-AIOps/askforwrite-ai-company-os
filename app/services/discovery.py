@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.agents.discovery import normalize_domain, run_discovery
 from app.agents.sources import SourceProvider
-from app.db.models import AuditLog, IdempotencyRecord, LeadRecordRow, OrganizationRecord, TaskRecord
+from app.db.models import (
+    AuditLog,
+    IdempotencyRecord,
+    LeadRecordRow,
+    OrganizationRecord,
+    TaskRecord,
+)
 from app.security.trust_chain import seal_task_to_block
 
 CAPABILITY_NAME = "customer_discovery"

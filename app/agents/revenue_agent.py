@@ -18,7 +18,6 @@ from typing import Literal
 
 from app.services.catalog import (
     CATALOG,
-    PackageDefinition,
     build_payment_link,
     get_package,
 )
@@ -39,10 +38,10 @@ KEYWORDS_MAP: dict[str, tuple[str, ...]] = {
         "copywriting", "creative", "lead gen", "facebook ads", "google ads",
         "pixelbot", "omnichannel", "ad copy", "agency retainer",
     ),
-    "field_force": (
+    "field_operations_automation": (
         "field", "attendance", "supervisor", "gps", "tracking", "geofence",
         "workforce", "sales rep", "dispatch", "store manager", "fleet",
-        "unolo", "logistics", "delivery", "drivers", "proxy attendance",
+        "route optimization", "logistics", "delivery", "drivers", "proxy attendance", "conveyance",
     ),
     "trust_engine": (
         "compliance", "audit", "security", "blockchain", "merkle",
@@ -76,11 +75,19 @@ def diagnose_lead_opportunity(
     best_modular_key: str | None = None
     best_modular_score = 0
 
+    # Map scoring keys back to catalog keys
+    _SCORING_TO_CATALOG: dict[str, str] = {
+        "seo_blog_copilot": "seo_blog_copilot",
+        "marketing_suite": "marketing_suite",
+        "field_operations_automation": "field_force",
+        "trust_engine": "trust_engine",
+    }
+
     for pkg_key, keywords in KEYWORDS_MAP.items():
         score = sum(1 for kw in keywords if kw in text_corpus)
         if score > best_modular_score:
             best_modular_score = score
-            best_modular_key = pkg_key
+            best_modular_key = _SCORING_TO_CATALOG.get(pkg_key, pkg_key)
 
     # Decision logic:
     if best_modular_score >= 2 and best_modular_key:
@@ -197,7 +204,7 @@ def generate_commercial_pitch(
 
     notes_addition = f"\n\nContext: {custom_notes.strip()}" if custom_notes and custom_notes.strip() else ""
 
-    subject = f"Streamlining operations for {company} — {package.name}"
+    subject = f"Automating operations for {company} — {package.name}"
     body = (
         f"{greeting}\n\n"
         f"{pitch_core}"

@@ -4,24 +4,23 @@ import os
 from collections.abc import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 load_dotenv()
 
 APP_ENV = os.environ.get("APP_ENV", "development").casefold()
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./company_os.db")
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace(
-        "postgresql://",
-        "postgresql+psycopg://",
-        1,
-    )
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
 def validate_database_configuration(environment: str, database_url: str) -> None:
     env = environment.casefold()
-    if env != "development" and not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+    if env != "development" and not database_url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
+
         if os.environ.get("ALLOW_SQLITE_PRODUCTION", "").lower() in ("true", "1", "yes"):
             return
         raise ValueError(f"Non-development environments ({environment}) require a PostgreSQL database URL.")

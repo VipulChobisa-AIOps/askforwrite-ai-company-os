@@ -2,7 +2,6 @@
 
 import os
 import unittest
-from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

@@ -2,7 +2,6 @@
 
 import os
 import unittest
-from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -24,7 +23,7 @@ from app.db.models import (
     OutreachRecord,
 )
 from app.main import app
-from app.services.email_dispatcher import MockEmailDispatcher, get_email_dispatcher
+from app.services.email_dispatcher import MockEmailDispatcher
 
 test_engine = create_engine(
     "sqlite:///:memory:",

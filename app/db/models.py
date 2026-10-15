@@ -3,7 +3,17 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, Text, UniqueConstraint, event
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -13,9 +23,9 @@ class TaskRecord(Base):
     __tablename__ = "task_records"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    correlation_id: Mapped[str] = mapped_column(String(128), index=True)
+    correlation_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
     objective: Mapped[str] = mapped_column(String(500))
-    status: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -35,13 +45,13 @@ class LeadRecordRow(Base):
     website: Mapped[str] = mapped_column(String(2048))
     industry: Mapped[str] = mapped_column(String(250))
     geography: Mapped[str] = mapped_column(String(250))
-    observed_signals: Mapped[list] = mapped_column(JSON)
-    sources: Mapped[list] = mapped_column(JSON)
+    observed_signals: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     product_match: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    fit_score: Mapped[float] = mapped_column(Float)
-    confidence: Mapped[float] = mapped_column(Float)
+    fit_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     public_contact_channel: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    recommended_next_step: Mapped[str] = mapped_column(String(100))
+    recommended_next_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     do_not_contact: Mapped[bool] = mapped_column(default=False)
     status: Mapped[str] = mapped_column(String(32), index=True)
     last_checked: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -135,12 +145,12 @@ class ProposalRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     task_id: Mapped[str] = mapped_column(String(36), index=True)
-    requirement_id: Mapped[str] = mapped_column(String(36), index=True)
+    requirement_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     lead_id: Mapped[str] = mapped_column(String(36), index=True)
     title: Mapped[str] = mapped_column(String(300))
     summary: Mapped[str] = mapped_column(Text)
-    scope: Mapped[list] = mapped_column(JSON)
-    pricing_model: Mapped[str] = mapped_column(String(100))
+    scope: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
+    pricing_model: Mapped[str | None] = mapped_column(String(100), nullable=True, default="")
     status: Mapped[str] = mapped_column(String(32))
     approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -386,6 +396,176 @@ class OutreachRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
+class GeofenceDefinition(Base):
+    """Geofence site/hub definition for zero-trust presence verification."""
+    __tablename__ = "geofence_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    radius_meters: Mapped[float] = mapped_column(Float, default=150.0)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class FieldAttendanceRecord(Base):
+    """Zero-trust cryptographically sealed attendance log with anti-spoofing flags."""
+    __tablename__ = "field_attendance_records"
+    __table_args__ = (
+        Index("ix_attendance_user_ts", "user_id", "timestamp"),
+        Index("ix_attendance_org_ts", "org_id", "timestamp"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    event_type: Mapped[str] = mapped_column(String(32))  # "CHECK_IN" | "CHECK_OUT" | "HEARTBEAT"
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    accuracy_meters: Mapped[float] = mapped_column(Float)
+    altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    device_fingerprint: Mapped[str] = mapped_column(String(128))
+    is_mock_location_detected: Mapped[bool] = mapped_column(default=False)
+    wifi_bssid_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cell_tower_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    geofence_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32))  # "VERIFIED" | "SPOOF_REJECTED" | "OUT_OF_BOUNDS"
+    verification_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(200), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class FieldTaskRecord(Base):
+    """Field service assignment, client visit, or delivery task."""
+    __tablename__ = "field_task_records"
+    __table_args__ = (
+        Index("ix_field_task_org_status", "org_id", "status"),
+        Index("ix_field_task_assigned_status", "assigned_to_user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    assigned_to_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(250))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_name: Mapped[str] = mapped_column(String(200))
+    destination_lat: Mapped[float] = mapped_column(Float)
+    destination_lon: Mapped[float] = mapped_column(Float)
+    priority: Mapped[str] = mapped_column(String(32), default="NORMAL")  # "URGENT" | "HIGH" | "NORMAL" | "LOW"
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)  # "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED"
+    route_sequence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class ClientVisitRecord(Base):
+    """Multimodal proof-of-execution, geo-verification, and voice debrief record."""
+    __tablename__ = "client_visit_records"
+    __table_args__ = (
+        Index("ix_visit_org_client", "org_id", "client_name"),
+        Index("ix_visit_user_completed", "user_id", "completed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    task_id: Mapped[str] = mapped_column(String(36), index=True)
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    client_name: Mapped[str] = mapped_column(String(200))
+    visit_lat: Mapped[float] = mapped_column(Float)
+    visit_lon: Mapped[float] = mapped_column(Float)
+    distance_from_site_meters: Mapped[float] = mapped_column(Float)
+    geo_otp_verified: Mapped[bool] = mapped_column(default=False)
+    photo_evidence_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    photo_verification_status: Mapped[str] = mapped_column(String(32), default="VERIFIED")  # "VERIFIED" | "REJECTED" | "FLAGGED"
+    photo_analysis_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    voice_audio_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    crm_debrief_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ConveyanceClaimRecord(Base):
+    """Fraud-proof distance calculation, mileage reimbursement, and policy settlement record."""
+    __tablename__ = "conveyance_claim_records"
+    __table_args__ = (
+        Index("ix_conveyance_user_date", "user_id", "claim_date"),
+        Index("ix_conveyance_org_status", "org_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    claim_date: Mapped[str] = mapped_column(String(10), index=True)  # "YYYY-MM-DD"
+    transport_mode: Mapped[str] = mapped_column(String(32), default="TWO_WHEELER")  # "TWO_WHEELER" | "FOUR_WHEELER" | "PUBLIC_TRANSIT"
+    raw_gps_distance_km: Mapped[float] = mapped_column(Float)
+    verified_road_distance_km: Mapped[float] = mapped_column(Float)
+    jitter_filtered_km: Mapped[float] = mapped_column(Float)
+    rate_per_km: Mapped[float] = mapped_column(Float)
+    total_conveyance_amount: Mapped[float] = mapped_column(Float)
+    total_expenses_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    grand_total_amount: Mapped[float] = mapped_column(Float)
+    receipt_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="AUTO_APPROVED", index=True)  # "AUTO_APPROVED" | "FLAGGED_FOR_REVIEW" | "REJECTED" | "MANUALLY_APPROVED"
+    discrepancy_flags: Mapped[list] = mapped_column(JSON, default=list)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class ExpenseReceiptRecord(Base):
+    """Itemized receipt verified via OCR and cross-matched against shift route."""
+    __tablename__ = "expense_receipt_records"
+    __table_args__ = (
+        Index("ix_expense_claim_id", "claim_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    claim_id: Mapped[str] = mapped_column(String(36), index=True)
+    category: Mapped[str] = mapped_column(String(32))  # "FUEL" | "TOLL" | "PARKING" | "MEAL" | "OTHER"
+    amount: Mapped[float] = mapped_column(Float)
+    merchant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    receipt_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    receipt_hash: Mapped[str] = mapped_column(String(64))
+    ocr_extracted_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    is_verified: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class SupervisorAlertRecord(Base):
+    """Proactive real-time operational alerts generated by the 24/7 AI Supervisor Co-Pilot."""
+    __tablename__ = "supervisor_alert_records"
+    __table_args__ = (
+        Index("ix_alert_org_acknowledged", "org_id", "is_acknowledged"),
+        Index("ix_alert_user_severity", "user_id", "severity"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    alert_type: Mapped[str] = mapped_column(String(64))  # "STALLED_AGENT" | "SLA_BREACH_RISK" | "GEOFENCE_BREACH" | "SPOOF_ATTEMPT"
+    severity: Mapped[str] = mapped_column(String(32), default="HIGH")  # "CRITICAL" | "HIGH" | "MEDIUM" | "INFO"
+    title: Mapped[str] = mapped_column(String(250))
+    description: Mapped[str] = mapped_column(Text)
+    suggested_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_acknowledged: Mapped[bool] = mapped_column(default=False)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 def _reject_audit_mutation(mapper, connection, target) -> None:
     raise ValueError("Audit records are append-only")
 
@@ -394,7 +574,25 @@ def _reject_block_mutation(mapper, connection, target) -> None:
     raise ValueError("Trust blocks are append-only and cryptographically immutable")
 
 
+def _reject_attendance_mutation(mapper, connection, target) -> None:
+    raise ValueError("Attendance records are append-only and cryptographically immutable")
+
+
+def _reject_visit_mutation(mapper, connection, target) -> None:
+    raise ValueError("Client visit records are append-only and cryptographically immutable")
+
+
+def _reject_claim_mutation(mapper, connection, target) -> None:
+    raise ValueError("Conveyance claims are append-only and cryptographically immutable")
+
+
 event.listen(AuditLog, "before_update", _reject_audit_mutation)
 event.listen(AuditLog, "before_delete", _reject_audit_mutation)
 event.listen(TrustBlock, "before_update", _reject_block_mutation)
 event.listen(TrustBlock, "before_delete", _reject_block_mutation)
+event.listen(FieldAttendanceRecord, "before_update", _reject_attendance_mutation)
+event.listen(FieldAttendanceRecord, "before_delete", _reject_attendance_mutation)
+event.listen(ClientVisitRecord, "before_update", _reject_visit_mutation)
+event.listen(ClientVisitRecord, "before_delete", _reject_visit_mutation)
+event.listen(ConveyanceClaimRecord, "before_update", _reject_claim_mutation)
+event.listen(ConveyanceClaimRecord, "before_delete", _reject_claim_mutation)

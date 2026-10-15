@@ -32,6 +32,7 @@ OPTIONAL_VARS = [
     "ALLOWED_ORIGINS",
     "UVICORN_WORKERS",
     "APP_PORT",
+    "PORT",
     "PAYMENT_PROVIDER",
     "RAZORPAY_WEBHOOK_SECRET",
     "PAYPAL_WEBHOOK_ID",
@@ -44,6 +45,9 @@ OPTIONAL_VARS = [
     "GEMINI_MODEL",
     "LANGSMITH_API_KEY",
     "LANGSMITH_PROJECT",
+    "SENTRY_DSN",
+    "SENTRY_TRACES_SAMPLE_RATE",
+    "LOG_LEVEL",
 ]
 
 
@@ -63,7 +67,7 @@ def validate_environment() -> list[str]:
             print(f"  [OK] {var} = {masked}")
 
     db_url = os.environ.get("DATABASE_URL", "")
-    if db_url and not db_url.startswith(("postgresql://", "postgresql+psycopg://", "sqlite:///")):
+    if db_url and not db_url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://", "sqlite:///")):
         errors.append(f"  [ERR] DATABASE_URL must be PostgreSQL or SQLite URL (got {db_url[:20]}...)")
 
     app_env = os.environ.get("APP_ENV", "development")
@@ -133,7 +137,8 @@ def seed_genesis_block() -> None:
 def start_server() -> None:
     """Start Uvicorn with production configuration."""
     workers = int(os.environ.get("UVICORN_WORKERS", "4"))
-    port = int(os.environ.get("APP_PORT", "8000"))
+    port = int(os.environ.get("PORT") or os.environ.get("APP_PORT", "8000"))
+
 
     print(f"\n-- Starting Uvicorn (workers={workers}, port={port}) --\n")
     import subprocess

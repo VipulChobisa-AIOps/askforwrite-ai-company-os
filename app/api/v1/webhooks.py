@@ -19,19 +19,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import app.services.payment_paypal
+
+# Ensure provider modules are imported so @register_provider decorators execute
+import app.services.payment_razorpay  # noqa: F401
 from app.db.database import get_db
 from app.db.models import AuditLog, SubscriptionRecord, WebhookEventRecord
 from app.services.payment import (
     PaymentProvider,
     PaymentValidationError,
-    WebhookVerificationError,
     get_payment_provider,
 )
 from app.services.provisioning import auto_provision_tenant_on_payment
-
-# Ensure provider modules are imported so @register_provider decorators execute
-import app.services.payment_razorpay  # noqa: F401
-import app.services.payment_paypal  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,6 @@ import logging
 import re
 import secrets
 import uuid
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -22,13 +21,12 @@ from app.db.models import (
     CustomerRecord,
     InvoiceRecord,
     OrganizationRecord,
-    SubscriptionRecord,
     UserRecord,
 )
+from app.security.auth import hash_password
 from app.services.catalog import CATALOG, get_package
 from app.services.email_dispatcher import get_email_dispatcher
 from app.services.payment import WebhookEvent
-from app.security.auth import hash_password
 
 logger = logging.getLogger(__name__)
 

@@ -5,11 +5,11 @@ Provides tamper-evident block sealing, SHA-256 hash chaining,
 and ECDSA NIST P-256 digital signature verification for completed TaskRecords.
 """
 
-from datetime import UTC, datetime
 import hashlib
 import json
 import logging
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -44,7 +44,7 @@ def compute_block_hash(
     return hashlib.sha256(header.encode("utf-8")).hexdigest()
 
 
-def format_block_timestamp(dt: Optional[datetime]) -> str:
+def format_block_timestamp(dt: datetime | None) -> str:
     """Standardizes datetime string formatting for hashing.
 
     Ensures UTC timezone is always explicitly normalized with +00:00.

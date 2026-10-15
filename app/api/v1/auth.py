@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import OrganizationRecord, UserRecord
+from app.db.models import AuditLog, OrganizationRecord, UserRecord
 from app.security.auth import (
     APIPrincipal,
     create_access_token,
@@ -27,6 +26,8 @@ from app.security.auth import (
     hash_password,
     verify_password,
 )
+from app.services.catalog import CATALOG, build_payment_link, get_package
+from app.services.email_dispatcher import get_email_dispatcher
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,33 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=250)
     company_name: str = Field(min_length=2, max_length=200)
     role: Literal["admin", "customer", "member"] = "admin"
+
+
+class SignupRequest(BaseModel):
+    company_name: str = Field(min_length=2, max_length=200, description="Company or Organization name")
+    email: str = Field(min_length=3, max_length=250, description="Customer primary admin email")
+    password: str = Field(min_length=6, max_length=128, description="Secure account password")
+    full_name: str = Field(min_length=2, max_length=250, description="Full name of the account owner")
+    package_key: str = Field(default="company_os_starter", description="Selected package from Catalog")
+    payment_provider: Literal["razorpay", "paypal"] = "razorpay"
+
+
+class SignupResponse(BaseModel):
+    status: str
+    user_id: str
+    email: str
+    full_name: str
+    org_id: str
+    org_name: str
+    org_slug: str
+    tier: str
+    package_name: str
+    lead_credits_limit: int
+    outreach_credits_limit: int
+    checkout_url: str
+    access_token: str
+    token_type: str = "bearer"
+
 
 
 class UserProfileResponse(BaseModel):
@@ -220,7 +248,127 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)) -> Lo
     )
 
 
+@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+def signup_customer(payload: SignupRequest, db: Session = Depends(get_db)) -> SignupResponse:
+    """Self-serve customer onboarding with catalog plan selection and direct checkout URL."""
+    email_clean = payload.email.lower().strip()
+    existing = db.query(UserRecord).filter(UserRecord.email == email_clean).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"An account with email '{email_clean}' already exists",
+        )
+
+    # Lookup catalog package for entitlements & pricing
+    pkg = get_package(payload.package_key) or CATALOG["company_os_starter"]
+
+    # Create Organization with package entitlements
+    slug_base = _slugify(payload.company_name)
+    slug = f"{slug_base}-{str(uuid.uuid4())[:6]}"
+    org = OrganizationRecord(
+        name=payload.company_name.strip(),
+        slug=slug,
+        tier=pkg.tier,
+        lead_credits_limit=pkg.lead_credits_monthly,
+        lead_credits_used=0,
+        outreach_credits_limit=pkg.outreach_credits_monthly,
+        outreach_credits_used=0,
+        is_active=True,
+        metadata_json={
+            "package_key": pkg.key,
+            "package_name": pkg.name,
+            "category": pkg.category,
+            "entitled_capabilities": list(pkg.entitled_capabilities),
+            "payment_provider": payload.payment_provider,
+        },
+    )
+    db.add(org)
+    db.flush()
+
+    # Create Primary Admin User
+    pwd_hash = hash_password(payload.password)
+    user = UserRecord(
+        org_id=org.id,
+        email=email_clean,
+        full_name=payload.full_name.strip(),
+        role="admin",
+        password_hash=pwd_hash,
+        is_active=True,
+    )
+    db.add(user)
+
+    # Generate immediate checkout payment link
+    checkout_url = build_payment_link(
+        package_key=pkg.key,
+        customer_email=email_clean,
+        company=payload.company_name.strip(),
+        provider=payload.payment_provider,
+    )
+
+    # Audit log
+    db.add(AuditLog(
+        task_id=str(uuid.uuid4()),
+        correlation_id=str(uuid.uuid4()),
+        agent_id="customer_portal",
+        capability_name="customer_onboarding",
+        action="customer_signed_up",
+        input_payload={"email": email_clean, "package_key": pkg.key, "company": payload.company_name},
+        output_payload={"org_id": org.id, "user_id": user.id, "tier": pkg.tier},
+        status="COMPLETED",
+    ))
+
+    db.commit()
+    db.refresh(user)
+
+    # Dispatch welcome onboarding email
+    try:
+        dispatcher = get_email_dispatcher()
+        dispatcher.send(
+            recipient_email=email_clean,
+            subject=f"Welcome to AskforWrite — {pkg.name} Setup",
+            body_text=(
+                f"Hi {payload.full_name},\n\n"
+                f"Thank you for signing up for AskforWrite Company OS!\n\n"
+                f"Your dedicated workspace '{payload.company_name}' is ready:\n"
+                f"• Selected Plan: {pkg.name}\n"
+                f"• Monthly Discovery Credits: {pkg.lead_credits_monthly}\n"
+                f"• Monthly Outreach Credits: {pkg.outreach_credits_monthly}\n\n"
+                f"To activate all production capabilities, please complete your checkout:\n"
+                f"{checkout_url}\n\n"
+                f"Best regards,\n"
+                f"AskforWrite Operations"
+            ),
+        )
+    except Exception as exc:
+        logger.error("Failed to dispatch onboarding email to %s: %s", email_clean, exc)
+
+    token = create_access_token(
+        user_id=user.id,
+        email=user.email,
+        role=user.role,
+        org_id=user.org_id,
+    )
+
+    return SignupResponse(
+        status="registered",
+        user_id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        org_id=org.id,
+        org_name=org.name,
+        org_slug=org.slug,
+        tier=org.tier,
+        package_name=pkg.name,
+        lead_credits_limit=org.lead_credits_limit,
+        outreach_credits_limit=org.outreach_credits_limit,
+        checkout_url=checkout_url,
+        access_token=token,
+        token_type="bearer",
+    )
+
+
 @router.get("/me", response_model=UserProfileResponse, status_code=status.HTTP_200_OK)
+
 def get_current_user_profile(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),

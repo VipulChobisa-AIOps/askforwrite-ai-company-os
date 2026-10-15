@@ -1,14 +1,30 @@
 """FastAPI development surface for the first offline MVP capability."""
 
 import uuid
-from typing import Literal
+from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.v1.accounts import router as accounts_router
+from app.api.v1.audit_export import router as audit_export_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.customer_portal import router as customer_portal_router
+from app.api.v1.field_force import router as field_force_router
+from app.api.v1.leads import router as leads_router
+from app.api.v1.legal import router as legal_router
+from app.api.v1.outreach import router as outreach_router
+from app.api.v1.revenue import router as revenue_router
+from app.api.v1.subscriptions import router as subscriptions_router
+from app.api.v1.webhooks import router as webhooks_router
+from app.clients.field_force import FieldForceClient, get_field_force_client
 from app.db.database import get_db
 from app.db.models import (
     ApprovalRequest,
@@ -33,49 +49,98 @@ from app.db.models import (
     UserRecord,
     WebhookEventRecord,
 )
-from app.security.trust_chain import verify_chain_integrity
+from app.logging_config import configure_logging
+from app.middleware import add_production_middleware
+from app.monitoring import init_sentry
 from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.trust_chain import verify_chain_integrity
 from app.services.approvals import (
     ApprovalConflict,
     ApprovalNotFound,
     decide_approval,
     request_approval,
 )
-from app.services.discovery import IdempotencyConflict, execute_discovery
-from app.clients.field_force import FieldForceClient, get_field_force_client
 from app.services.delivery import (
     DeliveryConflict,
     DeliveryNotApproved,
     DeliveryNotFound,
     execute_delivery,
 )
+from app.services.discovery import IdempotencyConflict, execute_discovery
 from app.services.manager import ManagerConflict, execute_manager_workflow
+from app.services.marketing import MarketingConflict, execute_marketing_campaign
+from app.services.orders import OrderConflict, OrderValidationFailed, ingest_order
 from app.services.research import ResearchConflict, ResearchNotFound, execute_research
 from app.services.sales import SalesConflict, SalesNotFound, execute_sales_capture
-from app.services.orders import OrderConflict, OrderValidationFailed, ingest_order
 from app.services.seo import SeoConflict, execute_seo_draft
-from app.services.marketing import MarketingConflict, execute_marketing_campaign
-from app.middleware import add_production_middleware
-from app.api.v1.subscriptions import router as subscriptions_router
-from app.api.v1.webhooks import router as webhooks_router
-from app.api.v1.accounts import router as accounts_router
-from app.api.v1.leads import router as leads_router
-from app.api.v1.outreach import router as outreach_router
-from app.api.v1.revenue import router as revenue_router
-from app.api.v1.auth import router as auth_router
+
+# Initialize logging system and error tracking early
+configure_logging()
+init_sentry()
+
+
+@asynccontextmanager
+
+async def lifespan(app: FastAPI):
+    """Create tables (SQLite dev) and initialize Genesis trust block on startup."""
+    from app.db.database import DATABASE_URL, Base, engine
+    if DATABASE_URL.startswith("sqlite"):
+        Base.metadata.create_all(bind=engine)
+    from app.db.database import SessionLocal
+    from app.security.trust_chain import ensure_genesis_block
+    db = SessionLocal()
+    try:
+        ensure_genesis_block(db)
+    finally:
+        db.close()
+    yield
+    # Shutdown logic (if needed in the future) goes here
+
 
 app = FastAPI(
     title="AskforWrite AI Company OS",
     version="0.2.0",
     description=(
-        "Production-grade Company OS with HITL governance, "
-        "cryptographic trust ledger, and multi-agent orchestration."
+        "**AskforWrite AI Company OS** — A production-grade, multi-agent B2B SaaS platform.\n\n"
+        "### Key capabilities\n"
+        "- 🤖 **Multi-agent orchestration** (Discovery → Research → Sales → Delivery) with Human-in-the-Loop governance\n"
+        "- 🔐 **Cryptographic trust ledger** — ECDSA P-256 Merkle chain, tamper-evident audit trail\n"
+        "- 📍 **Field Force Management** — GPS attendance, visit verification, task dispatch, conveyance claims\n"
+        "- 💰 **Revenue Engine** — AI pitch generation with embedded Razorpay/PayPal payment links\n"
+        "- 🏢 **Multi-tenant SaaS** — Org isolation, tiered rate limiting, self-serve signup\n"
+        "- 📊 **Customer Portal** — Self-service credit usage, billing history, capability entitlements\n\n"
+        "### Authentication\n"
+        "- **API Key** (`X-API-Key` header): Manager role or Owner role — for internal agent pipelines\n"
+        "- **Bearer Token** (`Authorization: Bearer <token>`): For customer portal endpoints\n"
     ),
+    contact={
+        "name": "AskforWrite Support",
+        "email": "support@askforwrite.in",
+        "url": "https://askforwrite.in",
+    },
+    license_info={
+        "name": "Proprietary — AskforWrite Technologies",
+        "url": "https://os.askforwrite.com/legal/tos",
+    },
+    openapi_tags=[
+        {"name": "authentication", "description": "User login, signup, and JWT token management"},
+        {"name": "customer-portal", "description": "Self-service tenant dashboard: profile, usage, billing, capabilities"},
+        {"name": "accounts", "description": "Multi-tenant organization and team management"},
+        {"name": "leads", "description": "AI-powered lead discovery, enrichment, and lifecycle management"},
+        {"name": "outreach", "description": "HITL-gated email outreach drafting and dispatch"},
+        {"name": "revenue", "description": "AI revenue pitch generation with payment link embedding"},
+        {"name": "field-force", "description": "GPS attendance, visit verification, task dispatch, and conveyance"},
+        {"name": "subscriptions", "description": "Subscription and plan management via Razorpay/PayPal"},
+        {"name": "webhooks", "description": "Payment provider webhook ingestion and tenant provisioning"},
+        {"name": "audit-export", "description": "Compliance audit log export (JSON/CSV) — Owner only"},
+        {"name": "legal", "description": "Public Terms of Service and Privacy Policy"},
+    ],
+    lifespan=lifespan,
 )
 
 add_production_middleware(app)
 
-# ── Auth, Accounts, Leads, Outreach, Revenue & Payment routers ──────────────────
+# ── Phase 1-3 Routers ────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(leads_router)
@@ -83,21 +148,23 @@ app.include_router(outreach_router)
 app.include_router(revenue_router)
 app.include_router(subscriptions_router)
 app.include_router(webhooks_router)
+app.include_router(field_force_router)
+
+# ── Phase 4 Routers: Customer Portal, Audit Export, Legal ────────────────────
+app.include_router(customer_portal_router)
+app.include_router(audit_export_router)
+app.include_router(legal_router)
+
+# ── Admin Dashboard Static Frontend ──────────────────────────────────────────
+dashboard_dir = Path(__file__).resolve().parent / "dashboard"
+if dashboard_dir.exists():
+    app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    """Create tables (SQLite dev) and initialize Genesis trust block."""
-    from app.db.database import engine, Base, DATABASE_URL
-    if DATABASE_URL.startswith("sqlite"):
-        Base.metadata.create_all(bind=engine)
-    from app.security.trust_chain import ensure_genesis_block
-    from app.db.database import SessionLocal
-    db = SessionLocal()
-    try:
-        ensure_genesis_block(db)
-    finally:
-        db.close()
+@app.get("/admin", include_in_schema=False)
+def admin_redirect() -> RedirectResponse:
+    """Redirect /admin directly to the dashboard interface."""
+    return RedirectResponse(url="/dashboard/")
 
 
 class DiscoveryRequest(BaseModel):
@@ -168,8 +235,9 @@ def root() -> dict[str, object]:
         "status": "online",
         "docs_url": "/docs",
         "health_url": "/health",
+        "dashboard_url": "/dashboard/",
         "api_prefix": "/v1",
-        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /docs for interactive Swagger UI."
+        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
     }
 
 
@@ -250,7 +318,7 @@ def get_project_status(
                     "mode": "owner_gated",
                 },
                 {
-                    "name": "field_force_unolo",
+                    "name": "field_force_engine",
                     "status": "active",
                     "mode": "verified_readback",
                 },
@@ -363,7 +431,7 @@ def list_capabilities(
             {
                 "id": "delivery_field_force",
                 "version": "0.1.0",
-                "description": "Dispatches owner-approved tasks to Unolo Field Force service with status readback.",
+                "description": "Dispatches owner-approved tasks to AskforWrite Field Force Engine with status readback.",
                 "permissions": ["manager"],
                 "approval_gates": ["owner_approval"],
                 "data_mode": "field_force_api",

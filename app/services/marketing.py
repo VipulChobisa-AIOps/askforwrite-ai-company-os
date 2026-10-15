@@ -7,7 +7,12 @@ import uuid
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import AuditLog, IdempotencyRecord, MarketingCampaignRecord, TaskRecord
+from app.db.models import (
+    AuditLog,
+    IdempotencyRecord,
+    MarketingCampaignRecord,
+    TaskRecord,
+)
 from app.security.trust_chain import seal_task_to_block
 from app.services.approvals import request_approval
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -18,7 +17,12 @@ from app.schemas.outreach import (
     OutreachListResponse,
     OutreachResponse,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
+from app.security.auth import (
+    APIPrincipal,
+    enforce_tenant_access,
+    require_manager,
+    require_owner,
+)
 from app.services.approvals import ApprovalConflict, ApprovalNotFound
 from app.services.outreach import dispatch_outreach, draft_outreach
 
@@ -61,7 +65,7 @@ def draft_outreach_endpoint(
         msg = str(exc)
         if "quota" in msg.lower() or "limit" in msg.lower():
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=msg) from exc
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=msg) from exc
 
 
 @router.get("", response_model=OutreachListResponse)
@@ -143,6 +147,6 @@ def dispatch_outreach_endpoint(
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=msg) from exc
         if "approval" in msg.lower():
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=msg) from exc
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=msg) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc

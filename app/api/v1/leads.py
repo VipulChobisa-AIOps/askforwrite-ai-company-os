@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -56,7 +55,7 @@ def discover_leads(
     correlation_id = x_correlation_id or str(uuid.uuid4())
     if len(correlation_id) > 128:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="X-Correlation-ID is too long",
         )
 
@@ -84,7 +83,7 @@ def discover_leads(
                 detail=error_msg,
             ) from exc
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=error_msg,
         ) from exc
 
@@ -209,7 +208,7 @@ def enrich_lead(
     domain = normalize_domain(payload.website)
     if not domain:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid website or domain URL",
         )
 

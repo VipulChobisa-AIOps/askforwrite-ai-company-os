@@ -166,7 +166,7 @@ def get_project_status(
                     "mode": "owner_gated",
                 },
                 {
-                    "name": "field_force_unolo",
+                    "name": "field_force_engine",
                     "status": "active",
                     "mode": "verified_readback",
                 },
@@ -254,7 +254,7 @@ def list_capabilities(
             {
                 "id": "delivery_field_force",
                 "version": "0.1.0",
-                "description": "Dispatches owner-approved tasks to Unolo Field Force service with status readback.",
+                "description": "Dispatches owner-approved tasks to AskforWrite Field Force Engine with status readback.",
                 "permissions": ["manager"],
                 "approval_gates": ["owner_approval"],
                 "data_mode": "field_force_api",

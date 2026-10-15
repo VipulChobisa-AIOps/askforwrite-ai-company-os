@@ -1,10 +1,9 @@
 """Source providers used for lead discovery and enrichment."""
 
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-import re
 from typing import Protocol
-from urllib.parse import urlsplit
 
 import httpx
 
@@ -273,11 +272,11 @@ class LiveEnrichmentLeadSource:
     # Known live candidate directory for automated discovery when given high-level queries
     _directory = (
         {
-            "company": "Unolo Field Force",
-            "website": "https://www.unolo.com",
-            "industry": "Field Force Automation & GPS Tracking",
-            "geography": "Gurgaon, Haryana, India",
-            "tags": ("field", "attendance", "tracking", "gps", "sales force", "supervisor"),
+            "company": "Shadowfax Technologies",
+            "website": "https://www.shadowfax.in",
+            "industry": "On-Demand Field Force Logistics & Hyperlocal Delivery",
+            "geography": "Bengaluru, Karnataka, India",
+            "tags": ("field", "attendance", "tracking", "gps", "sales force", "supervisor", "logistics"),
         },
         {
             "company": "FarEye Logistics",

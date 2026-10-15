@@ -33,7 +33,6 @@ from app.services.payment import (
     SubscriptionInfo,
     SubscriptionStatus,
     WebhookEvent,
-    WebhookVerificationError,
     register_provider,
 )
 

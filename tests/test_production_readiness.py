@@ -28,8 +28,9 @@ class ProductionReadinessTests(unittest.TestCase):
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         from sqlalchemy.pool import StaticPool
+
+        import app.db.models
         from app.db.database import Base, get_db
-        import app.db.models  # noqa: F401
         from app.main import app
 
         cls.engine = create_engine(

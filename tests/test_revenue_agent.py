@@ -5,7 +5,6 @@ import hmac
 import json
 import os
 import unittest
-from datetime import UTC, datetime
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -31,7 +30,6 @@ from app.db.models import (
     WebhookEventRecord,
 )
 from app.main import app
-from app.services.catalog import CATALOG, get_all_packages
 
 test_engine = create_engine(
     "sqlite:///:memory:",

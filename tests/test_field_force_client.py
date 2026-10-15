@@ -18,14 +18,14 @@ class FieldForceClientTests(unittest.TestCase):
             received.append(request)
             if request.method == "POST":
                 return httpx.Response(201, json={
-                    "taskId": "unolo-task-1",
+                    "taskId": "ff-task-1",
                     "status": "Pending",
                     "assignedTo": "employee-1",
                     "correlationId": "correlation-1",
                     "externalNotificationSent": False,
                 })
             return httpx.Response(200, json={
-                "taskId": "unolo-task-1",
+                "taskId": "ff-task-1",
                 "title": "Proposal title",
                 "assignedTo": "employee-1",
                 "status": "Pending",
@@ -47,18 +47,18 @@ class FieldForceClientTests(unittest.TestCase):
         ))
 
         self.assertTrue(result["verified"])
-        self.assertEqual(result["task_id"], "unolo-task-1")
+        self.assertEqual(result["task_id"], "ff-task-1")
         self.assertEqual(len(received), 2)
         self.assertEqual(received[0].headers["authorization"], "Bearer field-force-token-for-test-which-is-long-enough")
         self.assertEqual(received[0].headers["idempotency-key"], "delivery-1")
-        self.assertEqual(received[1].url.path, "/api/agent/tasks/unolo-task-1")
+        self.assertEqual(received[1].url.path, "/api/agent/tasks/ff-task-1")
 
     def test_rejects_success_response_without_matching_status_evidence(self):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.method == "POST":
-                return httpx.Response(201, json={"taskId": "unolo-task-2"})
+                return httpx.Response(201, json={"taskId": "ff-task-2"})
             return httpx.Response(200, json={
-                "taskId": "unolo-task-2",
+                "taskId": "ff-task-2",
                 "title": "Different title",
                 "assignedTo": "employee-1",
                 "status": "Pending",

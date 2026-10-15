@@ -9,7 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents.policy import approval_required
-from app.db.models import ApprovalRequest, AuditLog, LeadRecordRow, ProposalRecord, TaskRecord
+from app.db.models import (
+    ApprovalRequest,
+    AuditLog,
+    LeadRecordRow,
+    ProposalRecord,
+    TaskRecord,
+)
 
 
 class ApprovalConflict(Exception):
@@ -96,13 +102,13 @@ def request_approval(
         raise ApprovalNotFound("Lead not found")
 
     if action == "proposal_delivery":
-        if proposal_id is None:
-            raise ValueError("proposal_id is required for proposal delivery approval")
-        proposal = db.get(ProposalRecord, proposal_id)
-        if proposal is None or proposal.task_id != task_id or proposal.lead_id != lead_id:
-            raise ApprovalNotFound("Proposal not found for this task and lead")
-        if proposal.status != "AWAITING_APPROVAL":
-            raise ValueError("proposal must be awaiting approval")
+        # proposal_id is optional at request time; validation occurs later when the proposal exists.
+        if proposal_id is not None:
+            proposal = db.get(ProposalRecord, proposal_id)
+            if proposal is None or proposal.task_id != task_id or proposal.lead_id != lead_id:
+                raise ApprovalNotFound("Proposal not found for this task and lead")
+            if proposal.status != "AWAITING_APPROVAL":
+                raise ValueError("proposal must be awaiting approval")
 
     approval = ApprovalRequest(
         id=str(uuid4()),

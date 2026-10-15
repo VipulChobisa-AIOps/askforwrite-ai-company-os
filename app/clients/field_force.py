@@ -1,4 +1,4 @@
-"""Authenticated client for the Unolo Field Force task capability."""
+"""Authenticated client for the AskforWrite Native Field Force task capability."""
 
 import os
 from typing import Any
@@ -11,7 +11,7 @@ class FieldForceNotConfigured(Exception):
 
 
 class FieldForceExecutionError(Exception):
-    """Raised when Unolo rejects a task or verification fails."""
+    """Raised when the Field Force service rejects a task or verification fails."""
 
 
 class FieldForceClient:
@@ -67,12 +67,12 @@ class FieldForceClient:
                 )
                 if created_response.status_code not in {200, 201}:
                     raise FieldForceExecutionError(
-                        f"Unolo task creation failed with HTTP {created_response.status_code}"
+                        f"Field Force task creation failed with HTTP {created_response.status_code}"
                     )
                 created = created_response.json()
                 task_id = created.get("taskId")
                 if not isinstance(task_id, str) or not task_id:
-                    raise FieldForceExecutionError("Unolo response did not include taskId")
+                    raise FieldForceExecutionError("Field Force response did not include taskId")
 
                 status_response = await client.get(
                     f"/api/agent/tasks/{task_id}",
@@ -80,11 +80,11 @@ class FieldForceClient:
                 )
                 if status_response.status_code != 200:
                     raise FieldForceExecutionError(
-                        f"Unolo task verification failed with HTTP {status_response.status_code}"
+                        f"Field Force task verification failed with HTTP {status_response.status_code}"
                     )
                 verified = status_response.json()
         except httpx.HTTPError as error:
-            raise FieldForceExecutionError("Unolo task request failed before verification") from error
+            raise FieldForceExecutionError("Field Force task request failed before verification") from error
 
         if (
             verified.get("taskId") != task_id
@@ -93,7 +93,7 @@ class FieldForceClient:
             or verified.get("correlationId") != correlation_id
             or verified.get("status") != "Pending"
         ):
-            raise FieldForceExecutionError("Unolo task readback did not match the requested task")
+            raise FieldForceExecutionError("Field Force task readback did not match the requested task")
 
         return {
             "task_id": task_id,

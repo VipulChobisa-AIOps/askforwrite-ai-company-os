@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.agents.discovery import COMPETITOR_COMPANY_KEYWORDS, COMPETITOR_DOMAINS
 from app.agents.revenue_agent import generate_commercial_pitch
 from app.db.models import (
     ApprovalRequest,
@@ -25,6 +27,17 @@ from app.services.email_dispatcher import EmailDispatcher, get_email_dispatcher
 logger = logging.getLogger(__name__)
 
 CAPABILITY_NAME = "sales_outreach"
+
+
+def sanitize_outreach_content(text: str) -> str:
+    """Enforce owner direct engagement directives:
+    - Never use 'field force' in outbound messaging.
+    - Transform into direct engagement branding ('AskforWrite Operations Engine').
+    """
+    if not text:
+        return text
+    pattern = re.compile(r"\bfield[\s_-]*force\b", re.IGNORECASE)
+    return pattern.sub("AskforWrite Operations Engine", text)
 
 
 def generate_personalized_message(
@@ -48,14 +61,16 @@ def generate_personalized_message(
     body = (
         f"{greeting}"
         f"{signal_highlights}"
-        f"\n\nOur Company OS platform helps leaders in the {industry} space streamline field coordination, "
+        f"\n\nOur AskforWrite Company OS platform helps leaders in the {industry} space streamline on-ground operations coordination, "
         f"workforce management, and automated operational reporting with verifiable data pipelines."
         f"{notes_addition}"
         f"\n\nWould you be open to a brief 10-minute exploratory conversation next week?"
         f"\n\nBest regards,"
-        f"\nAskforWrite AI Solutions"
+        f"\nVipul Choubisa\n"
+        f"AskforWrite AI Solutions"
     )
-    return subject, body
+    return sanitize_outreach_content(subject), sanitize_outreach_content(body)
+
 
 
 def draft_outreach(
@@ -91,6 +106,13 @@ def draft_outreach(
                 f"Outreach to synthetic / demo domain '{lead_domain or lead_email_domain}' is strictly prohibited in production."
             )
 
+    # Safety: Prohibit outreach to competitors or firms in similar operations
+    target_domain = lead_email_domain or lead_domain
+    if target_domain in COMPETITOR_DOMAINS or any(cd in target_domain for cd in COMPETITOR_DOMAINS):
+        raise ValueError(f"Outreach to competitor or similar-operations firm '{target_domain}' is strictly prohibited.")
+    company_lower = lead.company.lower()
+    if any(kw in company_lower for kw in COMPETITOR_COMPANY_KEYWORDS):
+        raise ValueError(f"Outreach to competitor firm '{lead.company}' is strictly prohibited.")
 
     # Check organizational credit limit
     org: OrganizationRecord | None = None
@@ -127,10 +149,11 @@ def draft_outreach(
         recipient_name=recipient_name,
         custom_notes=custom_notes,
     )
-    subject = commercial["subject"]
-    body = commercial["body_text"]
+    subject = sanitize_outreach_content(str(commercial["subject"]))
+    body = sanitize_outreach_content(str(commercial["body_text"]))
     payment_link = commercial["payment_link"]
     package_key = commercial["package_key"]
+
 
     outreach_id = str(uuid.uuid4())
     task_id = lead.task_id or str(uuid.uuid4())

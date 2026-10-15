@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.agents.revenue_agent import diagnose_lead_opportunity, generate_commercial_pitch
+from app.agents.revenue_agent import (
+    diagnose_lead_opportunity,
+)
 from app.db.database import get_db
 from app.db.models import LeadRecordRow
 from app.schemas.catalog import (
@@ -131,4 +132,4 @@ def pitch_lead_endpoint(
         msg = str(exc)
         if "quota" in msg.lower() or "limit" in msg.lower():
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=msg) from exc
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=msg) from exc

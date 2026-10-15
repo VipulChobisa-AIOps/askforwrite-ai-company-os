@@ -4,12 +4,14 @@ LangGraph Orchestrator for the AskforWrite AI Company OS.
 State machine defining the Manager -> Specialist workflow with HITL gates.
 """
 
-from typing import Annotated, TypedDict, Literal
-from langgraph.graph import StateGraph, START, END
+from typing import Literal, TypedDict
+
+from langgraph.graph import START, StateGraph
 from langsmith import traceable
 
-from app.agents.ai_agents import ai_score_lead, ai_draft_proposal
+from app.agents.ai_agents import ai_draft_proposal, ai_score_lead
 from app.agents.sources import OfflineSignalProvider
+
 
 class AgentState(TypedDict):
     """The state of the multi-agent workflow."""

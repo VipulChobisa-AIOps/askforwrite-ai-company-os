@@ -11,18 +11,15 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import (
     AuditLog,
-    CustomerRecord,
     InvoiceRecord,
     OrganizationRecord,
     SubscriptionRecord,
@@ -38,7 +35,12 @@ from app.schemas.account import (
     UserCreate,
     UserResponse,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
+from app.security.auth import (
+    APIPrincipal,
+    enforce_tenant_access,
+    require_manager,
+    require_owner,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +276,6 @@ def remove_org_user(
 
     db.delete(user)
     db.commit()
-    return None
 
 
 # ── Invoice Endpoints ────────────────────────────────────────────────

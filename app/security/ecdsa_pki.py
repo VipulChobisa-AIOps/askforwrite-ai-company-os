@@ -7,7 +7,6 @@ and public-key signature verification.
 
 import logging
 import os
-from typing import Optional, Tuple
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
@@ -27,7 +26,7 @@ def get_keys_dir() -> str:
     return os.environ.get("TRUST_ENGINE_KEYS_DIR", DEFAULT_KEYS_DIR)
 
 
-def init_node_keys(keys_dir: Optional[str] = None) -> Tuple[object, str]:
+def init_node_keys(keys_dir: str | None = None) -> tuple[object, str]:
     """Initializes or loads the node's authoritative ECDSA NIST P-256 keypair.
 
     The private key signs blocks locally. The public key verifies signatures.

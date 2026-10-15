@@ -1,7 +1,7 @@
 """Commercial product catalog and pricing matrix for AskforWrite Company AI OS.
 
 Defines:
-- Modular a-la-carte specialist tools (SEO Blog Copilot, Marketing Suite, Field Force, Trust Engine)
+- Modular a-la-carte specialist tools (SEO Blog Copilot, Marketing Suite, Field Operations Automation Suite, Trust Engine)
 - All-in-One Master Bundles (AskforWrite Company OS Starter, Pro, Enterprise)
 - Deep architectural capabilities: SEO, GEO (Generative Engine Optimization), AIO (AI Optimization)
 - Concrete deliverables, target buyer personas, and operational advantages
@@ -104,26 +104,27 @@ CATALOG: dict[str, PackageDefinition] = {
     ),
     "field_force": PackageDefinition(
         key="field_force",
-        name="Field Force Workforce & GPS Automation",
+        name="AskforWrite Field Operations Automation Suite",
         category="modular_tool",
-        description="Supervisor workforce coordination, real-time verified readback, and GPS geofence tracking.",
-        target_buyer_persona="Logistics operators, field sales distribution networks, construction and facilities management firms.",
-        target_pain_point="Proxy field attendance, untracked remote workers, supervisor coordination delays, and inability to verify task execution on the ground.",
+        description="Autonomous on-ground operations coordination, real-time verified GPS readback, and intelligent workforce automation.",
+        target_buyer_persona="Logistics operators, distribution & FMCG sales networks, construction firms, and facilities management companies managing on-ground teams.",
+        target_pain_point="Proxy attendance fraud, untracked remote teams, supervisor coordination delays, and inability to verify task execution on the ground.",
         key_features=(
-            "Unolo Field Force microservice integration with verified task status readback",
-            "Real-time GPS geofencing with location audit validation",
-            "Automated supervisor notification triggers and task dispatching",
-            "Fraud-proof timestamped field attendance logging",
+            "AskforWrite Autonomous Operations Engine with zero-trust GPS and tamper-proof readback",
+            "Real-time GPS geofencing with anti-spoofing location audit validation",
+            "Autonomous AI dispatching, dynamic route optimisation, and supervisor co-pilot triggers",
+            "Cryptographic timestamped attendance with AI vision & voice proof-of-visit",
+            "Automated fraud-proof conveyance distance calculation and instant expense auditing",
         ),
         deliverables=(
-            "Connected Field Force microservice dashboard access",
-            "Field team activity and geofence compliance reporting",
-            "50 monthly prospect discovery credits for regional logistics and retail chains",
-            "Dedicated webhook endpoints for field status sync",
+            "AskforWrite Native Operations command dashboard access",
+            "Real-time on-ground activity logs, route reports, and geofence compliance reporting",
+            "AI-powered automated task dispatching, OTP verification, and client visit sync",
+            "Dedicated webhook endpoints for operations status sync and HRMS/CRM integration",
         ),
         seo_geo_aio_capabilities=(
             "Location-grounded local business schema markup",
-            "Regional supply-chain and distribution directory optimization",
+            "Regional supply-chain and distribution directory optimisation",
         ),
         price_inr=3999,
         price_usd=49,
@@ -131,7 +132,7 @@ CATALOG: dict[str, PackageDefinition] = {
         entitled_capabilities=("delivery_field_force",),
         lead_credits_monthly=50,
         outreach_credits_monthly=25,
-        tier="modular_field_force",
+        tier="modular_field_ops",
     ),
     "trust_engine": PackageDefinition(
         key="trust_engine",

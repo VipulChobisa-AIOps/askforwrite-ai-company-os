@@ -2,8 +2,7 @@
 
 import os
 import unittest
-from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -18,7 +17,6 @@ os.environ["MANAGER_API_KEY"] = TEST_MANAGER_KEY
 os.environ["OWNER_API_KEY"] = TEST_OWNER_KEY
 
 from app.agents.sources import (
-    LiveEnrichmentLeadSource,
     extract_page_metadata,
 )
 from app.db.database import Base, get_db
@@ -302,7 +300,7 @@ class LeadServiceTests(unittest.TestCase):
         self.assertEqual(resp_fit.json()["leads"][0]["id"], "lead-1")
 
         # Search by company query
-        resp_search = self.client.get(f"/v1/leads?search=zen", headers=MANAGER_HEADERS)
+        resp_search = self.client.get("/v1/leads?search=zen", headers=MANAGER_HEADERS)
         self.assertEqual(resp_search.status_code, 200)
         self.assertEqual(resp_search.json()["count"], 1)
         self.assertEqual(resp_search.json()["leads"][0]["id"], "lead-2")

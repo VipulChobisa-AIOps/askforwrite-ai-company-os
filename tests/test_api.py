@@ -3,11 +3,14 @@ import os
 import unittest
 from unittest.mock import patch
 
+os.environ["APP_ENV"] = "development"
+
 import httpx
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.clients.field_force import get_field_force_client
 from app.db.database import Base, get_db, validate_database_configuration
 from app.db.models import (
     ApprovalRequest,
@@ -23,7 +26,6 @@ from app.db.models import (
     TrustBlock,
 )
 from app.main import app
-from app.clients.field_force import get_field_force_client
 from app.security.auth import APIPrincipal, get_current_principal
 
 
@@ -179,11 +181,12 @@ class DiscoveryApiTests(unittest.TestCase):
             "production",
             "postgresql+psycopg://user:password@localhost/company_os",
         )
-        with self.assertRaisesRegex(ValueError, "require a PostgreSQL"):
-            validate_database_configuration(
-                "production",
-                "sqlite:///./company_os.db",
-            )
+        with patch.dict(os.environ, {"ALLOW_SQLITE_PRODUCTION": ""}):
+            with self.assertRaisesRegex(ValueError, "require a PostgreSQL"):
+                validate_database_configuration(
+                    "production",
+                    "sqlite:///./company_os.db",
+                )
 
     def test_owner_approval_is_durable_gated_and_never_sends_outreach(self):
         discovery = self.request(
@@ -419,7 +422,7 @@ class DiscoveryApiTests(unittest.TestCase):
             ):
                 self.calls += 1
                 return {
-                    "task_id": "unolo-task-001",
+                    "task_id": "ff-task-001",
                     "status": "Pending",
                     "assigned_to": assigned_to,
                     "title": title,
@@ -675,7 +678,7 @@ class DiscoveryApiTests(unittest.TestCase):
             ):
                 self.calls += 1
                 return {
-                    "task_id": "unolo-e2e-001",
+                    "task_id": "ff-e2e-001",
                     "status": "Pending",
                     "assigned_to": assigned_to,
                     "title": title,
@@ -687,7 +690,7 @@ class DiscoveryApiTests(unittest.TestCase):
         fake_ff = FakeFieldForceClient()
         proposal = self.request(
             "GET",
-            f"/v1/sales/requirements?status=QUALIFIED",
+            "/v1/sales/requirements?status=QUALIFIED",
         ).json()["requirements"][0]
         proposal_record = self.request(
             "GET",
@@ -773,6 +776,29 @@ class DiscoveryApiTests(unittest.TestCase):
                 TrustBlock.index == block.index
             ).one()
             self.assertEqual(remaining.block_hash, block.block_hash)
+
+    def test_dashboard_static_page_served(self):
+        """Dashboard HTML, CSS, and JS assets are served correctly."""
+        resp = self.request("GET", "/dashboard/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("AskforWrite", resp.text)
+        self.assertIn("text/html", resp.headers.get("content-type", ""))
+
+        resp_css = self.request("GET", "/dashboard/dashboard.css")
+        self.assertEqual(resp_css.status_code, 200)
+
+        resp_js = self.request("GET", "/dashboard/dashboard.js")
+        self.assertEqual(resp_js.status_code, 200)
+
+    def test_admin_and_root_dashboard_routes(self):
+        """Root endpoint references dashboard and /admin redirects to /dashboard/."""
+        root_resp = self.request("GET", "/")
+        self.assertEqual(root_resp.status_code, 200)
+        self.assertEqual(root_resp.json().get("dashboard_url"), "/dashboard/")
+
+        admin_resp = self.request("GET", "/admin")
+        self.assertIn(admin_resp.status_code, (307, 308))
+        self.assertEqual(admin_resp.headers.get("location"), "/dashboard/")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
@@ -19,8 +18,8 @@ from app.db.models import (
     ResearchRecord,
     TaskRecord,
 )
-from app.services.approvals import request_approval
 from app.security.trust_chain import seal_task_to_block
+from app.services.approvals import request_approval
 
 CAPABILITY_NAME = "sales_requirement_capture"
 
@@ -202,7 +201,7 @@ def execute_sales_capture(
 
     approval_id = None
     if proposal is not None:
-        approval_key = hashlib.sha256(f"proposal-delivery:{key}".encode("utf-8")).hexdigest()
+        approval_key = hashlib.sha256(f"proposal-delivery:{key}".encode()).hexdigest()
         approval = request_approval(
             db=db,
             task_id=task_id,

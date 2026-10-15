@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.agents.discovery import RESEARCH_THRESHOLD
 from app.db.models import AuditLog, IdempotencyRecord, TaskRecord
+from app.security.trust_chain import seal_task_to_block
 from app.services.approvals import request_approval
 from app.services.discovery import execute_discovery
 from app.services.research import execute_research
-from app.security.trust_chain import seal_task_to_block
 
 CAPABILITY_NAME = "manager_workflow"
 
@@ -129,7 +129,7 @@ def execute_manager_workflow(
     })
 
     try:
-        child_key = hashlib.sha256(f"manager-discovery:{key}".encode("utf-8")).hexdigest()
+        child_key = hashlib.sha256(f"manager-discovery:{key}".encode()).hexdigest()
         discovery = execute_discovery(
             db=db,
             objective=normalized_objective,
@@ -146,7 +146,7 @@ def execute_manager_workflow(
         approval_ids: list[str] = []
         for lead in qualified_leads:
             lead_id = str(lead["lead_id"])
-            suffix = hashlib.sha256(f"{key}:{lead_id}".encode("utf-8")).hexdigest()
+            suffix = hashlib.sha256(f"{key}:{lead_id}".encode()).hexdigest()
             research = execute_research(
                 db=db,
                 lead_id=lead_id,

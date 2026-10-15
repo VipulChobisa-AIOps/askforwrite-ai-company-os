@@ -11,7 +11,7 @@ RESEARCH_THRESHOLD = 0.30
 PRODUCT_KEYWORDS = {
     "field_force_management": (
         "field", "supervisor", "attendance", "gps", "tracking",
-        "geofence", "workforce", "sales force",
+        "geofence", "workforce", "sales rep",
     ),
     "warehouse_automation": ("warehouse", "inventory", "stock"),
     "marketing_suite": ("marketing", "content", "seo", "campaign"),
@@ -29,8 +29,7 @@ def normalize_domain(url_or_domain: str) -> str:
     host = parsed.netloc or parsed.path
     if ":" in host:
         host = host.split(":")[0]
-    if host.startswith("www."):
-        host = host[4:]
+    host = host.removeprefix("www.")
     return host.strip("/").strip()
 
 
@@ -87,9 +86,117 @@ def _score(signals: tuple[str, ...]) -> tuple[float, str | None]:
     return best_score, best_product
 
 
+# ---------------------------------------------------------------------------
+# Competitor & similar-operations block-list
+# ---------------------------------------------------------------------------
+# Rule: Never contact companies that SELL or BUILD field-operations software,
+# GPS/workforce management SaaS, CRMs, or similar tools — only contact
+# companies that are direct END-USERS / buyers of such capabilities.
+# ---------------------------------------------------------------------------
+
+COMPETITOR_DOMAINS: set[str] = {
+    # Direct competitors (field-force / workforce management SaaS)
+    "unolo.com",
+    "fieldproxy.com",
+    "beatroute.io",
+    "trackmyteam.com",
+    "liqvid.ai",
+    "fieldax.com",
+    "fieldy.io",
+    "fieldaware.com",
+    "fieldnation.com",
+    "workwave.com",
+    "servicemax.com",
+    "clicksoftware.com",
+    "skedulo.com",
+    "commusoft.co.uk",
+    "simpro.com",
+    "loc8.com",
+    "mobileforce.io",
+    "zuper.co",
+    "repsly.com",
+    "badger-maps.com",
+    "spotio.com",
+    "salesdiary.in",
+    "dista.ai",
+    "eazy-erp.com",
+    # CRM / sales automation SaaS (similar-ops)
+    "leadsquared.com",
+    "salesforce.com",
+    "zoho.com",
+    "hubspot.com",
+    "pipedrive.com",
+    "freshsales.com",
+    "close.com",
+    "freshworks.com",
+    "insightly.com",
+    "outreach.io",
+    "salesloft.com",
+    "apollo.io",
+    "zoominfo.com",
+    # Blocked by manual DNC flag
+    "blocked-example.com",
+}
+
+# Company name fragments indicating a competitor or similar-ops software vendor.
+# Checked case-insensitively against the company name string.
+COMPETITOR_COMPANY_KEYWORDS: tuple[str, ...] = (
+    "unolo", "leadsquared", "fieldproxy", "beatroute", "repsly",
+    "spotio", "badger maps", "salesdiary", "dista", "mobileforce",
+    "zuper", "skedulo", "servicemax", "workwave", "fieldaware",
+    "fieldax", "fieldy", "fieldnation",
+)
+
+# Industry strings that identify companies SELLING similar software (not end-users).
+# If a prospect's industry contains any of these phrases, they are blocked.
+SIMILAR_OPERATION_INDUSTRY_SIGNALS: tuple[str, ...] = (
+    "field force software",
+    "field service software",
+    "field service management",
+    "workforce management software",
+    "gps tracking software",
+    "gps tracking saas",
+    "crm software",
+    "crm saas",
+    "sales force automation software",
+    "sales automation software",
+    "field operations software",
+    "attendance management software",
+    "hr tech saas",
+    "hrtech",
+    "sales enablement software",
+)
+
+
 def _is_do_not_contact(candidate: SignalBundle) -> bool:
+    """Return True if this candidate must never be contacted.
+
+    Blocks:
+    1. Leads flagged do_not_contact in the data source.
+    2. Any domain present in COMPETITOR_DOMAINS.
+    3. Any company name containing a known competitor fragment.
+    4. Any company whose industry signals they are a SaaS/software vendor
+       operating in the same space (field-ops, CRM, workforce mgmt, GPS).
+    """
+    if candidate.do_not_contact:
+        return True
+
+    # Domain check
     hostname = (urlsplit(candidate.website).hostname or "").casefold().rstrip(".")
-    return candidate.do_not_contact or hostname == "blocked-example.com"
+    if any(hostname == c or hostname.endswith(f".{c}") for c in COMPETITOR_DOMAINS):
+        return True
+
+    # Company name keyword check
+    company_lower = (candidate.company or "").casefold()
+    if any(kw in company_lower for kw in COMPETITOR_COMPANY_KEYWORDS):
+        return True
+
+    # Industry signals — block software/SaaS vendors in similar operations
+    industry_lower = (candidate.industry or "").casefold()
+    if any(sig in industry_lower for sig in SIMILAR_OPERATION_INDUSTRY_SIGNALS):
+        return True
+
+    return False
 
 
 def _to_lead(candidate: SignalBundle, data_mode: str) -> LeadRecord:

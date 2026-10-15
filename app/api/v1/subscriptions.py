@@ -17,10 +17,14 @@ import os
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+import app.services.payment_paypal
+
+# Ensure provider modules are imported so @register_provider decorators execute
+import app.services.payment_razorpay  # noqa: F401
 from app.db.database import get_db
 from app.db.models import (
     AuditLog,
@@ -32,13 +36,8 @@ from app.services.payment import (
     PaymentError,
     PaymentProvider,
     PaymentProviderError,
-    PaymentValidationError,
     get_payment_provider,
 )
-
-# Ensure provider modules are imported so @register_provider decorators execute
-import app.services.payment_razorpay  # noqa: F401
-import app.services.payment_paypal  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

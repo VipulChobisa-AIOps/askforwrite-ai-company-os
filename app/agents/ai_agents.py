@@ -6,14 +6,11 @@ for Discovery, Research, Sales, and Manager agents.
 """
 
 import json
-from dataclasses import asdict
 
 from langsmith import traceable
 
+from app.agents.discovery import _score
 from app.agents.llm_client import generate
-from app.agents.discovery import LeadRecord, DiscoveryResult, _score, _is_do_not_contact
-from app.agents.sales import SalesDraft
-from app.agents.sources import SignalBundle
 
 # --- Discovery AI Agent ---
 
