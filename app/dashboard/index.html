@@ -53,6 +53,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span>Field Force</span>
       </a>
+      <a href="#" class="nav-item" data-page="growth" id="nav-growth">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span>Growth Suite</span>
+      </a>
       <a href="#" class="nav-item" data-page="portal" id="nav-portal">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Customer Portal</span>
@@ -619,6 +623,104 @@
         </div>
       </section>
 
+      <!-- ══════ GROWTH SUITE PAGE ══════ -->
+      <section class="page" id="page-growth">
+        <div class="card" style="margin-bottom: 24px; background: linear-gradient(135deg, rgba(79, 70, 229, 0.15) 0%, rgba(6, 182, 212, 0.10) 100%); border-color: rgba(79, 70, 229, 0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                <span class="badge" style="background: var(--purple); color: white; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase;">All-in-One Engine</span>
+                <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--green); font-weight: 600;">24/7 AI Revenue Automation</span>
+              </div>
+              <h2 style="font-size: 1.5rem; font-weight: 700; margin: 0 0 6px 0;">AskforWrite Autonomous AI Growth & Inbound Sales Suite</h2>
+              <p style="color: var(--text-muted); margin: 0; max-width: 780px; font-size: 0.9rem; line-height: 1.5;">
+                Replaces an entire digital marketing agency & SDR sales team for founders and SMBs. 
+                Combines <strong>Pixel AI visual studio</strong> (ad photos & banners), <strong>4-site SEO/GEO blog publishing</strong>, 
+                <strong>omnichannel social campaigns</strong>, and a <strong>24/7 autonomous WhatsApp/Web conversational closer</strong>.
+              </p>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 1.6rem; font-weight: 800; color: white;">₹9,999 <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400;">/month ($129 USD)</span></div>
+              <a href="https://razorpay.me/@askforwrite?amount=999900&notes_package=growth_all_in_one" target="_blank" class="primary-btn" style="display: inline-block; text-decoration: none; margin-top: 8px; padding: 8px 18px;">
+                Subscribe to Growth Suite
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2-col" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+          <!-- Left Pillar: Pixel AI Visual & SEO Engine -->
+          <div class="card">
+            <h3 style="margin-top: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--cyan);">🎨</span> Pillar 1 & 2: Creative Studio & SEO Copilot
+            </h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+              Specify your product or business to generate Pixel AI ad visual recipes (1:1 Feed, 9:16 Reels/Stories, 16:9 Web) and GEO-optimized SEO blog articles in seconds.
+            </p>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label class="modal-label" for="growth-product-input">Product or Service Name</label>
+              <input type="text" id="growth-product-input" class="settings-input" placeholder="e.g. Handmade Organic Tea / Cloud Accounting SaaS">
+            </div>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label class="modal-label" for="growth-audience-input">Target Customer Persona</label>
+              <input type="text" id="growth-audience-input" class="settings-input" placeholder="e.g. Health-conscious professionals in urban India">
+            </div>
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="modal-label" for="growth-keywords-input">Target SEO Keywords (comma-separated)</label>
+              <input type="text" id="growth-keywords-input" class="settings-input" placeholder="e.g. organic wellness tea, immunity tea buy online">
+            </div>
+            <button class="primary-btn" id="btn-run-growth-engine" style="width: 100%; justify-content: center; padding: 10px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; margin-right: 6px;"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              Generate Unified Growth Campaign
+            </button>
+
+            <!-- Results Preview Container -->
+            <div id="growth-results-container" style="display: none; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 8px; color: var(--cyan);">Generated Pixel AI Visual Recipes:</div>
+              <div id="growth-variants-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+              <div style="font-weight: 600; font-size: 0.9rem; margin: 16px 0 8px 0; color: var(--purple);">SEO & GEO Article Preview:</div>
+              <div id="growth-blog-preview" style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 6px; font-size: 0.8rem; font-family: monospace; white-space: pre-wrap; max-height: 180px; overflow-y: auto;"></div>
+            </div>
+          </div>
+
+          <!-- Right Pillar: 24/7 Autonomous Inbound Sales Closer Simulator -->
+          <div class="card" style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
+                <span style="color: var(--green);">💬</span> Pillar 3 & 4: 24/7 Inbound Sales Closer
+              </h3>
+              <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--green); font-size: 0.72rem;">● Closer Online (WhatsApp/Web)</span>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+              Simulate an inbound lead visiting your website or messaging your WhatsApp business account. The AI closer overcomes objections, answers questions, and closes transactions live.
+            </p>
+
+            <!-- Quick Suggestion Pills -->
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+              <button class="growth-chip" data-msg="How much does your Growth Suite cost?">💰 "How much does it cost?"</button>
+              <button class="growth-chip" data-msg="This seems too expensive for my small budget.">⚠️ "Seems too expensive"</button>
+              <button class="growth-chip" data-msg="Do I need coding or technical skills to use this?">⚙️ "Do I need technical skills?"</button>
+              <button class="growth-chip" data-msg="I am ready to buy, send me the payment link!">🚀 "I want to buy right now!"</button>
+            </div>
+
+            <!-- Chat Window -->
+            <div id="closer-chat-log" style="flex: 1; min-height: 260px; max-height: 320px; overflow-y: auto; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+              <div class="chat-bubble closer" style="align-self: flex-start; max-width: 85%; background: rgba(79, 70, 229, 0.2); border: 1px solid rgba(79, 70, 229, 0.4); padding: 10px 14px; border-radius: 12px 12px 12px 2px; font-size: 0.85rem; line-height: 1.4;">
+                <div style="font-size: 0.7rem; color: var(--cyan); font-weight: 700; margin-bottom: 3px;">AskforWrite AI Closer</div>
+                Hello! I am your 24/7 autonomous sales closer. I answer customer inquiries on WhatsApp & Web, explain your capabilities, handle price objections, and send secure checkout links to close sales. Test me by asking a question below!
+              </div>
+            </div>
+
+            <!-- Chat Input Form -->
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="closer-chat-input" class="settings-input" placeholder="Type a customer inquiry or objection..." style="flex: 1;">
+              <button class="primary-btn" id="btn-closer-send" style="padding: 0 16px;">
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
     </div>
   </main>

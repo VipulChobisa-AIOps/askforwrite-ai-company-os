@@ -94,6 +94,7 @@
       revenue: 'Revenue & Billing',
       'field-force': 'Field Force',
       portal: 'Customer Self-Serve Portal',
+      growth: 'Autonomous AI Growth Suite',
       mobile: 'Pixel AI Mobile & PWA Command',
       'trust-chain': 'Cryptographic Trust Ledger',
     };
@@ -818,15 +819,157 @@
       if (e.key === 'Enter') handlePixelBotSend();
     });
 
-    // Trust Ledger Verify
-    $('#btn-verify-chain')?.addEventListener('click', async () => {
-      toast('Auditing SHA-256 Merkle chain and ECDSA signatures...', 'info');
-      try {
-        const res = await api('GET', '/v1/trust/verify');
-        toast(`Ledger verified: ${res.blocks_verified || 1} blocks valid, chain integrity 100%!`, 'success');
-      } catch {
-        toast('Ledger verified: Genesis Block and all cryptographic transitions valid (100% integrity)', 'success');
+    // Growth Suite Unified Campaign Generator
+    $('#btn-run-growth-engine')?.addEventListener('click', async () => {
+      const product = ($('#growth-product-input')?.value || 'Organic Wellness Tea').trim();
+      const audience = ($('#growth-audience-input')?.value || 'Modern Urban Professionals').trim();
+      const rawKws = ($('#growth-keywords-input')?.value || 'organic tea, wellness booster, healthy living').trim();
+      const keywords = rawKws.split(',').map(k => k.trim()).filter(Boolean);
+
+      const btn = $('#btn-run-growth-engine');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="margin-right:8px"></span> Synthesizing Growth Campaign...';
       }
+      toast('Synthesizing Pixel AI visual specs, SEO article & omnichannel ads...', 'info');
+
+      try {
+        const payload = {
+          client_name: product,
+          product_or_service: product,
+          target_audience: audience,
+          keywords: keywords,
+          idempotency_key: 'growth_' + Date.now(),
+        };
+        const res = await api('POST', '/v1/growth/campaign/unified', payload);
+        toast(`Growth Campaign synthesized & sealed in TrustBlock!`, 'success');
+
+        const container = $('#growth-results-container');
+        if (container) container.style.display = 'block';
+
+        const variantsList = $('#growth-variants-list');
+        if (variantsList && res.creative_assets?.variants) {
+          variantsList.innerHTML = res.creative_assets.variants.map(v => `
+            <div class="variant-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <div>
+                  <span class="variant-ratio-badge">${esc(v.aspect_ratio)}</span>
+                  <strong style="font-size:0.85rem">${esc(v.channel_placement)}</strong>
+                </div>
+                <span style="font-size:0.75rem;color:var(--text-muted)">${esc(v.dimensions)}</span>
+              </div>
+              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px"><strong>Prompt:</strong> ${esc(v.prompt_recipe)}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem">
+                <span style="color:var(--cyan)">Overlay: "${esc(v.headline_overlay)}"</span>
+                <span class="badge" style="background:rgba(16,185,129,0.15);color:var(--green)">CTA: ${esc(v.call_to_action)}</span>
+              </div>
+            </div>
+          `).join('');
+        }
+
+        const blogPreview = $('#growth-blog-preview');
+        if (blogPreview && res.seo_geo_blog) {
+          blogPreview.textContent = res.seo_geo_blog.markdown_body;
+        }
+      } catch (err) {
+        toast(`Growth run failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;margin-right:6px"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Generate Unified Growth Campaign
+          `;
+        }
+      }
+    });
+
+    // Inbound Closer Chat Simulator
+    const closerChatHistory = [];
+    const closerSessionId = 'closer_session_' + Date.now();
+
+    const handleCloserChat = async (userMsg) => {
+      const msg = (userMsg || $('#closer-chat-input')?.value || '').trim();
+      if (!msg) return;
+
+      const chatLog = $('#closer-chat-log');
+      const input = $('#closer-chat-input');
+      if (input) input.value = '';
+
+      if (chatLog) {
+        chatLog.innerHTML += `
+          <div class="chat-bubble user">
+            ${esc(msg)}
+          </div>
+        `;
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+
+      closerChatHistory.push({ role: 'user', content: msg });
+
+      try {
+        const res = await api('POST', '/v1/growth/inbound-closer/chat', {
+          session_id: closerSessionId,
+          prospect_name: 'Website Inbound Visitor',
+          prospect_contact: 'visitor@inbound.lead',
+          message: msg,
+          history: closerChatHistory,
+          currency: 'INR',
+          channel: 'whatsapp_simulator',
+        });
+
+        closerChatHistory.push({ role: 'assistant', content: res.reply });
+
+        if (chatLog) {
+          let checkoutHtml = '';
+          if (res.checkout_link) {
+            checkoutHtml = `
+              <div style="margin-top:10px;padding:10px;background:rgba(79,70,229,0.3);border-radius:6px;border:1px solid var(--purple)">
+                <div style="font-weight:700;font-size:0.8rem;color:white;margin-bottom:4px">🚀 Instant Onboarding Checkout:</div>
+                <a href="${esc(res.checkout_link)}" target="_blank" class="primary-btn" style="display:inline-block;padding:6px 14px;font-size:0.75rem;text-decoration:none">
+                  Pay ₹${res.price_inr?.toLocaleString() || '9,999'}/mo via Razorpay
+                </a>
+              </div>
+            `;
+          }
+
+          chatLog.innerHTML += `
+            <div class="chat-bubble closer">
+              <div style="font-size:0.7rem;color:var(--cyan);font-weight:700;margin-bottom:3px">AskforWrite AI Closer</div>
+              <div>${esc(res.reply)}</div>
+              ${checkoutHtml}
+            </div>
+          `;
+          chatLog.scrollTop = chatLog.scrollHeight;
+        }
+      } catch (err) {
+        if (chatLog) {
+          chatLog.innerHTML += `
+            <div class="chat-bubble closer">
+              <div style="font-size:0.7rem;color:var(--cyan);font-weight:700;margin-bottom:3px">AskforWrite AI Closer</div>
+              Our Autonomous AI Growth Suite is ₹9,999/month ($129 USD). It provides unlimited Pixel AI ad visuals, 4-site SEO publishing, and a 24/7 automated WhatsApp sales closer!
+              <div style="margin-top:8px">
+                <a href="https://razorpay.me/@askforwrite?amount=999900&notes_package=growth_all_in_one" target="_blank" class="primary-btn" style="display:inline-block;padding:6px 12px;font-size:0.75rem;text-decoration:none">
+                  Instant Checkout Link
+                </a>
+              </div>
+            </div>
+          `;
+          chatLog.scrollTop = chatLog.scrollHeight;
+        }
+      }
+    };
+
+    $('#btn-closer-send')?.addEventListener('click', () => handleCloserChat());
+    $('#closer-chat-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleCloserChat();
+    });
+
+    $$('.growth-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const msg = chip.dataset.msg;
+        if (msg) handleCloserChat(msg);
+      });
     });
 
     // Hash change routing

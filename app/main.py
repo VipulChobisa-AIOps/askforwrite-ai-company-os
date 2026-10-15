@@ -18,6 +18,7 @@ from app.api.v1.audit_export import router as audit_export_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.customer_portal import router as customer_portal_router
 from app.api.v1.field_force import router as field_force_router
+from app.api.v1.growth_suite import router as growth_suite_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.mobile_bridge import router as mobile_bridge_router
@@ -156,6 +157,7 @@ app.include_router(customer_portal_router)
 app.include_router(audit_export_router)
 app.include_router(legal_router)
 app.include_router(mobile_bridge_router)
+app.include_router(growth_suite_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"

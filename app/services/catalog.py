@@ -285,6 +285,46 @@ CATALOG: dict[str, PackageDefinition] = {
         outreach_credits_monthly=2500,
         tier="enterprise",
     ),
+    "growth_all_in_one": PackageDefinition(
+        key="growth_all_in_one",
+        name="AskforWrite Autonomous AI Growth & Inbound Sales Suite",
+        category="master_bundle",
+        description="All-in-one AI Growth & Revenue Suite: Pixel AI Visual Studio, 4-Site SEO Blog Copilot, Omnichannel Ad Campaigns, and 24/7 Autonomous Inbound Sales Closer.",
+        target_buyer_persona="Solo founders, D2C e-commerce brands, SMB service businesses, and scaling agencies wanting full-funnel automated creative, SEO, and sales closing.",
+        target_pain_point="Juggling expensive design tools, slow content writers, fragmented ad tools, and losing inbound leads on WhatsApp/chat due to slow human response times.",
+        key_features=(
+            "Pixel AI Visual & Creative Studio: automated product visuals, high-converting ad photos, and multi-aspect banners (1:1, 9:16, 16:9)",
+            "4-Site SEO & GEO Blog Copilot: entity-dense topical authority publishing structured for Google SERPs, ChatGPT, and Perplexity",
+            "Omnichannel Marketing Engine: tailored ad copy for Meta Ads, Google Search, LinkedIn, and social media posting schedules",
+            "24/7 Autonomous Inbound Sales Closer: natural conversational closing on WhatsApp & Web Chat with objection handling and instant Razorpay/PayPal checkout",
+            "NIST P-256 Merkle TrustBlock audit trail certifying lead conversions and state transitions",
+        ),
+        deliverables=(
+            "Full access to Pixel AI Creative Studio & prompt composition engine",
+            "Automated 4-site WordPress SEO publishing bridge with Schema.org JSON-LD",
+            "24/7 Inbound Sales Closer webhook endpoints for WhatsApp & Web Chat",
+            "350 qualified lead discovery credits / month with tech-stack profiling",
+            "175 approved outreach & closing dispatch credits / month",
+        ),
+        seo_geo_aio_capabilities=(
+            "Full-funnel Generative Engine Optimization (GEO) structured for citation in SearchGPT, Perplexity, and Claude",
+            "Product & visual entity clustering with Schema.org Product, Article, and Organization JSON-LD",
+            "Conversion-focused conversational sales scripting aligned with search intent",
+        ),
+        price_inr=9999,
+        price_usd=129,
+        currency_default="INR",
+        entitled_capabilities=(
+            "pixel_ai_creative_studio",
+            "seo_content_automation",
+            "marketing_campaign_suite",
+            "inbound_sales_closer",
+            "trust_ledger_audit",
+        ),
+        lead_credits_monthly=350,
+        outreach_credits_monthly=175,
+        tier="growth_all_in_one",
+    ),
 }
 
 

@@ -124,6 +124,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     TIER_LIMITS: dict[str, int] = {
         "enterprise": 2400,
         "pro": 600,
+        "growth_all_in_one": 300,
         "starter": 120,
         "modular_field_ops": 120,
         "modular_marketing": 120,

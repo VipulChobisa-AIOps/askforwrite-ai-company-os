@@ -30,7 +30,7 @@ class TestCatalogService(unittest.TestCase):
 
     def test_catalog_package_integrity(self):
         packages = get_all_packages()
-        self.assertEqual(len(packages), 7)
+        self.assertEqual(len(packages), 8)
 
         expected_keys = {
             "seo_blog_copilot",
@@ -40,6 +40,7 @@ class TestCatalogService(unittest.TestCase):
             "company_os_starter",
             "company_os_pro",
             "company_os_enterprise",
+            "growth_all_in_one",
         }
         actual_keys = {pkg.key for pkg in packages}
         self.assertEqual(actual_keys, expected_keys)

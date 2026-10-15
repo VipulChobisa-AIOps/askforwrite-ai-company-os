@@ -48,6 +48,13 @@ KEYWORDS_MAP: dict[str, tuple[str, ...]] = {
         "cryptographic", "tamper", "verification", "soc2", "hipaa",
         "ecdsa", "fintech", "regulated", "non-repudiation",
     ),
+    "growth_all_in_one": (
+        "pixel ai", "image modification", "photos", "videos", "reels",
+        "instagram", "creatives", "creative studio", "all-in-one", "all in one",
+        "solo founder", "growth suite", "closer", "sales closer", "whatsapp sales",
+        "inbound sales", "inbound closer", "marketing agency", "agency replacement",
+        "full funnel", "growth engine",
+    ),
 }
 
 
@@ -81,6 +88,7 @@ def diagnose_lead_opportunity(
         "marketing_suite": "marketing_suite",
         "field_operations_automation": "field_force",
         "trust_engine": "trust_engine",
+        "growth_all_in_one": "growth_all_in_one",
     }
 
     for pkg_key, keywords in KEYWORDS_MAP.items():
