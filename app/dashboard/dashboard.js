@@ -15,7 +15,7 @@
     set apiBase(value) {
       this._apiBase = value;
     },
-    ownerApiKey: 'eOIoBi4YXOUfl1I0UMLm10SiiapNv9BWyTKAfTCafrD22g_VIFl9p_je4fMI5Wb6',
+    ownerApiKey: localStorage.getItem('afw_api_key') || localStorage.getItem('askforwrite_owner_key') || '',
     refreshInterval: 10000, // 10s auto-refresh
   };
 
@@ -1966,10 +1966,11 @@
 
   function resetSettings() {
     localStorage.removeItem('askforwrite_owner_key');
+    localStorage.removeItem('afw_api_key');
     localStorage.removeItem('askforwrite_api_base');
     localStorage.removeItem('askforwrite_refresh_interval');
 
-    CONFIG.ownerApiKey = 'eOIoBi4YXOUfl1I0UMLm10SiiapNv9BWyTKAfTCafrD22g_VIFl9p_je4fMI5Wb6';
+    CONFIG.ownerApiKey = '';
     CONFIG.apiBase = window.location.origin;
     CONFIG.refreshInterval = 10000;
 

@@ -47,10 +47,11 @@ docker compose -f docker-compose.prod.yml up -d
 | **Checkout UI** | `GET /v1/pay/{session_id}/checkout` | Public |
 | **Direct Checkout** | `GET /v1/pay/checkout` | Public |
 | **Verify Payment** | `POST /v1/pay/{session_id}/verify` | Public |
-| **Autonomous Shifts** | `POST /v1/shifts/run` | Manager |
-| **Shift History** | `GET /v1/shifts/history` | Manager |
+| **Autonomous Shifts** | `POST /v1/scheduler/run-shift` | Manager |
+| **Shift Briefing** | `GET /v1/scheduler/briefing` | Manager |
+| **Shift Status** | `GET /v1/scheduler/status` | Manager |
 | **SEO/GEO Audit** | `POST /v1/growth/audit-domain` | Manager |
-| **Social Campaigns** | `POST /v1/growth/generate-campaign` | Manager |
+| **Growth Full Suite** | `POST /v1/growth/run-full-suite` | Manager |
 | **Capabilities** | `GET /v1/capabilities` | Manager |
 | **Discovery** | `POST /v1/discovery/execute` | Manager |
 | **Research** | `POST /v1/research/execute` | Manager |
