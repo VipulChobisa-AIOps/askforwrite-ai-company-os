@@ -280,7 +280,23 @@ def decide_approval(
             external_action_performed = True
             auto_executed_action = "marketing_campaign_dispatched"
 
-        # 3. Cryptographic TrustBlock sealing for approval decision
+        # 4. Linked Sovereign Payment auto-confirmation & tenant provisioning
+        if (
+            approval.action == "sovereign_payment_verification"
+            and approval.detail
+            and "session_id" in approval.detail
+        ):
+            from app.services.sovereign_pay import confirm_sovereign_payment_by_owner
+
+            confirm_sovereign_payment_by_owner(
+                session_id=approval.detail["session_id"],
+                db=db,
+                decided_by=decided_by,
+            )
+            external_action_performed = True
+            auto_executed_action = "sovereign_payment_provisioned"
+
+        # 5. Cryptographic TrustBlock sealing for approval decision
         try:
             from app.security.trust_chain import seal_task_to_block
             seal_task_to_block(

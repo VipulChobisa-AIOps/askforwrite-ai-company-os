@@ -576,6 +576,85 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertEqual(confirm_data["rail"], "bank_wire_direct")
         self.assertEqual(confirm_data["proof_reference"], wire_ref)
 
+    def test_ceo_dashboard_approval_auto_provisions_sovereign_payment(self):
+        """Test approving sovereign_payment_verification via POST /v1/approvals/{id}/decide auto-provisions workspace."""
+        unique_email = f"ceo-dash-{uuid.uuid4().hex[:8]}@minimalist.co"
+        session = create_sovereign_pay_session(
+            package_key="growth_all_in_one",
+            company_name="Minimalist Skincare Global",
+            customer_email=unique_email,
+            currency="INR",
+            preferred_rail="upi_direct",
+        )
+
+        utr_12_digits = "889900112233"
+        payload = {
+            "rail": "upi_direct",
+            "proof_reference": utr_12_digits,
+        }
+
+        # Step 1: Customer submits payment proof
+        verify_resp = self.client.post(f"/v1/pay/{session.session_id}/verify", json=payload)
+        self.assertEqual(verify_resp.status_code, 200)
+        verify_data = verify_resp.json()
+        self.assertEqual(verify_data["status"], "AWAITING_CONFIRMATION")
+
+        # Step 2: Retrieve pending ApprovalRequest from database
+        approval = self.db.query(ApprovalRequest).filter_by(task_id=f"sovereign_pay_{session.session_id}").first()
+        self.assertIsNotNone(approval)
+        self.assertEqual(approval.status, "PENDING")
+        self.assertEqual(approval.action, "sovereign_payment_verification")
+        self.assertEqual(approval.detail["session_id"], session.session_id)
+
+        # Step 3: CEO / Owner approves request via CEO Dashboard button endpoint (/v1/approvals/{id}/decide)
+        owner_headers = {"X-API-Key": self.owner_key, "X-Correlation-ID": "test-ceo-dash-corr"}
+        decision_payload = {
+            "decision": "APPROVED",
+            "reason": "Verified ₹9,999 credited to ICICI Bank A/C",
+        }
+        decide_resp = self.client.post(
+            f"/v1/approvals/{approval.id}/decide",
+            headers=owner_headers,
+            json=decision_payload,
+        )
+        self.assertEqual(decide_resp.status_code, 200)
+        decide_data = decide_resp.json()
+
+        self.assertEqual(decide_data["status"], "APPROVED")
+        self.assertTrue(decide_data["external_action_performed"])
+        self.assertEqual(decide_data["auto_executed_action"], "sovereign_payment_provisioned")
+
+        # Step 4: Verify NIST P-256 block sealed
+        block = (
+            self.db.query(TrustBlock)
+            .filter_by(action="sovereign_payment_verified_by_owner")
+            .order_by(TrustBlock.index.desc())
+            .first()
+        )
+        self.assertIsNotNone(block)
+        self.assertEqual(block.capability_name, "afw_sovereign_pay")
+        self.assertEqual(block.sealed_by, "OWNER-HITL:owner")
+
+        # Step 5: Verify multi-tenant Organization, User, and Invoice auto-provisioned
+        user = self.db.query(UserRecord).filter_by(email=unique_email).first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.role, "admin")
+        self.assertTrue(user.is_active)
+
+        org = self.db.query(OrganizationRecord).filter_by(id=user.org_id).first()
+        self.assertIsNotNone(org)
+        self.assertEqual(org.tier, "growth_all_in_one")
+
+        invoice = self.db.query(InvoiceRecord).filter_by(org_id=org.id).first()
+        self.assertIsNotNone(invoice)
+        self.assertEqual(invoice.status, "paid")
+        self.assertEqual(invoice.currency, "INR")
+
+        # Step 6: Verify session status updated to COMPLETED
+        updated_session = get_sovereign_pay_session(session.session_id)
+        self.assertEqual(updated_session.status, "COMPLETED")
+        self.assertEqual(updated_session.verification_proof, utr_12_digits)
+
     def test_verify_sovereign_payment_web3_usdc(self):
         """Test verifying Web3 0x64 hex hash seals TrustBlock and provisions in USD."""
         unique_email = f"web3-{uuid.uuid4().hex[:8]}@prozo.com"

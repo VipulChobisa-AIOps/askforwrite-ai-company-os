@@ -563,6 +563,7 @@ def list_approval_requests(
 
 
 @app.post("/v1/approvals/{approval_id}/decision")
+@app.post("/v1/approvals/{approval_id}/decide")
 def make_approval_decision(
     approval_id: str,
     payload: ApprovalDecisionPayload,
