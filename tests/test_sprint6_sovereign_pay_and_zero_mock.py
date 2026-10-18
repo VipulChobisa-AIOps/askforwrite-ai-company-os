@@ -406,7 +406,8 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
 
         # Rail 3: Bank wire invoice
         self.assertIn("bank_wire_invoice", data)
-        self.assertEqual(data["bank_wire_invoice"]["beneficiary"]["bank_name"], "HDFC Bank Ltd")
+        expected_bank = os.getenv("AFW_BANK_NAME", "HDFC Bank Ltd")
+        self.assertEqual(data["bank_wire_invoice"]["beneficiary"]["bank_name"], expected_bank)
         self.assertIn("digital_seal_hash", data["bank_wire_invoice"])
 
         # Verify session is retrievable
