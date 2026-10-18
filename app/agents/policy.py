@@ -11,6 +11,7 @@ APPROVAL_REQUIRED = frozenset({
     "proposal_delivery",
     "live_publishing",
     "external_messaging",
+    "sovereign_payment_verification",
 })
 
 

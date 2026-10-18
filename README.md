@@ -131,7 +131,8 @@ All protected endpoints require `X-API-Key` (Owner or Manager key). Requests sup
 | **Sovereign Pay** | `POST /v1/pay/create-session` | Public | Create multi-rail sovereign checkout session (UPI, Web3, Wire) |
 | | `GET /v1/pay/{session_id}/checkout` | Public | Render responsive branded HTML checkout interface |
 | | `GET /v1/pay/checkout` | Public | Direct query-param checkout link (`?package={}&company={}`) |
-| | `POST /v1/pay/{session_id}/verify` | Public | Verify payment proof, seal NIST P-256 block, auto-provision tenant |
+| | `POST /v1/pay/{session_id}/verify` | Public | Submit settlement proof (Instant for Web3 USDC; gates UPI & Wire into Owner HITL queue) |
+| | `POST /v1/pay/{session_id}/confirm-owner` | Owner | 1-Click Founder confirmation to seal NIST P-256 block, generate invoice, and provision tenant |
 | | `GET /v1/pay/{session_id}/status` | Public | Poll session status and cryptographic receipt hash |
 | **Scheduler & Shifts** | `POST /v1/scheduler/run-shift` | Manager | Trigger autonomous SDR shift (`lead_generation`, `full_daily_cycle`) |
 | | `GET /v1/scheduler/briefing` | Manager | Retrieve operational briefing and shift metrics |

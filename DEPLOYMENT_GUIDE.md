@@ -139,4 +139,6 @@ Before switching `APP_ENV=production`:
 - [ ] Set `OUTREACH_DISPATCH_PROVIDER=smtp` and supply SMTP credentials.
 - [ ] Verify health status endpoint: `GET /health` returns `{"status": "healthy", "database": "connected"}`.
 - [ ] Verify capability registry: `GET /v1/capabilities`.
+- [ ] Configure AFW DirectPay sovereign settlement credentials (`AFW_MERCHANT_UPI_VPA`, `AFW_BANK_ACCOUNT_NUMBER`, `AFW_BANK_IFSC`, `AFW_MERCHANT_EVM_WALLET`, `AFW_MERCHANT_SOL_WALLET`).
+- [ ] Verify Owner Settlement Confirmation flow: `POST /v1/pay/{session_id}/confirm-owner` with `X-API-Key: <OWNER_API_KEY>`.
 

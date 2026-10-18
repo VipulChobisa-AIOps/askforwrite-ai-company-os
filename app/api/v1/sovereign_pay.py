@@ -21,8 +21,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.security.auth import APIPrincipal, require_owner
 from app.services.catalog import CATALOG, get_package
 from app.services.sovereign_pay import (
+    confirm_sovereign_payment_by_owner,
     create_sovereign_pay_session,
     get_sovereign_pay_session,
     verify_sovereign_payment,
@@ -104,6 +106,23 @@ def verify_payment_endpoint(
             rail=payload.rail,
             proof_reference=payload.proof_reference,
             db=db,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+
+@router.post("/{session_id}/confirm-owner")
+def confirm_payment_owner_endpoint(
+    session_id: str,
+    principal: APIPrincipal = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Owner Human-in-the-Loop confirmation to seal NIST P-256 block, invoice, and auto-provision workspace."""
+    try:
+        return confirm_sovereign_payment_by_owner(
+            session_id=session_id,
+            db=db,
+            decided_by=principal.subject or "owner",
         )
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err

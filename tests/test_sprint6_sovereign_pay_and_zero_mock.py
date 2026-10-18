@@ -21,6 +21,7 @@ from app.agents.smb_search_source import (
 )
 from app.db.database import Base, SessionLocal, engine, get_db
 from app.db.models import (
+    ApprovalRequest,
     InvoiceRecord,
     OrganizationRecord,
     TrustBlock,
@@ -444,8 +445,8 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertIn("text/html", resp.headers["content-type"])
         self.assertIn("Minimalist Skincare", resp.text)
 
-    def test_verify_sovereign_payment_upi_seals_trustblock_and_provisions(self):
-        """Test verifying 12-digit UPI UTR seals TrustBlock and auto-provisions Organization, User, and Invoice."""
+    def test_verify_sovereign_payment_upi_gated_and_owner_confirmed(self):
+        """Test UPI verification enters AWAITING_OWNER_CONFIRMATION, creates ApprovalRequest, and requires Owner confirmation."""
         unique_email = f"billing-{uuid.uuid4().hex[:8]}@kaybeeexports.com"
         session = create_sovereign_pay_session(
             package_key="growth_all_in_one",
@@ -460,26 +461,57 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
             "rail": "upi_direct",
             "proof_reference": utr_12_digits,
         }
+
+        # Step 1: Customer submits payment proof
         resp = self.client.post(f"/v1/pay/{session.session_id}/verify", json=payload)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
 
-        self.assertEqual(data["status"], "VERIFIED")
+        self.assertEqual(data["status"], "AWAITING_CONFIRMATION")
+        self.assertEqual(data["approval_status"], "PENDING_OWNER_CONFIRMATION")
         self.assertEqual(data["rail"], "upi_direct")
         self.assertEqual(data["proof_reference"], utr_12_digits)
+        self.assertIn("Awaiting founder/owner verification", data["message"])
+
+        # Session state transitioned to AWAITING_OWNER_CONFIRMATION
+        session_after_verify = get_sovereign_pay_session(session.session_id)
+        self.assertEqual(session_after_verify.status, "AWAITING_OWNER_CONFIRMATION")
+        self.assertEqual(session_after_verify.verification_proof, utr_12_digits)
+
+        # Durable ApprovalRequest created in database
+        approval = self.db.query(ApprovalRequest).filter_by(task_id=f"sovereign_pay_{session.session_id}").first()
+        self.assertIsNotNone(approval)
+        self.assertEqual(approval.status, "PENDING")
+        self.assertEqual(approval.action, "sovereign_payment_verification")
+        self.assertEqual(approval.detail["rail"], "upi_direct")
+        self.assertEqual(approval.detail["proof_reference"], utr_12_digits)
+
+        # Step 2: Non-owner (Manager) cannot confirm settlement (403 Forbidden)
+        manager_headers = {"X-API-Key": self.manager_key, "X-Correlation-ID": "test-mgr-corr"}
+        forbidden_resp = self.client.post(f"/v1/pay/{session.session_id}/confirm-owner", headers=manager_headers)
+        self.assertEqual(forbidden_resp.status_code, 403)
+
+        # Step 3: Owner confirms settlement
+        owner_headers = {"X-API-Key": self.owner_key, "X-Correlation-ID": "test-owner-corr"}
+        confirm_resp = self.client.post(f"/v1/pay/{session.session_id}/confirm-owner", headers=owner_headers)
+        self.assertEqual(confirm_resp.status_code, 200)
+        confirm_data = confirm_resp.json()
+
+        self.assertEqual(confirm_data["status"], "CONFIRMED_AND_PROVISIONED")
+        self.assertEqual(confirm_data["rail"], "upi_direct")
+        self.assertEqual(confirm_data["proof_reference"], utr_12_digits)
 
         # 1. TrustBlock sealed
-        self.assertIn("trust_block", data)
-        block_idx = data["trust_block"]["index"]
+        self.assertIn("trust_block", confirm_data)
+        block_idx = confirm_data["trust_block"]["index"]
         block = self.db.query(TrustBlock).filter_by(index=block_idx).first()
         self.assertIsNotNone(block)
         self.assertEqual(block.capability_name, "afw_sovereign_pay")
-        self.assertEqual(block.action, "sovereign_payment_verified")
-        self.assertEqual(block.sealed_by, "AFW-SOVEREIGN-PAY-ENGINE")
+        self.assertEqual(block.action, "sovereign_payment_verified_by_owner")
         self.assertTrue(len(block.signature) > 20)
 
         # 2. Multi-tenant Auto-Provisioning
-        prov = data["provisioning"]
+        prov = confirm_data["provisioning"]
         self.assertEqual(prov["status"], "provisioned")
         org_id = prov["org_id"]
         user_id = prov["user_id"]
@@ -501,10 +533,48 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertEqual(invoice.amount, 999900)  # in paise
         self.assertEqual(invoice.currency, "INR")
 
-        # Session state updated
+        # 3. ApprovalRequest updated to APPROVED
+        self.db.refresh(approval)
+        self.assertEqual(approval.status, "APPROVED")
+        self.assertEqual(approval.decided_by, "owner")
+
+        # 4. Session state updated to COMPLETED
         updated_session = get_sovereign_pay_session(session.session_id)
         self.assertEqual(updated_session.status, "COMPLETED")
         self.assertEqual(updated_session.verification_proof, utr_12_digits)
+
+    def test_verify_sovereign_payment_bank_wire_gated_and_owner_confirmed(self):
+        """Test Bank Wire verification enters AWAITING_OWNER_CONFIRMATION and completes upon Owner confirmation."""
+        unique_email = f"wire-{uuid.uuid4().hex[:8]}@jainirrigation.com"
+        session = create_sovereign_pay_session(
+            package_key="field_force",
+            company_name="Jain Irrigation Systems",
+            customer_email=unique_email,
+            currency="INR",
+            preferred_rail="bank_wire_direct",
+        )
+
+        wire_ref = "CMS-NEFT-2026-998811"
+        payload = {
+            "rail": "bank_wire_direct",
+            "proof_reference": wire_ref,
+        }
+
+        # Step 1: Customer submits bank wire reference
+        resp = self.client.post(f"/v1/pay/{session.session_id}/verify", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["status"], "AWAITING_CONFIRMATION")
+        self.assertEqual(data["rail"], "bank_wire_direct")
+
+        # Step 2: Owner confirms
+        owner_headers = {"X-API-Key": self.owner_key, "X-Correlation-ID": "test-owner-wire-corr"}
+        confirm_resp = self.client.post(f"/v1/pay/{session.session_id}/confirm-owner", headers=owner_headers)
+        self.assertEqual(confirm_resp.status_code, 200)
+        confirm_data = confirm_resp.json()
+        self.assertEqual(confirm_data["status"], "CONFIRMED_AND_PROVISIONED")
+        self.assertEqual(confirm_data["rail"], "bank_wire_direct")
+        self.assertEqual(confirm_data["proof_reference"], wire_ref)
 
     def test_verify_sovereign_payment_web3_usdc(self):
         """Test verifying Web3 0x64 hex hash seals TrustBlock and provisions in USD."""

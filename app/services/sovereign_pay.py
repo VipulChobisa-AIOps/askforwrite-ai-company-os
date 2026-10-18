@@ -12,6 +12,7 @@ Features NIST P-256 TrustBlock sealing and automated instant multi-tenant provis
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -25,8 +26,10 @@ from urllib.parse import quote_plus
 import httpx
 from sqlalchemy.orm import Session
 
+from app.db.models import ApprovalRequest
 from app.security.trust_chain import seal_task_to_block
 from app.services.catalog import CATALOG, get_package
+from app.services.email_dispatcher import get_email_dispatcher
 from app.services.payment import PaymentProvider, WebhookEvent
 from app.services.provisioning import auto_provision_tenant_on_payment
 
@@ -611,7 +614,12 @@ def verify_sovereign_payment(
     proof_reference: str,
     db: Session,
 ) -> dict[str, Any]:
-    """Validate payment proof, seal NIST P-256 TrustBlock, and auto-provision tenant workspace."""
+    """Validate payment proof reference.
+
+    For Web3 USDC: Validates on-chain transaction/hash, autonomously seals NIST P-256 block, and provisions workspace.
+    For UPI & Bank Wire: Transitions session to AWAITING_OWNER_CONFIRMATION, creates durable ApprovalRequest,
+    and alerts founder via email with 1-click confirmation guidance to prevent fraudulent self-confirmations.
+    """
     session = get_sovereign_pay_session(session_id)
     if not session:
         raise ValueError(f"Sovereign payment session '{session_id}' not found")
@@ -644,7 +652,116 @@ def verify_sovereign_payment(
             )
         verification_mode = "BANK_WIRE_REFERENCE_VALIDATED"
 
-    # 2. Seal cryptographic ECDSA NIST P-256 TrustBlock
+    # 2. Fraud-Proof Human-in-the-Loop Gating for UPI & Bank Wire
+    if clean_rail in ("upi_direct", "bank_wire_direct"):
+        session.status = "AWAITING_OWNER_CONFIRMATION"
+        session.verification_proof = clean_proof
+        session.verified_rail = clean_rail
+
+        # Create or update durable ApprovalRequest record
+        approval_idempotency_key = f"sovereign_pay_approval_{session.session_id}_{clean_rail}"
+        detail_payload = {
+            "session_id": session.session_id,
+            "customer_email": session.customer_email,
+            "company_name": session.company_name,
+            "package_key": session.package_key,
+            "package_name": session.package_name,
+            "amount": session.amount,
+            "currency": session.currency,
+            "rail": clean_rail,
+            "proof_reference": clean_proof,
+            "verification_mode": verification_mode,
+            "submitted_at": datetime.now(UTC).isoformat(),
+        }
+        req_hash = hashlib.sha256(
+            json.dumps(detail_payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+        existing_approval = (
+            db.query(ApprovalRequest)
+            .filter_by(idempotency_key=approval_idempotency_key)
+            .first()
+        )
+        if existing_approval:
+            existing_approval.detail = detail_payload
+            existing_approval.request_hash = req_hash
+            existing_approval.status = "PENDING"
+        else:
+            approval = ApprovalRequest(
+                id=str(uuid.uuid4()),
+                task_id=f"sovereign_pay_{session.session_id}",
+                lead_id=None,
+                proposal_id=None,
+                action="sovereign_payment_verification",
+                detail=detail_payload,
+                idempotency_key=approval_idempotency_key,
+                request_hash=req_hash,
+                status="PENDING",
+                requested_by="customer_checkout",
+                created_at=datetime.now(UTC),
+            )
+            db.add(approval)
+        db.commit()
+
+        # Send immediate email alert to owner
+        owner_email = os.getenv("AFW_OWNER_NOTIFICATION_EMAIL", "info@askforwrite.in")
+        bank_account = os.getenv("AFW_BANK_ACCOUNT_NUMBER", "694001501126")
+        upi_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
+        email_subject = (
+            f"[ACTION REQUIRED] AFW DirectPay: Verify {clean_rail.upper()} Payment for "
+            f"{session.company_name} ({session.currency} {session.amount:,.2f})"
+        )
+        email_body = (
+            f"AFW DirectPay: Fraud-Proof Human-in-the-Loop Settlement Gating\n\n"
+            f"A customer has submitted a manual settlement reference on '{clean_rail}'.\n\n"
+            f"Transaction Details:\n"
+            f"• Company: {session.company_name}\n"
+            f"• Customer Email: {session.customer_email}\n"
+            f"• Package: {session.package_name} ({session.package_key})\n"
+            f"• Payable Amount: {session.currency} {session.amount:,.2f}\n"
+            f"• Settlement Rail: {clean_rail}\n"
+            f"• Claimed UTR / Bank Reference: {clean_proof}\n"
+            f"• Session ID: {session.session_id}\n\n"
+            f"Please verify settlement in your destination account:\n"
+            f"1. ICICI Bank A/C: {bank_account} (AskforWrite / Vipul Chobisa)\n"
+            f"2. UPI ID: {upi_vpa}\n\n"
+            f"Once payment is credited, approve the settlement via Owner API to seal the ECDSA NIST P-256 block, "
+            f"generate the paid tax invoice, and auto-provision the workspace:\n\n"
+            f"POST /v1/pay/{session.session_id}/confirm-owner\n"
+            f"Header: X-API-Key: <OWNER_API_KEY>\n"
+        )
+
+        sender_email = os.getenv("OUTREACH_FROM_EMAIL") or os.getenv("SMTP_USERNAME") or "info@askforwrite.in"
+        try:
+            dispatcher = get_email_dispatcher()
+            dispatcher.send(
+                recipient_email=owner_email,
+                subject=email_subject,
+                body_text=email_body,
+                from_email=sender_email,
+            )
+            logger.info("Owner payment verification alert dispatched to %s for session %s", owner_email, session.session_id)
+        except Exception as exc:
+            logger.warning("Could not dispatch owner payment verification alert: %s", exc)
+
+        return {
+            "status": "AWAITING_CONFIRMATION",
+            "session_id": session.session_id,
+            "rail": clean_rail,
+            "proof_reference": clean_proof,
+            "verification_mode": verification_mode,
+            "amount": session.amount,
+            "currency": session.currency,
+            "company_name": session.company_name,
+            "customer_email": session.customer_email,
+            "approval_status": "PENDING_OWNER_CONFIRMATION",
+            "message": (
+                f"Payment reference '{clean_proof}' submitted for {clean_rail}. "
+                "Awaiting founder/owner verification to confirm settlement before workspace provisioning."
+            ),
+        }
+
+    # 3. Autonomous Zero-Delay Verification for Web3 USDC
     trust_payload = {
         "session_id": session.session_id,
         "package_key": session.package_key,
@@ -669,7 +786,6 @@ def verify_sovereign_payment(
         commit=True,
     )
 
-    # 3. Auto-provision multi-tenant Organization, User, and Invoice records
     synthetic_event = WebhookEvent(
         id=f"sovereign_{session.session_id}",
         provider=PaymentProvider.AFW_DIRECTPAY,
@@ -691,7 +807,6 @@ def verify_sovereign_payment(
 
     provisioning_result = auto_provision_tenant_on_payment(db=db, event=synthetic_event)
 
-    # 4. Update session state
     session.status = "COMPLETED"
     session.verification_proof = clean_proof
     session.verified_rail = clean_rail
@@ -719,5 +834,132 @@ def verify_sovereign_payment(
         "message": (
             f"Sovereign payment verified on rail '{clean_rail}' with 0% gateway commission. "
             "Multi-tenant workspace, admin account, and paid invoice successfully provisioned."
+        ),
+    }
+
+
+def confirm_sovereign_payment_by_owner(
+    session_id: str,
+    db: Session,
+    decided_by: str = "owner",
+) -> dict[str, Any]:
+    """Owner Human-in-the-Loop (HITL) settlement confirmation for manual UPI / Wire transfers.
+
+    1. Validates session is in AWAITING_OWNER_CONFIRMATION status.
+    2. Seals cryptographic ECDSA NIST P-256 block into Merkle chain.
+    3. Auto-provisions multi-tenant Organization, User, and Invoice records.
+    4. Updates durable ApprovalRequest record to APPROVED.
+    5. Dispatches customer welcome onboarding email.
+    6. Updates session status to COMPLETED.
+    """
+    session = get_sovereign_pay_session(session_id)
+    if not session:
+        raise ValueError(f"Sovereign payment session '{session_id}' not found")
+
+    if session.status == "COMPLETED":
+        return {
+            "status": "ALREADY_COMPLETED",
+            "session_id": session.session_id,
+            "rail": session.verified_rail,
+            "proof_reference": session.verification_proof,
+            "message": "Sovereign payment session has already been confirmed and provisioned.",
+        }
+
+    if session.status != "AWAITING_OWNER_CONFIRMATION":
+        raise ValueError(
+            f"Cannot confirm session '{session_id}' in status '{session.status}'. "
+            "Session must be in 'AWAITING_OWNER_CONFIRMATION' with submitted payment proof."
+        )
+
+    # 1. Seal cryptographic ECDSA NIST P-256 TrustBlock
+    trust_payload = {
+        "session_id": session.session_id,
+        "package_key": session.package_key,
+        "company_name": session.company_name,
+        "customer_email": session.customer_email,
+        "currency": session.currency,
+        "amount": session.amount,
+        "rail": session.verified_rail,
+        "proof_reference": session.verification_proof,
+        "verification_mode": "OWNER_HITL_VERIFIED",
+        "decided_by": decided_by,
+        "zero_commission_saved": "100%",
+        "verified_at": datetime.now(UTC).isoformat(),
+    }
+
+    trust_block = seal_task_to_block(
+        db=db,
+        task_id=f"sovereign_pay_{session.session_id}",
+        capability_name="afw_sovereign_pay",
+        action="sovereign_payment_verified_by_owner",
+        payload=trust_payload,
+        sealed_by=f"OWNER-HITL:{decided_by}",
+        commit=True,
+    )
+
+    # 2. Auto-provision multi-tenant Organization, User, and Invoice records
+    synthetic_event = WebhookEvent(
+        id=f"sovereign_{session.session_id}",
+        provider=PaymentProvider.AFW_DIRECTPAY,
+        event_type="sovereign.payment.verified",
+        raw_event_type="sovereign.payment.verified",
+        resource_id=session.verification_proof or session.session_id,
+        resource_type="payment",
+        data={
+            "email": session.customer_email,
+            "company_name": session.company_name,
+            "package_key": session.package_key,
+            "amount": session.amount,
+            "currency": session.currency,
+            "customer_name": session.customer_name or session.company_name,
+            "rail": session.verified_rail,
+            "proof_reference": session.verification_proof,
+        },
+    )
+
+    provisioning_result = auto_provision_tenant_on_payment(db=db, event=synthetic_event)
+
+    # 3. Update ApprovalRequest record
+    approval = (
+        db.query(ApprovalRequest)
+        .filter_by(task_id=f"sovereign_pay_{session.session_id}")
+        .first()
+    )
+    if approval:
+        approval.status = "APPROVED"
+        approval.decided_by = decided_by
+        approval.decided_at = datetime.now(UTC)
+        approval.decision_note = (
+            f"Settlement confirmed by owner on rail '{session.verified_rail}' "
+            f"(proof: {session.verification_proof})"
+        )
+        db.commit()
+
+    # 4. Update session state
+    session.status = "COMPLETED"
+    session.trust_block_hash = trust_block.block_hash
+    session.trust_block_index = trust_block.index
+    session.verified_at = datetime.now(UTC).isoformat()
+
+    return {
+        "status": "CONFIRMED_AND_PROVISIONED",
+        "session_id": session.session_id,
+        "rail": session.verified_rail,
+        "proof_reference": session.verification_proof,
+        "verification_mode": "OWNER_HITL_VERIFIED",
+        "amount": session.amount,
+        "currency": session.currency,
+        "company_name": session.company_name,
+        "customer_email": session.customer_email,
+        "trust_block": {
+            "index": trust_block.index,
+            "block_hash": trust_block.block_hash,
+            "signature": trust_block.signature,
+            "sealed_by": trust_block.sealed_by,
+        },
+        "provisioning": provisioning_result,
+        "message": (
+            f"Sovereign payment for {session.company_name} confirmed by owner on rail '{session.verified_rail}'. "
+            "ECDSA NIST P-256 block sealed, invoice generated, and multi-tenant workspace provisioned."
         ),
     }
