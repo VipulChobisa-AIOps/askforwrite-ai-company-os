@@ -705,7 +705,7 @@ def verify_sovereign_payment(
 
         # Send immediate email alert to owner
         owner_email = os.getenv("AFW_OWNER_NOTIFICATION_EMAIL", "info@askforwrite.in")
-        bank_account = os.getenv("AFW_BANK_ACCOUNT_NUMBER", "694001501126")
+        bank_account = os.getenv("AFW_BANK_ACCOUNT_NUMBER", "6940XXXXXX26")
         upi_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
         email_subject = (
             f"[ACTION REQUIRED] AFW DirectPay: Verify {clean_rail.upper()} Payment for "
