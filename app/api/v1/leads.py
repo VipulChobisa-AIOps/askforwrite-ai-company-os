@@ -17,21 +17,24 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.agents.discovery import normalize_domain
+from app.agents.smb_search_source import discover_smb_leads
 from app.agents.sources import (
     LiveEnrichmentLeadSource,
     OfflineSignalProvider,
     fetch_and_enrich_website,
 )
 from app.db.database import get_db
-from app.db.models import AuditLog, LeadRecordRow, OrganizationRecord
+from app.db.models import AuditLog, LeadRecordRow, OrganizationRecord, TaskRecord
 from app.schemas.lead import (
     LeadDiscoverRequest,
     LeadEnrichRequest,
     LeadListResponse,
     LeadResponse,
     LeadUpdateRequest,
+    SmbLeadDiscoverRequest,
 )
 from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager
+from app.security.trust_chain import seal_task_to_block
 from app.services.discovery import IdempotencyConflict, execute_discovery
 
 logger = logging.getLogger(__name__)
@@ -61,7 +64,6 @@ def discover_leads(
 
     provider = LiveEnrichmentLeadSource() if payload.live_source else OfflineSignalProvider()
 
-
     try:
         return execute_discovery(
             db=db,
@@ -86,6 +88,163 @@ def discover_leads(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=error_msg,
         ) from exc
+
+
+@router.post("/discover-smb", status_code=status.HTTP_200_OK)
+def discover_smb_leads_endpoint(
+    payload: SmbLeadDiscoverRequest,
+    x_correlation_id: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Execute high-converting SMB lead discovery across the 8 catalog verticals.
+
+    Persists discovered SMB leads, diagnoses their pain points, recommends the exact catalog SKU,
+    logs an AuditLog, and seals a TrustBlock.
+    """
+    target_org_id = payload.org_id or principal.org_id
+    if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
+        enforce_tenant_access(principal, payload.org_id)
+
+    correlation_id = x_correlation_id or str(uuid.uuid4())
+    if len(correlation_id) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="X-Correlation-ID is too long",
+        )
+
+    task_id = str(uuid.uuid4())
+    discovered_raw = discover_smb_leads(
+        vertical=payload.vertical,
+        region=payload.region,
+        limit=payload.limit,
+    )
+
+    persisted_leads: list[dict[str, object]] = []
+    for item in discovered_raw:
+        domain = item.get("domain") or normalize_domain(item.get("website", ""))
+        existing = None
+        if target_org_id and domain:
+            existing = (
+                db.query(LeadRecordRow)
+                .filter(
+                    LeadRecordRow.org_id == target_org_id,
+                    LeadRecordRow.domain == domain,
+                )
+                .first()
+            )
+        elif domain:
+            existing = (
+                db.query(LeadRecordRow)
+                .filter(
+                    LeadRecordRow.domain == domain,
+                )
+                .first()
+            )
+
+        if existing:
+            existing.observed_signals = item.get("observed_signals", [])
+            existing.product_match = item.get("recommended_package")
+            existing.fit_score = item.get("fit_score", 0.90)
+            existing.confidence = item.get("confidence", 0.90)
+            existing.last_checked = datetime.now(UTC)
+            db.add(existing)
+            lead_record_dict = {
+                **item,
+                "lead_id": existing.id,
+                "is_existing": True,
+            }
+            persisted_leads.append(lead_record_dict)
+        else:
+            lead_id = str(uuid.uuid4())
+            new_lead = LeadRecordRow(
+                id=lead_id,
+                org_id=target_org_id,
+                domain=domain,
+                task_id=task_id,
+                company=item.get("company", "Candidate SMB"),
+                website=item.get("website", f"https://{domain}"),
+                industry=item.get("industry", "SMB"),
+                geography=item.get("geography", payload.region),
+                observed_signals=item.get("observed_signals", []),
+                sources=[{"source": s} for s in item.get("sources", ["curated_smb_regional_directory"])],
+                product_match=item.get("recommended_package"),
+                fit_score=item.get("fit_score", 0.90),
+                confidence=item.get("confidence", 0.90),
+                public_contact_channel=item.get("public_contact_channel"),
+                recommended_next_step="trojan_horse_preview",
+                do_not_contact=False,
+                status="DISCOVERED",
+                last_checked=datetime.now(UTC),
+            )
+            db.add(new_lead)
+            lead_record_dict = {
+                **item,
+                "lead_id": lead_id,
+                "is_existing": False,
+            }
+            persisted_leads.append(lead_record_dict)
+
+    task_record = TaskRecord(
+        id=task_id,
+        correlation_id=correlation_id,
+        objective=f"SMB Lead Discovery: {payload.vertical} in {payload.region}",
+        status="COMPLETED",
+        result={
+            "vertical": payload.vertical,
+            "region": payload.region,
+            "leads_count": len(persisted_leads),
+        },
+    )
+    db.add(task_record)
+
+    audit_log = AuditLog(
+        task_id=task_id,
+        correlation_id=correlation_id,
+        agent_id=principal.subject,
+        capability_name="smb_lead_discovery",
+        action="discover_smb",
+        input_payload={
+            "vertical": payload.vertical,
+            "region": payload.region,
+            "limit": payload.limit,
+            "org_id": target_org_id,
+        },
+        output_payload={
+            "leads_count": len(persisted_leads),
+            "lead_ids": [l["lead_id"] for l in persisted_leads],
+            "vertical": payload.vertical,
+        },
+        status="COMPLETED",
+    )
+    db.add(audit_log)
+    db.flush()
+
+    block = seal_task_to_block(
+        db=db,
+        task_id=task_id,
+        capability_name="smb_lead_discovery",
+        action="discover_smb",
+        payload={
+            "vertical": payload.vertical,
+            "region": payload.region,
+            "leads_count": len(persisted_leads),
+            "correlation_id": correlation_id,
+        },
+        sealed_by=principal.subject or "smb_search_source",
+        commit=True,
+    )
+
+    return {
+        "status": "COMPLETED",
+        "task_id": task_id,
+        "correlation_id": correlation_id,
+        "vertical": payload.vertical,
+        "region": payload.region,
+        "leads_count": len(persisted_leads),
+        "leads": persisted_leads,
+        "block_hash": block.block_hash,
+    }
 
 
 @router.get("", response_model=LeadListResponse)

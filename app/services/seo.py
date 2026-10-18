@@ -47,8 +47,12 @@ def execute_seo_draft(
     )
     db.add(task)
 
-    # Simulate drafting content
-    content_draft = f"Draft content for {target_network} targeting keywords: {', '.join(keywords)}..."
+    # Draft content using LLM with deterministic fallback
+    from app.agents.llm_client import generate
+
+    prompt = f"Write an authoritative SEO article draft for network '{target_network}' targeting keywords: {', '.join(keywords)}."
+    fallback = f"Draft content for {target_network} targeting keywords: {', '.join(keywords)}..."
+    content_draft = generate(prompt, fallback_text=fallback)
     
     draft = SeoDraftRecord(
         task_id=task_id,

@@ -13,8 +13,10 @@ PRODUCT_KEYWORDS = {
         "field", "supervisor", "attendance", "gps", "tracking",
         "geofence", "workforce", "sales rep",
     ),
-    "warehouse_automation": ("warehouse", "inventory", "stock"),
+    "warehouse_automation": ("warehouse", "inventory", "stock", "stocksense"),
     "marketing_suite": ("marketing", "content", "seo", "campaign"),
+    "mango_quality_analytics": ("mango", "produce", "fruit", "harvest", "ripeness", "packhouse", "agritech", "cold-chain"),
+    "bike_rebalance_analytics": ("bike", "fleet", "micro-mobility", "rebalance", "dock", "station churn", "transit"),
 }
 
 

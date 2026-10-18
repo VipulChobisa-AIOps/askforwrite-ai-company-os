@@ -52,11 +52,30 @@ def execute_marketing_campaign(
     )
     db.add(task)
 
-    # Simulate campaign generation
+    # Generate ad copy via LLM with deterministic fallback
+    from app.agents.llm_client import generate
+
     ad_copy = {
-        "instagram": f"Insta ad for {target_audience}",
-        "facebook": f"FB ad for {target_audience}",
-        "twitter": f"Tweet for {target_audience}",
+        "instagram": generate(
+            prompt=f"Generate an engaging Instagram caption for campaign '{campaign_type}' targeting {target_audience}",
+            system_instruction="You are an expert B2B social media growth copywriter.",
+            fallback_text=f"Insta ad for {target_audience}",
+        ),
+        "facebook": generate(
+            prompt=f"Generate a high-converting Facebook post for campaign '{campaign_type}' targeting {target_audience}",
+            system_instruction="You are an expert B2B social media growth copywriter.",
+            fallback_text=f"FB ad for {target_audience}",
+        ),
+        "twitter": generate(
+            prompt=f"Generate a viral Twitter/X post for campaign '{campaign_type}' targeting {target_audience}",
+            system_instruction="You are an expert B2B social media growth copywriter.",
+            fallback_text=f"Tweet for {target_audience}",
+        ),
+        "linkedin": generate(
+            prompt=f"Generate a professional LinkedIn article excerpt for campaign '{campaign_type}' targeting {target_audience}",
+            system_instruction="You are an expert B2B social media growth copywriter.",
+            fallback_text=f"LinkedIn post for {target_audience}",
+        ),
     }
     
     campaign = MarketingCampaignRecord(

@@ -239,3 +239,8 @@ def verify_chain_integrity(db: Session) -> dict[str, Any]:
         "tip_hash": blocks[-1].block_hash if blocks else None,
         "errors": errors,
     }
+
+
+# Backward-compatible alias
+verify_chain = verify_chain_integrity
+

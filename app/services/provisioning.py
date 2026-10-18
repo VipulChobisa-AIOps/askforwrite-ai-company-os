@@ -49,8 +49,11 @@ def auto_provision_tenant_on_payment(
         "subscription.charged",
         "PAYMENT.CAPTURE.COMPLETED",
         "BILLING.SUBSCRIPTION.ACTIVATED",
+        "sovereign.payment.verified",
+        "sovereign_payment_verified",
     }
-    if event.event_type not in valid_events and event.raw_event_type not in valid_events:
+    raw_ev = getattr(event, "raw_event_type", None) or ""
+    if event.event_type not in valid_events and raw_ev not in valid_events:
         return None
 
     email = None
@@ -60,8 +63,17 @@ def auto_provision_tenant_on_payment(
     amount = 0.0
     currency = "INR"
 
+    # Sovereign Pay / AFW DirectPay extraction
+    if event.provider.value in ("afw_directpay", "sovereign_pay"):
+        email = event.data.get("email") or event.data.get("customer_email")
+        company_name = event.data.get("company_name") or event.data.get("company")
+        package_key = event.data.get("package_key") or "company_os_starter"
+        amount = float(event.data.get("amount", 0.0))
+        currency = event.data.get("currency", "INR")
+        customer_name = event.data.get("customer_name") or company_name or "Valued Client"
+
     # Razorpay payload extraction
-    if event.provider.value == "razorpay":
+    elif event.provider.value == "razorpay":
         payload_container = event.data.get("payload", {})
         payload_data = payload_container.get("payment", {}).get("entity", {})
         if not payload_data:

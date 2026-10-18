@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 class PackageResponse(BaseModel):
     key: str
     name: str
-    category: Literal["modular_tool", "master_bundle"]
+    category: Literal["modular_tool", "master_bundle", "b2c_one_off"]
     description: str
     target_buyer_persona: str = ""
     target_pain_point: str

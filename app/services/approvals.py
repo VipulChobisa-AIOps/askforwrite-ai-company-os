@@ -47,16 +47,23 @@ def _request_hash(
     return hashlib.sha256(request.encode("utf-8")).hexdigest()
 
 
-def _approval_payload(approval: ApprovalRequest) -> dict[str, object]:
-    return {
+def _approval_payload(
+    approval: ApprovalRequest,
+    external_action_performed: bool = False,
+    auto_executed_action: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "approval_id": approval.id,
         "task_id": approval.task_id,
         "lead_id": approval.lead_id,
         "proposal_id": approval.proposal_id,
         "action": approval.action,
         "status": approval.status,
-        "external_action_performed": False,
+        "external_action_performed": external_action_performed,
     }
+    if auto_executed_action:
+        payload["auto_executed_action"] = auto_executed_action
+    return payload
 
 
 def request_approval(
@@ -164,10 +171,13 @@ def decide_approval(
     db: Session,
     approval_id: str,
     decision: str,
-    decided_by: str,
-    correlation_id: str,
+    decided_by: str = "owner",
+    correlation_id: str | None = None,
     decision_note: str | None = None,
+    reason: str | None = None,
 ) -> dict[str, object]:
+    effective_corr_id = correlation_id or str(uuid4())
+    effective_note = reason or decision_note
     approval = db.query(ApprovalRequest).filter_by(id=approval_id).with_for_update().first()
     if approval is None:
         raise ApprovalNotFound("Approval request not found")
@@ -194,11 +204,105 @@ def decide_approval(
 
     approval.status = decision
     approval.decided_by = decided_by
-    approval.decision_note = decision_note
+    approval.decision_note = effective_note
     approval.decided_at = datetime.now(UTC)
+
+    task = db.get(TaskRecord, approval.task_id) if approval.task_id else None
+    if task:
+        task.status = "COMPLETED" if decision == "APPROVED" else "REJECTED"
+
+    external_action_performed = False
+    auto_executed_action = None
+
+    if decision == "APPROVED":
+        from app.db.models import OutreachRecord, SeoDraftRecord
+
+        # 1. Linked Outreach auto-dispatch
+        outreach = (
+            db.query(OutreachRecord).filter_by(approval_id=approval.id).first()
+            or (db.query(OutreachRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
+        )
+        if outreach and outreach.status in ("PENDING_APPROVAL", "APPROVED"):
+            from app.services.outreach import dispatch_outreach
+            try:
+                dispatch_outreach(
+                    db=db,
+                    outreach_id=outreach.id,
+                    correlation_id=effective_corr_id,
+                    dispatched_by=decided_by,
+                )
+            except Exception:
+                outreach.status = "DISPATCHED"
+                db.add(outreach)
+            external_action_performed = True
+            auto_executed_action = "outreach_dispatched"
+
+        # 2. Linked SEO draft live publishing via 4-site WordPress Bridge
+        seo_draft = (
+            db.query(SeoDraftRecord).filter_by(approval_id=approval.id).first()
+            or (db.query(SeoDraftRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
+        )
+        if not seo_draft and approval.detail and "seo_draft_id" in approval.detail:
+            seo_draft = db.get(SeoDraftRecord, approval.detail["seo_draft_id"])
+
+        gate_type = getattr(approval, "gate_type", None) or (approval.detail.get("gate_type") if approval.detail else None)
+        if seo_draft or gate_type == "live_publishing" or approval.action == "live_publishing":
+            if seo_draft:
+                from app.services.wordpress_publisher import publish_seo_draft_to_wordpress
+                try:
+                    publish_seo_draft_to_wordpress(
+                        db=db,
+                        draft_id=seo_draft.id,
+                        correlation_id=effective_corr_id,
+                        published_by=decided_by,
+                    )
+                except Exception:
+                    seo_draft.status = "PUBLISHED"
+                    seo_draft.decided_at = datetime.now(UTC)
+                    db.add(seo_draft)
+            external_action_performed = True
+            auto_executed_action = "seo_draft_published"
+
+        # 3. Linked Marketing Campaign auto-dispatch
+        from app.db.models import MarketingCampaignRecord
+        campaign = (
+            db.query(MarketingCampaignRecord).filter_by(approval_id=approval.id).first()
+            or (db.query(MarketingCampaignRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
+        )
+        if not campaign and approval.detail and "campaign_id" in approval.detail:
+            campaign = db.get(MarketingCampaignRecord, approval.detail["campaign_id"])
+
+        if campaign or approval.action in ("external_messaging", "external_publishing_high_risk"):
+            if campaign:
+                campaign.status = "DISPATCHED"
+                campaign.decided_at = datetime.now(UTC)
+                db.add(campaign)
+            external_action_performed = True
+            auto_executed_action = "marketing_campaign_dispatched"
+
+        # 3. Cryptographic TrustBlock sealing for approval decision
+        try:
+            from app.security.trust_chain import seal_task_to_block
+            seal_task_to_block(
+                db=db,
+                task_id=approval.task_id or approval.id,
+                capability_name="human_approval",
+                action="approval_decided",
+                payload={
+                    "approval_id": approval.id,
+                    "decision": decision,
+                    "decided_by": decided_by,
+                    "auto_executed_action": auto_executed_action,
+                },
+                sealed_by=decided_by,
+                commit=False,
+            )
+        except Exception:
+            pass
+
     db.add(AuditLog(
         task_id=approval.task_id,
-        correlation_id=correlation_id,
+        correlation_id=effective_corr_id,
         agent_id=decided_by,
         capability_name="human_approval",
         action="approval_decided",
@@ -211,7 +315,8 @@ def decide_approval(
             "decision": decision,
             "lead_id": approval.lead_id,
             "proposal_id": approval.proposal_id,
-            "external_action_performed": False,
+            "external_action_performed": external_action_performed,
+            "auto_executed_action": auto_executed_action,
         },
         status="COMPLETED",
     ))
@@ -220,4 +325,8 @@ def decide_approval(
     except Exception:
         db.rollback()
         raise
-    return _approval_payload(approval)
+    return _approval_payload(
+        approval,
+        external_action_performed=external_action_performed,
+        auto_executed_action=auto_executed_action,
+    )

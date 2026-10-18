@@ -46,6 +46,10 @@ class IntegrationTests(unittest.TestCase):
         db.commit()
         db.close()
 
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.pop(get_db, None)
+
     def test_ask4_ingest_order_success(self):
         resp = self.client.post(
             "/v1/orders/ingest",

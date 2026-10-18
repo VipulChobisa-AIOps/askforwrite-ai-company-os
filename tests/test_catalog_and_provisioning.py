@@ -30,30 +30,40 @@ class TestCatalogService(unittest.TestCase):
 
     def test_catalog_package_integrity(self):
         packages = get_all_packages()
-        self.assertEqual(len(packages), 8)
+        self.assertEqual(len(packages), 14)
 
         expected_keys = {
             "seo_blog_copilot",
             "marketing_suite",
             "field_force",
             "trust_engine",
+            "mango_quality_analytics",
+            "bike_rebalance_analytics",
+            "warehouse_automation",
+            "ask4_academic_order",
+            "pixel_ai_pack",
             "company_os_starter",
             "company_os_pro",
             "company_os_enterprise",
             "growth_all_in_one",
+            "all_access",
         }
         actual_keys = {pkg.key for pkg in packages}
         self.assertEqual(actual_keys, expected_keys)
 
         for pkg in packages:
-            self.assertIn(pkg.category, ("modular_tool", "master_bundle"))
+            self.assertIn(pkg.category, ("modular_tool", "master_bundle", "b2c_one_off"))
             self.assertGreater(pkg.price_inr, 0)
             self.assertGreater(pkg.price_usd, 0)
             self.assertTrue(len(pkg.key_features) > 0)
             self.assertTrue(len(pkg.deliverables) > 0)
             self.assertTrue(len(pkg.entitled_capabilities) > 0)
-            self.assertGreater(pkg.lead_credits_monthly, 0)
-            self.assertGreater(pkg.outreach_credits_monthly, 0)
+            if pkg.category != "b2c_one_off":
+                self.assertGreater(pkg.lead_credits_monthly, 0)
+                self.assertGreater(pkg.outreach_credits_monthly, 0)
+            else:
+                self.assertGreaterEqual(pkg.lead_credits_monthly, 0)
+                self.assertGreaterEqual(pkg.outreach_credits_monthly, 0)
 
     def test_get_package(self):
         pkg = get_package("field_force")

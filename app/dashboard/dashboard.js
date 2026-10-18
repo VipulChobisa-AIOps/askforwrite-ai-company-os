@@ -32,6 +32,10 @@
     fieldVisits: [],
     fieldClaims: [],
     auditLogs: [],
+    watchdogTelemetry: null,
+    watchdogAlerts: [],
+    ceoBriefing: null,
+    inventoryAnalysis: null,
     refreshTimer: null,
     approvalFilter: 'all',
   };
@@ -97,8 +101,20 @@
       growth: 'Autonomous AI Growth Suite',
       mobile: 'Pixel AI Mobile & PWA Command',
       'trust-chain': 'Cryptographic Trust Ledger',
+      quality: 'Produce Quality AI — Computer Vision Ripeness & Grading',
+      mobility: 'Urban Mobility AI — Fleet Demand & Station Rebalancing',
+      inventory: 'Warehouse StockSense AI — ABC-XYZ & Inventory Automation',
     };
     $('#page-title').textContent = titles[pageName] || pageName;
+
+    // Page-specific initialization hooks
+    if (pageName === 'quality') {
+      initQualityPage();
+    } else if (pageName === 'mobility') {
+      initMobilityPage();
+    } else if (pageName === 'inventory') {
+      initInventoryPage();
+    }
 
     // Update URL hash
     if (window.location.hash !== `#${pageName}`) {
@@ -225,6 +241,8 @@
       fetchOutreach(),
       fetchOrganizations(),
       fetchFieldForceData(),
+      fetchWatchdogData(),
+      fetchCeoBriefing(),
     ]);
   }
 
@@ -623,6 +641,841 @@
     }
   }
 
+  // ── Produce Quality AI Controller ────────────────────────
+  let qualityState = {
+    initialized: false,
+    activePreset: 'ripe',
+    uploadedFile: null,
+    uploadedBase64: null,
+  };
+
+  function initQualityPage() {
+    if (qualityState.initialized) return;
+    qualityState.initialized = true;
+
+    // Preset selector buttons
+    $$('.preset-btn[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        $$('.preset-btn[data-preset]').forEach(b => {
+          b.classList.remove('active');
+          b.style.borderColor = 'var(--glass-border)';
+          b.style.background = 'var(--bg-card)';
+        });
+        btn.classList.add('active');
+        btn.style.borderColor = 'var(--cyan)';
+        btn.style.background = 'rgba(6, 182, 212, 0.12)';
+
+        qualityState.activePreset = btn.dataset.preset;
+        qualityState.uploadedFile = null;
+        qualityState.uploadedBase64 = null;
+
+        // Reset dropzone UI
+        const previewWrap = $('#dropzone-preview-wrap');
+        const prompt = $('#dropzone-prompt');
+        const fileInput = $('#quality-file-input');
+        if (previewWrap) previewWrap.style.display = 'none';
+        if (prompt) prompt.style.display = 'block';
+        if (fileInput) fileInput.value = '';
+
+        runQualityInspection();
+      });
+    });
+
+    // Dropzone & File Input
+    const dropzone = $('#quality-dropzone');
+    const fileInput = $('#quality-file-input');
+
+    dropzone?.addEventListener('click', (e) => {
+      if (e.target.id !== 'btn-clear-image') {
+        fileInput?.click();
+      }
+    });
+
+    dropzone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+
+    dropzone?.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+
+    dropzone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleQualityFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput?.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleQualityFileUpload(e.target.files[0]);
+      }
+    });
+
+    $('#btn-clear-image')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      qualityState.uploadedFile = null;
+      qualityState.uploadedBase64 = null;
+      const previewWrap = $('#dropzone-preview-wrap');
+      const prompt = $('#dropzone-prompt');
+      if (previewWrap) previewWrap.style.display = 'none';
+      if (prompt) prompt.style.display = 'block';
+      if (fileInput) fileInput.value = '';
+
+      // Fallback to table ripe
+      const ripeBtn = $('#btn-preset-ripe');
+      if (ripeBtn) ripeBtn.click();
+    });
+
+    $('#btn-run-quality-inspect')?.addEventListener('click', () => {
+      runQualityInspection();
+    });
+
+    $('#btn-submit-quality-uat')?.addEventListener('click', async () => {
+      const rating = parseInt($('#quality-uat-rating')?.value || '4', 10);
+      const groundtruth = $('#quality-uat-groundtruth')?.value || 'RIPE';
+      const notes = ($('#quality-uat-notes')?.value || '').trim();
+      const inspectorId = ($('#quality-inspector-id')?.value || 'inspector-alpha').trim();
+
+      const btn = $('#btn-submit-quality-uat');
+      if (btn) btn.disabled = true;
+
+      try {
+        await api('POST', '/v1/quality/uat', {
+          inspector_id: inspectorId,
+          rating: rating,
+          observed_ripeness: groundtruth,
+          notes: notes,
+        });
+        toast('Inspector UAT survey logged into Trust Registry!', 'success');
+        if ($('#quality-uat-notes')) $('#quality-uat-notes').value = '';
+      } catch (err) {
+        toast(`UAT submission failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    // Run initial inspection for the default Table Ripe preset
+    runQualityInspection();
+  }
+
+  function handleQualityFileUpload(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      toast('Please upload a valid PNG or JPEG image file', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const previewImg = $('#quality-image-preview');
+      const filenameSpan = $('#quality-filename');
+      const previewWrap = $('#dropzone-preview-wrap');
+      const prompt = $('#dropzone-prompt');
+
+      if (previewImg) previewImg.src = e.target.result;
+      if (filenameSpan) filenameSpan.textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+      if (previewWrap) previewWrap.style.display = 'flex';
+      if (prompt) prompt.style.display = 'none';
+
+      // Deactivate presets visually
+      $$('.preset-btn[data-preset]').forEach(b => {
+        b.classList.remove('active');
+        b.style.borderColor = 'var(--glass-border)';
+        b.style.background = 'var(--bg-card)';
+      });
+
+      qualityState.activePreset = null;
+      qualityState.uploadedFile = file;
+      qualityState.uploadedBase64 = e.target.result;
+
+      runQualityInspection();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function runQualityInspection() {
+    const btn = $('#btn-run-quality-inspect');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="margin-right:6px"></span> Analyzing Produce...';
+    }
+
+    try {
+      let res;
+      const inspectorId = ($('#quality-inspector-id')?.value || 'inspector-alpha').trim();
+
+      if (qualityState.uploadedFile) {
+        // Multipart image upload
+        const fd = new FormData();
+        fd.append('file', qualityState.uploadedFile);
+        fd.append('inspector_id', inspectorId);
+
+        const headers = {};
+        if (CONFIG.ownerApiKey) headers['X-API-Key'] = CONFIG.ownerApiKey;
+
+        const response = await fetch(`${CONFIG.apiBase}/v1/quality/inspect-image`, {
+          method: 'POST',
+          headers,
+          body: fd,
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: response.statusText }));
+          throw new Error(err.detail || `HTTP ${response.status}`);
+        }
+        res = await response.json();
+      } else {
+        // Preset inspection
+        const preset = qualityState.activePreset || 'ripe';
+        res = await api('POST', '/v1/quality/inspect', {
+          preset: preset,
+          inspector_id: inspectorId,
+        });
+      }
+
+      // Render Results
+      const classification = res.classification || {};
+      const ensemble = res.model_ensemble || {};
+      const colorimetry = res.colorimetry || {};
+      const texture = res.texture_glcm || {};
+
+      // Ripeness Badge
+      const ripeness = classification.ripeness || 'RIPE';
+      const ripenessEl = $('#quality-ripeness-badge');
+      if (ripenessEl) {
+        ripenessEl.textContent = ripeness;
+        if (ripeness === 'RIPE') {
+          ripenessEl.style.color = 'var(--green)';
+        } else if (ripeness === 'UNRIPE') {
+          ripenessEl.style.color = 'var(--amber)';
+        } else {
+          ripenessEl.style.color = 'var(--red)';
+        }
+      }
+
+      if ($('#quality-grade-badge')) {
+        $('#quality-grade-badge').textContent = classification.commercial_grade || 'Commercial Grade';
+      }
+      if ($('#quality-brix-val')) {
+        $('#quality-brix-val').textContent = `${classification.estimated_sugar_brix ?? 14.5}° Bx`;
+      }
+      if ($('#quality-shelflife-val')) {
+        $('#quality-shelflife-val').textContent = `Est. Shelf-Life: ${classification.estimated_shelf_life_days ?? 5} days`;
+      }
+      if ($('#quality-staging-rec')) {
+        $('#quality-staging-rec').textContent = classification.supply_chain_staging || 'Store in standard temperature-controlled staging.';
+      }
+      if ($('#quality-consensus-ratio')) {
+        $('#quality-consensus-ratio').textContent = `Model Consensus: ${ensemble.consensus_ratio || '4/4 Models Agreed'}`;
+      }
+      if ($('#quality-trust-pill')) {
+        $('#quality-trust-pill').textContent = res.task_id ? `TrustBlock #${res.task_id.substring(0, 8)}` : 'TrustBlock Sealed';
+      }
+
+      // 4-Model Ensemble Bars
+      const models = ensemble.individual_models || {};
+      const updateModelBar = (key, labelId, barId) => {
+        const m = models[key];
+        const labelEl = $(`#${labelId}`);
+        const barEl = $(`#${barId}`);
+        if (m && labelEl && barEl) {
+          const pct = ((m.confidence || 0.9) * 100).toFixed(1);
+          labelEl.textContent = `${m.prediction} (${pct}%)`;
+          barEl.style.width = `${pct}%`;
+          if (m.prediction === 'RIPE') {
+            labelEl.style.color = 'var(--green)';
+            barEl.style.background = 'var(--green)';
+          } else if (m.prediction === 'UNRIPE') {
+            labelEl.style.color = 'var(--amber)';
+            barEl.style.background = 'var(--amber)';
+          } else {
+            labelEl.style.color = 'var(--red)';
+            barEl.style.background = 'var(--red)';
+          }
+        }
+      };
+
+      updateModelBar('svm_rbf', 'label-svm', 'bar-svm');
+      updateModelBar('random_forest', 'label-rf', 'bar-rf');
+      updateModelBar('gaussian_nb', 'label-gnb', 'bar-gnb');
+      updateModelBar('pytorch_cnn', 'label-cnn', 'bar-cnn');
+
+      // Texture & Colorimetry
+      if ($('#val-mean-hue')) $('#val-mean-hue').textContent = `${(colorimetry.mean_hue_angle || 72.5).toFixed(1)}°`;
+      if ($('#val-glcm-homo')) $('#val-glcm-homo').textContent = (texture.homogeneity || 0.842).toFixed(3);
+      if ($('#val-glcm-contrast')) $('#val-glcm-contrast').textContent = (texture.contrast || 12.4).toFixed(1);
+      if ($('#val-glcm-energy')) $('#val-glcm-energy').textContent = (texture.energy || 0.315).toFixed(3);
+      if ($('#val-glcm-corr')) $('#val-glcm-corr').textContent = (texture.correlation || 0.912).toFixed(3);
+      if ($('#val-hist-bin')) $('#val-hist-bin').textContent = `#${colorimetry.dominant_bin_index ?? 146}`;
+
+      toast('Produce computer vision analysis completed & sealed in TrustBlock', 'success');
+    } catch (err) {
+      toast(`Inspection failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; margin-right: 6px;"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+          Run Vision Inspection
+        `;
+      }
+    }
+  }
+
+  // ── Urban Mobility AI Controller ──────────────────────────
+  let mobilityState = {
+    initialized: false,
+    isWeekend: false,
+    debounceTimer: null,
+  };
+
+  function initMobilityPage() {
+    if (mobilityState.initialized) return;
+    mobilityState.initialized = true;
+
+    // Sliders
+    const hourSlider = $('#slider-mobility-hour');
+    const tempSlider = $('#slider-mobility-temp');
+    const humSlider = $('#slider-mobility-hum');
+    const precipSlider = $('#slider-mobility-precip');
+
+    const updateSliderLabels = () => {
+      const h = parseInt(hourSlider?.value || '8', 10);
+      const t = parseInt(tempSlider?.value || '72', 10);
+      const hum = parseInt(humSlider?.value || '60', 10);
+      const p = parseInt(precipSlider?.value || '0', 10);
+
+      const hourLabel = $('#label-mobility-hour');
+      if (hourLabel) {
+        const periodStr = (6 <= h && h <= 11) ? 'Morning Peak' : (16 <= h && h <= 20) ? 'Evening Peak' : 'Off-Peak';
+        hourLabel.textContent = `${String(h).padStart(2, '0')}:00 (${periodStr})`;
+      }
+
+      const tempLabel = $('#label-mobility-temp');
+      if (tempLabel) tempLabel.textContent = `${t}°F`;
+
+      const humLabel = $('#label-mobility-hum');
+      if (humLabel) humLabel.textContent = `${hum}%`;
+
+      const precipLabel = $('#label-mobility-precip');
+      if (precipLabel) {
+        const valInches = (p / 100).toFixed(2);
+        const condition = p === 0 ? 'Dry' : p < 50 ? 'Light Rain' : 'Heavy Rain';
+        precipLabel.textContent = `${valInches}" (${condition})`;
+      }
+    };
+
+    const debouncedRunSim = () => {
+      updateSliderLabels();
+      if (mobilityState.debounceTimer) clearTimeout(mobilityState.debounceTimer);
+      mobilityState.debounceTimer = setTimeout(() => {
+        runMobilitySimulation();
+      }, 250);
+    };
+
+    hourSlider?.addEventListener('input', debouncedRunSim);
+    tempSlider?.addEventListener('input', debouncedRunSim);
+    humSlider?.addEventListener('input', debouncedRunSim);
+    precipSlider?.addEventListener('input', debouncedRunSim);
+
+    // Day Profile Toggle
+    $('#btn-toggle-weekday')?.addEventListener('click', () => {
+      $('#btn-toggle-weekday').classList.add('active');
+      $('#btn-toggle-weekend').classList.remove('active');
+      mobilityState.isWeekend = false;
+      debouncedRunSim();
+    });
+
+    $('#btn-toggle-weekend')?.addEventListener('click', () => {
+      $('#btn-toggle-weekend').classList.add('active');
+      $('#btn-toggle-weekday').classList.remove('active');
+      mobilityState.isWeekend = true;
+      debouncedRunSim();
+    });
+
+    // Dispatch Rebalance Truck
+    $('#btn-dispatch-mobility-truck')?.addEventListener('click', async () => {
+      const h = parseInt($('#slider-mobility-hour')?.value || '8', 10);
+      const btn = $('#btn-dispatch-mobility-truck');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="margin-right:6px"></span> Dispatching Truck...';
+      }
+
+      try {
+        await api('POST', '/v1/mobility/rebalance', {
+          hour_of_day: h,
+          auto_dispatch_field_force: true,
+        });
+        toast('Rebalance dispatch order dispatched to Field Force & sealed in TrustBlock!', 'success');
+        await runMobilitySimulation();
+      } catch (err) {
+        toast(`Dispatch failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; margin-right: 6px;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            Dispatch Rebalance Truck
+          `;
+        }
+      }
+    });
+
+    // Operator UAT Feedback
+    $('#btn-submit-mobility-uat')?.addEventListener('click', async () => {
+      const operatorId = ($('#mobility-uat-operator')?.value || 'fleet-op-01').trim();
+      const rating = parseInt($('#mobility-uat-rating')?.value || '4', 10);
+      const notes = ($('#mobility-uat-notes')?.value || '').trim();
+
+      const btn = $('#btn-submit-mobility-uat');
+      if (btn) btn.disabled = true;
+
+      try {
+        await api('POST', '/v1/mobility/uat', {
+          operator_id: operatorId,
+          dispatch_accuracy_rating: rating,
+          notes: notes,
+        });
+        toast('Fleet Operator UAT survey submitted and registered!', 'success');
+        if ($('#mobility-uat-notes')) $('#mobility-uat-notes').value = '';
+      } catch (err) {
+        toast(`UAT submission failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    // Run initial simulation
+    updateSliderLabels();
+    runMobilitySimulation();
+  }
+
+  async function runMobilitySimulation() {
+    const h = parseInt($('#slider-mobility-hour')?.value || '8', 10);
+    const t = parseFloat($('#slider-mobility-temp')?.value || '72');
+    const hum = parseFloat($('#slider-mobility-hum')?.value || '60');
+    const p = parseFloat($('#slider-mobility-precip')?.value || '0') / 100.0;
+    const isWeekend = mobilityState.isWeekend;
+
+    try {
+      const res = await api('POST', '/v1/mobility/optimize', {
+        hour_of_day: h,
+        temperature_f: t,
+        humidity_pct: hum,
+        precipitation_inches: p,
+        is_weekend: isWeekend,
+      });
+
+      const forecast = res.forecast || {};
+      const rebalance = res.rebalancing || {};
+
+      // Forecast Demand
+      if ($('#mobility-pred-demand')) {
+        $('#mobility-pred-demand').textContent = `${forecast.predicted_hourly_demand || 42} trips/hr`;
+      }
+      if ($('#mobility-period-label')) {
+        $('#mobility-period-label').textContent = forecast.period || 'Circadian Simulated Demand';
+      }
+
+      // Stations Churn Table
+      const tbody = $('#mobility-stations-tbody');
+      if (tbody && rebalance.all_stations) {
+        tbody.innerHTML = rebalance.all_stations.map(st => {
+          let badgeHtml = '';
+          if (st.status === 'DEPLETED') {
+            badgeHtml = '<span class="status-pill rejected" style="background:rgba(239,68,68,0.15);color:var(--red);border:1px solid var(--red-glow)">DEPLETED</span>';
+          } else if (st.status === 'ACCUMULATED') {
+            badgeHtml = '<span class="status-pill" style="background:rgba(6,182,212,0.15);color:var(--cyan);border:1px solid var(--cyan-glow)">ACCUMULATED</span>';
+          } else {
+            badgeHtml = '<span class="status-pill approved" style="background:rgba(16,185,129,0.15);color:var(--green);border:1px solid var(--green-glow)">BALANCED</span>';
+          }
+
+          return `
+            <tr>
+              <td>
+                <div style="font-weight:600">${esc(st.name)}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">Station ID: #${st.id}</div>
+              </td>
+              <td><span style="font-size:0.78rem;color:var(--text-secondary)">${esc(st.zone)}</span></td>
+              <td>${st.capacity}</td>
+              <td><strong>${st.current_bikes}</strong></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <div style="width:50px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+                    <div style="width:${Math.min(100, st.available_pct)}%;height:100%;background:${st.available_pct < 25 ? 'var(--red)' : st.available_pct > 75 ? 'var(--cyan)' : 'var(--green)'}"></div>
+                  </div>
+                  <span style="font-size:0.75rem">${st.available_pct}%</span>
+                </div>
+              </td>
+              <td>${badgeHtml}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Rebalancing Priority Routes
+      const routesList = $('#mobility-routes-list');
+      const routesCount = $('#mobility-routes-count');
+      if (routesList && rebalance.priority_rebalance_routes) {
+        const routes = rebalance.priority_rebalance_routes;
+        if (routesCount) routesCount.textContent = `${routes.length} Route${routes.length === 1 ? '' : 's'} Active`;
+
+        if (routes.length === 0) {
+          routesList.innerHTML = '<div class="empty-state" style="padding:16px"><p>All stations currently within balanced threshold.</p></div>';
+        } else {
+          routesList.innerHTML = routes.map(r => `
+            <div class="route-dispatch-card">
+              <div>
+                <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);margin-bottom:2px">
+                  ${esc(r.from_hub)} <span style="color:var(--cyan);margin:0 4px">➔</span> ${esc(r.to_hub)}
+                </div>
+                <div style="font-size:0.74rem;color:var(--text-muted)">
+                  Distance: ${r.distance_km || 2.4} km • Transfer: <strong style="color:var(--green)">+${r.transfer_quantity} bikes</strong>
+                </div>
+              </div>
+              <span class="badge" style="background:rgba(168,85,247,0.15);color:var(--purple);border:1px solid var(--purple-glow)">Priority #${r.priority}</span>
+            </div>
+          `).join('');
+        }
+      }
+    } catch (err) {
+      // Quiet fail on slider drag if network busy
+      console.warn('Mobility simulation failed:', err.message);
+    }
+  }
+
+  // ── Watchdog & Supervisory Control ──────────────────────
+  async function fetchWatchdogData() {
+    try {
+      const [telemetryRes, alertsRes] = await Promise.allSettled([
+        api('GET', '/v1/watchdog/telemetry'),
+        api('GET', '/v1/watchdog/alerts?status=ACTIVE'),
+      ]);
+
+      if (telemetryRes.status === 'fulfilled') {
+        state.watchdogTelemetry = telemetryRes.value;
+        renderWatchdogTelemetry(telemetryRes.value);
+      }
+      if (alertsRes.status === 'fulfilled') {
+        const alerts = alertsRes.value.alerts || (Array.isArray(alertsRes.value) ? alertsRes.value : []);
+        state.watchdogAlerts = alerts;
+        renderWatchdogAlerts(alerts);
+      }
+    } catch (e) {
+      console.warn('Watchdog fetch:', e.message);
+    }
+  }
+
+  function renderWatchdogTelemetry(telemetry) {
+    if (!telemetry) return;
+    const score = telemetry.health_score ?? 100;
+    const activeAlerts = telemetry.active_alerts_total ?? state.watchdogAlerts.length;
+    const completionRate = telemetry.operational_metrics?.task_completion_rate ?? 1.0;
+    const pendingDepth = telemetry.operational_metrics?.pending_approval_queue_depth ?? 0;
+
+    const scoreEl = $('#watchdog-health-score');
+    if (scoreEl) scoreEl.textContent = score;
+
+    const badgeEl = $('#watchdog-status-badge');
+    if (badgeEl) {
+      badgeEl.textContent = `HEALTH ${score}/100`;
+      badgeEl.className = 'status-pill ' + (score >= 90 ? 'approved' : score >= 70 ? 'pending' : 'rejected');
+    }
+
+    const alertsCountEl = $('#watchdog-alerts-count');
+    if (alertsCountEl) alertsCountEl.textContent = activeAlerts;
+
+    const compRateEl = $('#watchdog-completion-rate');
+    if (compRateEl) compRateEl.textContent = `${Math.round(completionRate * 100)}%`;
+
+    const pendingEl = $('#watchdog-pending-approvals');
+    if (pendingEl) pendingEl.textContent = pendingDepth;
+  }
+
+  function renderWatchdogAlerts(alerts) {
+    const list = $('#watchdog-alerts-list');
+    const fieldList = $('#field-alerts-list');
+
+    const html = (!alerts || !alerts.length)
+      ? '<div class="empty-state"><p>All operational subsystems healthy. No active alerts.</p></div>'
+      : alerts.map(a => {
+          const sev = (a.severity || 'MEDIUM').toUpperCase();
+          const sevColor = sev === 'CRITICAL' ? 'var(--red)' : sev === 'HIGH' ? 'var(--amber)' : sev === 'MEDIUM' ? 'var(--cyan)' : 'var(--purple)';
+          const sevBg = sev === 'CRITICAL' ? 'rgba(239,68,68,0.15)' : sev === 'HIGH' ? 'rgba(245,158,11,0.15)' : sev === 'MEDIUM' ? 'rgba(6,182,212,0.15)' : 'rgba(168,85,247,0.15)';
+
+          return `
+            <div class="approval-item" style="border-left: 3px solid ${sevColor}; padding: 12px 14px; margin-bottom: 8px;">
+              <div class="approval-info" style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <span class="status-pill" style="background: ${sevBg}; color: ${sevColor}; font-size: 0.7rem; font-weight: 700;">${esc(sev)}</span>
+                  <strong style="font-size: 0.85rem;">${esc(a.alert_type)}</strong>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-primary); margin-bottom: 4px;">${esc(a.message || '')}</div>
+                <div class="approval-meta" style="font-size: 0.72rem; color: var(--text-muted);">
+                  ID: ${esc(a.id)} • Triggered: ${formatDate(a.created_at)}
+                </div>
+              </div>
+              <div>
+                <button class="primary-btn btn-resolve-alert" data-alert-id="${esc(a.id)}" style="padding: 5px 12px; font-size: 0.75rem; white-space: nowrap;">
+                  Resolve Alert
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+    if (list) list.innerHTML = html;
+    if (fieldList && alerts.length > 0) fieldList.innerHTML = html;
+  }
+
+  // ── CEO Briefing & Autonomous Shift Controller ─────────
+  async function fetchCeoBriefing() {
+    try {
+      const briefing = await api('GET', '/v1/scheduler/briefing');
+      state.ceoBriefing = briefing;
+      renderCeoBriefing(briefing);
+    } catch (e) {
+      console.warn('CEO briefing fetch:', e.message);
+    }
+  }
+
+  function renderCeoBriefing(b) {
+    const el = $('#ceo-briefing-summary');
+    if (!el || !b) return;
+
+    const rev = b.revenue || {};
+    const tenants = b.tenants || {};
+    const gov = b.governance || {};
+    const dog = b.watchdog || {};
+    const shift = b.latest_shift;
+
+    let shiftHtml = '<div class="empty-state" style="padding:12px;"><p>No autonomous shift has been executed yet today. Click "Run Autonomous Shift" above.</p></div>';
+    if (shift) {
+      const steps = (shift.summary && shift.summary.step_results) ? shift.summary.step_results : {};
+      const sdr = steps.outbound_sdr || {};
+      const seo = steps.owned_media_seo || {};
+      const ord = steps.order_fulfillment || {};
+      const dogStep = steps.watchdog_audit || {};
+
+      shiftHtml = `
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 14px 18px; margin-top: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="status-pill approved" style="font-size: 0.75rem; font-weight: 700;">${esc(shift.status || 'COMPLETED')}</span>
+              <strong style="font-size: 0.9rem; color: #ffffff;">Shift: ${esc(shift.shift_id)}</strong>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">${formatDate(shift.completed_at || shift.started_at)}</span>
+            </div>
+            <div style="font-size: 0.75rem; font-family: monospace; color: var(--emerald);">
+              TrustBlock: ${(shift.trust_block_hash || '').substring(0, 16)}...
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 0.8rem;">
+            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+              <span style="color: var(--cyan); font-weight: 600;">1. Outbound SDR</span><br>
+              ${sdr.leads_discovered_count || 0} Leads Discovered • ${sdr.previews_generated_count || 0} Trojan Previews
+            </div>
+            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+              <span style="color: var(--purple); font-weight: 600;">2. Owned Media SEO</span><br>
+              ${seo.networks_targeted_count || 4} Authority Networks Targeted
+            </div>
+            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+              <span style="color: var(--emerald); font-weight: 600;">3. Order Fulfillment</span><br>
+              ${ord.fulfilled_count || 0} Orders Fulfilled Automatically
+            </div>
+            <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+              <span style="color: var(--amber); font-weight: 600;">4. L1 Watchdog Audit</span><br>
+              Health: ${dogStep.health_score || 100}/100 • ${dogStep.active_alerts_total || 0} Active Alerts
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    el.innerHTML = `
+      <div class="stats-grid" style="margin-bottom: 14px;">
+        <div class="stat-card" data-accent="green">
+          <div class="stat-header"><span class="stat-label">Total Revenue</span></div>
+          <div class="stat-value" style="font-size: 1.4rem;">₹${(rev.total_revenue_inr || 0).toLocaleString()}</div>
+          <div class="stat-trend up"><span>$</span> ${(rev.total_revenue_usd || 0).toLocaleString()} USD International</div>
+        </div>
+        <div class="stat-card" data-accent="purple">
+          <div class="stat-header"><span class="stat-label">Active Tenants</span></div>
+          <div class="stat-value" style="font-size: 1.4rem;">${tenants.active_tenants || 0}</div>
+          <div class="stat-trend neutral"><span>🏢</span> ${tenants.total_leads || 0} Total Leads Tracked</div>
+        </div>
+        <div class="stat-card" data-accent="amber">
+          <div class="stat-header"><span class="stat-label">Pending Approvals</span></div>
+          <div class="stat-value" style="font-size: 1.4rem;">${gov.pending_hitl_approvals || 0}</div>
+          <div class="stat-trend neutral"><span>⏳</span> L0 Owner Governance</div>
+        </div>
+        <div class="stat-card" data-accent="cyan">
+          <div class="stat-header"><span class="stat-label">Watchdog Health</span></div>
+          <div class="stat-value" style="font-size: 1.4rem;">${dog.health_score || 100}/100</div>
+          <div class="stat-trend up"><span>🛡</span> ${dog.active_alerts || 0} Active Alerts</div>
+        </div>
+      </div>
+      <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; background: rgba(79, 70, 229, 0.08); border-left: 3px solid var(--purple); padding: 10px 14px; border-radius: 4px; margin-bottom: 10px;">
+        <strong>Executive Digest:</strong> ${esc(b.executive_summary || '')}
+      </div>
+      <h4 style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 14px;">Latest Autonomous Shift Execution</h4>
+      ${shiftHtml}
+    `;
+  }
+
+  // ── Warehouse StockSense AI Controller ───────────────────
+  let inventoryInitialized = false;
+
+  function initInventoryPage() {
+    if (inventoryInitialized) return;
+    inventoryInitialized = true;
+
+    $('#btn-run-inventory-audit')?.addEventListener('click', runInventoryAudit);
+
+    $('#btn-submit-inventory-uat')?.addEventListener('click', async () => {
+      const rating = parseInt($('#inventory-uat-rating')?.value || '5', 10);
+      const operator = ($('#inventory-uat-operator')?.value || 'wh-mgr-01').trim();
+      const notes = ($('#inventory-uat-notes')?.value || '').trim();
+
+      const btn = $('#btn-submit-inventory-uat');
+      if (btn) btn.disabled = true;
+
+      try {
+        await api('POST', '/v1/inventory/uat', {
+          operator_id: operator,
+          rating: rating,
+          notes: notes,
+          discrepancy_reported: rating <= 2,
+        });
+        toast('Warehouse Manager UAT Feedback recorded & sealed in TrustBlock!', 'success');
+        if ($('#inventory-uat-notes')) $('#inventory-uat-notes').value = '';
+      } catch (err) {
+        toast(`UAT submission failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    // Auto-run initial audit
+    runInventoryAudit();
+  }
+
+  async function runInventoryAudit() {
+    const btn = $('#btn-run-inventory-audit');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" style="margin-right:6px"></span> Analyzing SKUs...';
+    }
+
+    try {
+      const res = await api('POST', '/v1/inventory/analyze', {
+        service_level_z: 1.65,
+        forecast_alpha: 0.3,
+        dead_stock_threshold_days: 90,
+      });
+
+      state.inventoryAnalysis = res;
+      renderInventoryAudit(res);
+      toast('StockSense Inventory Audit complete & sealed to TrustBlock!', 'success');
+    } catch (err) {
+      toast(`StockSense audit failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Run StockSense Audit
+        `;
+      }
+    }
+  }
+
+  function renderInventoryAudit(data) {
+    if (!data) return;
+    const metrics = data.audit_metrics || data.summary || {};
+
+    if ($('#inventory-total-skus')) $('#inventory-total-skus').textContent = metrics.total_skus ?? 0;
+    if ($('#inventory-total-value')) $('#inventory-total-value').textContent = `₹${(metrics.total_inventory_valuation || 0).toLocaleString()}`;
+    if ($('#inventory-dead-stock-count')) $('#inventory-dead-stock-count').textContent = metrics.dead_stock_skus_count ?? 0;
+    if ($('#inventory-trapped-capital')) $('#inventory-trapped-capital').textContent = `₹${(metrics.capital_locked_in_dead_stock || 0).toLocaleString()}`;
+
+    // ABC-XYZ table
+    const abcItems = data.abc_analysis?.items || [];
+    const abcTbody = $('#inventory-abc-xyz-tbody');
+    if (abcTbody) {
+      if (!abcItems.length) {
+        abcTbody.innerHTML = '<tr class="empty-row"><td colspan="5"><div class="empty-state"><p>No SKU data found</p></div></td></tr>';
+      } else {
+        abcTbody.innerHTML = abcItems.map(item => {
+          const cls = item.category || 'B';
+          return `
+            <tr>
+              <td>
+                <div style="font-weight:600">${esc(item.sku)}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">${esc(item.name || '')}</div>
+              </td>
+              <td>₹${(item.annual_value || 0).toLocaleString()}</td>
+              <td>${(item.cumulative_share_pct || 0).toFixed(1)}%</td>
+              <td><span class="status-pill" style="background:rgba(168,85,247,0.15);color:var(--purple);font-weight:700">Class ${esc(cls)}</span></td>
+              <td style="font-size:0.78rem;color:var(--text-secondary)">${esc(item.management_strategy || 'Standard control')}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // Reorder recommendations
+    const reorders = data.reorder_recommendations || [];
+    const reorderTbody = $('#inventory-reorder-tbody');
+    if (reorderTbody) {
+      if (!reorders.length) {
+        reorderTbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty-state"><p>All stock levels optimal</p></div></td></tr>';
+      } else {
+        reorderTbody.innerHTML = reorders.map(r => {
+          const needed = r.reorder_needed;
+          return `
+            <tr>
+              <td><strong>${esc(r.sku)}</strong></td>
+              <td>${r.current_stock}</td>
+              <td>${r.safety_stock}</td>
+              <td><strong>${r.reorder_point}</strong></td>
+              <td>${r.economic_order_quantity}</td>
+              <td>
+                <span class="status-pill ${needed ? 'rejected' : 'approved'}">
+                  ${needed ? 'ORDER NOW' : 'HEALTHY'}
+                </span>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // Dead stock list
+    const deadStockList = $('#inventory-deadstock-list');
+    const deadItems = data.dead_stock_analysis?.dead_stock_items || [];
+    if (deadStockList) {
+      if (!deadItems.length) {
+        deadStockList.innerHTML = '<div class="empty-state"><p>No dead stock detected. Inventory turnover healthy.</p></div>';
+      } else {
+        deadStockList.innerHTML = deadItems.map(d => `
+          <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);padding:10px 14px;border-radius:var(--radius-sm)">
+            <div>
+              <div style="font-weight:700;color:var(--red);font-size:0.85rem">${esc(d.sku)} — ${esc(d.name || '')}</div>
+              <div style="font-size:0.75rem;color:var(--text-muted)">Idle for ${d.days_since_last_sale} days • ${d.units_idle} units trapped</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-weight:800;color:var(--red);font-size:0.95rem">₹${(d.locked_capital || 0).toLocaleString()}</div>
+              <div style="font-size:0.75rem;color:var(--amber)">${esc(d.recommended_action || 'Liquidation')}</div>
+            </div>
+          </div>
+        `).join('');
+      }
+    }
+  }
+
   // ── Event Listeners ──────────────────────────────────────
   function bindEvents() {
     // Sidebar navigation
@@ -970,6 +1823,81 @@
         const msg = chip.dataset.msg;
         if (msg) handleCloserChat(msg);
       });
+    });
+
+    // Watchdog scan trigger
+    $('#btn-watchdog-scan')?.addEventListener('click', async () => {
+      const btn = $('#btn-watchdog-scan');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="margin-right:6px"></span> Scanning...';
+      }
+      try {
+        const res = await api('POST', '/v1/watchdog/scan');
+        toast(`Watchdog scan complete: ${res.new_alerts_detected} new alerts. Health: ${res.health_score}/100`, 'info');
+        await fetchWatchdogData();
+      } catch (err) {
+        toast(`Watchdog scan failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Run Watchdog Scan
+          `;
+        }
+      }
+    });
+
+    // Autonomous Shift trigger
+    $('#btn-run-autonomous-shift')?.addEventListener('click', async () => {
+      const btn = $('#btn-run-autonomous-shift');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="margin-right:6px"></span> Running Shift...';
+      }
+      try {
+        const res = await api('POST', '/v1/scheduler/run-shift');
+        toast(`Autonomous shift ${res.shift_id} completed successfully in ${res.duration_seconds}s!`, 'success');
+        await fetchCeoBriefing();
+        await fetchDashboardData();
+      } catch (err) {
+        toast(`Shift execution failed: ${err.message}`, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run Autonomous Shift
+          `;
+        }
+      }
+    });
+
+    $('#btn-refresh-ceo-briefing')?.addEventListener('click', async () => {
+      await fetchCeoBriefing();
+      toast('CEO Executive Briefing refreshed.', 'info');
+    });
+
+    // Alert resolution event delegation
+    document.addEventListener('click', async (e) => {
+      const target = e.target.closest('.btn-resolve-alert');
+      if (!target) return;
+      const alertId = target.dataset.alertId;
+      if (!alertId) return;
+
+      target.disabled = true;
+      try {
+        await api('POST', `/v1/watchdog/alerts/${alertId}/resolve`, {
+          resolved_by: 'owner',
+          resolution_notes: 'Resolved via Command Center UI',
+        });
+        toast('Alert resolved & sealed in TrustBlock!', 'success');
+        await fetchWatchdogData();
+      } catch (err) {
+        toast(`Resolve failed: ${err.message}`, 'error');
+        target.disabled = false;
+      }
     });
 
     // Hash change routing

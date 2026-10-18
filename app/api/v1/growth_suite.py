@@ -8,6 +8,7 @@ Exposes endpoints for:
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -15,12 +16,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.agents.smb_search_source import audit_live_website_seo_geo
 from app.db.database import get_db
 from app.security.auth import APIPrincipal, require_manager
-from app.services.catalog import get_package
+from app.services.catalog import CATALOG, build_payment_link, get_package
 from app.services.growth_engine import (
     execute_unified_growth_run,
+    generate_and_stage_blog,
     generate_creative_assets,
+    generate_omnichannel_social_campaign,
     handle_inbound_sales_chat,
 )
 
@@ -54,6 +58,14 @@ class InboundCloserChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
     currency: str = Field(default="INR", pattern="^(INR|USD)$")
     channel: str = Field(default="whatsapp", max_length=50)
+
+
+class DomainAuditRequest(BaseModel):
+    website_url: str = Field(min_length=3, max_length=500, description="Website URL or domain name to audit")
+    company_name: str | None = Field(default=None, max_length=200, description="Optional company or brand name")
+    target_audience: str | None = Field(default=None, max_length=300, description="Optional target customer persona")
+    keywords: list[str] | None = Field(default=None, description="Optional target SEO / GEO keywords")
+    target_keywords: list[str] | None = Field(default=None, description="Optional target SEO / GEO keywords")
 
 
 @router.get("/status")
@@ -115,6 +127,7 @@ def generate_unified_campaign_endpoint(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(err)) from err
 
 
+@router.post("/sales-closer/chat")
 @router.post("/inbound-closer/chat")
 def inbound_closer_chat_endpoint(
     payload: InboundCloserChatRequest,
@@ -135,3 +148,71 @@ def inbound_closer_chat_endpoint(
         currency=payload.currency,
         channel=payload.channel,
     )
+
+
+@router.post("/audit-domain")
+def audit_domain_endpoint(
+    payload: DomainAuditRequest,
+) -> dict[str, Any]:
+    """Inspect live website SEO/GEO gaps & deliver tailored 2026 growth prescription with instant checkout."""
+    raw_url = payload.website_url.strip()
+    if not (raw_url.startswith("http://") or raw_url.startswith("https://")):
+        audit_url = f"https://{raw_url}"
+    else:
+        audit_url = raw_url
+
+    clean_domain = re.sub(r"^https?://", "", audit_url).split("/")[0].lower()
+    clean_domain = re.sub(r"^www\.", "", clean_domain)
+    comp_name = payload.company_name or clean_domain.split(".")[0].capitalize()
+    audience = payload.target_audience or f"Customers and partners of {comp_name}"
+    kws = payload.target_keywords or payload.keywords or [f"{comp_name} services", "commercial growth automation"]
+
+    audit_result = audit_live_website_seo_geo(website_url=audit_url)
+
+    blog_prescription = generate_and_stage_blog(
+        product_name=comp_name,
+        target_audience=audience,
+        keywords=kws,
+        target_domain=f"https://{clean_domain}/blog",
+    )
+
+    social_prescription = generate_omnichannel_social_campaign(
+        product_name=comp_name,
+        target_audience=audience,
+        keywords=kws,
+    )
+
+    pkg = get_package("growth_all_in_one") or CATALOG.get("growth_all_in_one")
+    checkout_inr = build_payment_link(package_key="growth_all_in_one", company=comp_name, provider="razorpay")
+    checkout_usd = build_payment_link(package_key="growth_all_in_one", company=comp_name, provider="paypal")
+    checkout_directpay = build_payment_link(package_key="growth_all_in_one", company=comp_name, provider="afw_directpay")
+
+    return {
+        "status": "COMPLETED",
+        "website_url": audit_url,
+        "domain": clean_domain,
+        "company_name": comp_name,
+        "seo_geo_audit": audit_result,
+        "package": {
+            "key": "growth_all_in_one",
+            "name": pkg.name if pkg else "AskforWrite Autonomous AI Growth Suite",
+            "price_inr": pkg.price_inr if pkg else 9999,
+            "price_usd": pkg.price_usd if pkg else 129,
+        },
+        "checkout_links": {
+            "razorpay_inr": checkout_inr,
+            "paypal_usd": checkout_usd,
+            "afw_directpay": checkout_directpay,
+        },
+        "growth_prescription": {
+            "gap_score": audit_result.get("seo_geo_gap_score", 0),
+            "seo_geo_blog": blog_prescription,
+            "omnichannel_social": social_prescription,
+            "recommended_actions": [
+                "Deploy Schema.org @graph entity payload to index in Google AI Overviews",
+                "Host /llms.txt manifest for SearchGPT and Perplexity citation ingestion",
+                "Activate 24/7 WhatsApp Closer to respond to prospects within 3 seconds",
+                "Run 30s viral Instagram Reels & 5-slide LinkedIn carousel campaigns",
+            ],
+        },
+    }

@@ -21,6 +21,9 @@ dependencies = [
     "langgraph>=0.2,<1",
     "langchain-google-genai>=2.0,<3",
     "sentry-sdk[fastapi]>=2.0,<3",
+    "numpy>=1.26,<3",
+    "pillow>=10.0,<13",
+    "python-multipart>=0.0.12,<1",
 ]
 
 [project.optional-dependencies]

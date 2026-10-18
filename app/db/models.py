@@ -14,7 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.db.database import Base
 
@@ -257,6 +257,8 @@ class OrganizationRecord(Base):
     lead_credits_used: Mapped[int] = mapped_column(Integer, default=0)
     outreach_credits_limit: Mapped[int] = mapped_column(Integer, default=20)
     outreach_credits_used: Mapped[int] = mapped_column(Integer, default=0)
+    lead_credits_quota = synonym("lead_credits_limit")
+    outreach_credits_quota = synonym("outreach_credits_limit")
     is_active: Mapped[bool] = mapped_column(default=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -566,6 +568,48 @@ class SupervisorAlertRecord(Base):
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
+class PreviewRecord(Base):
+    """Trojan Horse Proof-First Public Preview entity."""
+    __tablename__ = "preview_records"
+    __table_args__ = (
+        Index("ix_preview_token", "preview_token", unique=True),
+        Index("ix_preview_domain", "domain"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    preview_token: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    company_name: Mapped[str] = mapped_column(String(250))
+    domain: Mapped[str] = mapped_column(String(250), index=True)
+    recommended_package: Mapped[str] = mapped_column(String(100))
+    lead_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    custom_audit: Mapped[dict] = mapped_column(JSON)
+    sample_deliverable: Mapped[dict] = mapped_column(JSON)
+    benchmarks: Mapped[dict] = mapped_column(JSON)
+    payment_links: Mapped[dict] = mapped_column(JSON)
+    views_count: Mapped[int] = mapped_column(Integer, default=0)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class ShiftRecord(Base):
+    """Autonomous shift execution log and digest record."""
+    __tablename__ = "shift_records"
+    __table_args__ = (
+        Index("ix_shift_id", "shift_id", unique=True),
+        Index("ix_shift_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    shift_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    shift_type: Mapped[str] = mapped_column(String(64), default="full_daily_cycle")
+    status: Mapped[str] = mapped_column(String(32), default="COMPLETED")
+    summary: Mapped[dict] = mapped_column(JSON)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 def _reject_audit_mutation(mapper, connection, target) -> None:
     raise ValueError("Audit records are append-only")
 
@@ -596,3 +640,7 @@ event.listen(ClientVisitRecord, "before_update", _reject_visit_mutation)
 event.listen(ClientVisitRecord, "before_delete", _reject_visit_mutation)
 event.listen(ConveyanceClaimRecord, "before_update", _reject_claim_mutation)
 event.listen(ConveyanceClaimRecord, "before_delete", _reject_claim_mutation)
+
+# Model aliases for supervisory and watchdog frameworks
+ApprovalRequestRecord = ApprovalRequest
+FieldTelemetryRecord = FieldAttendanceRecord

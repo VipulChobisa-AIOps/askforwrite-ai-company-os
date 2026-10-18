@@ -19,12 +19,19 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.customer_portal import router as customer_portal_router
 from app.api.v1.field_force import router as field_force_router
 from app.api.v1.growth_suite import router as growth_suite_router
+from app.api.v1.inventory_analytics import router as inventory_analytics_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.mobile_bridge import router as mobile_bridge_router
+from app.api.v1.mobility_analytics import router as mobility_analytics_router
 from app.api.v1.outreach import router as outreach_router
+from app.api.v1.previews import router as previews_router
+from app.api.v1.quality_analytics import router as quality_analytics_router
 from app.api.v1.revenue import router as revenue_router
+from app.api.v1.scheduler import router as scheduler_router
+from app.api.v1.sovereign_pay import router as sovereign_pay_router
 from app.api.v1.subscriptions import router as subscriptions_router
+from app.api.v1.watchdog import router as watchdog_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.clients.field_force import FieldForceClient, get_field_force_client
 from app.db.database import get_db
@@ -71,10 +78,21 @@ from app.services.delivery import (
 from app.services.discovery import IdempotencyConflict, execute_discovery
 from app.services.manager import ManagerConflict, execute_manager_workflow
 from app.services.marketing import MarketingConflict, execute_marketing_campaign
-from app.services.orders import OrderConflict, OrderValidationFailed, ingest_order
+from app.services.orders import (
+    OrderConflict,
+    OrderValidationFailed,
+    fulfill_order,
+    fulfill_pending_orders,
+    ingest_order,
+    list_orders,
+)
 from app.services.research import ResearchConflict, ResearchNotFound, execute_research
 from app.services.sales import SalesConflict, SalesNotFound, execute_sales_capture
 from app.services.seo import SeoConflict, execute_seo_draft
+from app.services.wordpress_publisher import (
+    get_supported_networks,
+    publish_seo_draft_to_wordpress,
+)
 
 # Initialize logging system and error tracking early
 configure_logging()
@@ -136,6 +154,7 @@ app = FastAPI(
         {"name": "webhooks", "description": "Payment provider webhook ingestion and tenant provisioning"},
         {"name": "audit-export", "description": "Compliance audit log export (JSON/CSV) — Owner only"},
         {"name": "legal", "description": "Public Terms of Service and Privacy Policy"},
+        {"name": "watchdog", "description": "L1 active monitoring, stalled task detection & self-healing watchdog agent"},
     ],
     lifespan=lifespan,
 )
@@ -158,6 +177,13 @@ app.include_router(audit_export_router)
 app.include_router(legal_router)
 app.include_router(mobile_bridge_router)
 app.include_router(growth_suite_router)
+app.include_router(quality_analytics_router)
+app.include_router(mobility_analytics_router)
+app.include_router(inventory_analytics_router)
+app.include_router(watchdog_router)
+app.include_router(previews_router)
+app.include_router(scheduler_router)
+app.include_router(sovereign_pay_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
@@ -334,6 +360,11 @@ def get_project_status(
                 "Lead Discovery & Enrichment Agent",
                 "Outreach & Dispatch Agent",
                 "Auto-Provisioning Engine",
+                "StockSense Warehouse & Inventory Specialist",
+                "AgriTech Produce Quality Vision Specialist",
+                "Urban Micro-Mobility & Logistics Specialist",
+                "Autonomous Growth & Inbound Closer Specialist",
+                "System Watchdog & Controlling Agent",
             ],
             "l3_connected_capabilities": [
                 {
@@ -410,6 +441,48 @@ def get_project_status(
                     "mode": "auto_provision_on_capture",
                     "asset": "Razorpay & PayPal Webhook → Org + User + Invoice",
                 },
+                {
+                    "name": "mango_quality_analytics",
+                    "status": "active",
+                    "mode": "computer_vision_colorimetry",
+                    "asset": "HSV + GLCM Ripeness Grading & Brix Projection",
+                },
+                {
+                    "name": "bike_rebalance_analytics",
+                    "status": "active",
+                    "mode": "spatiotemporal_regression",
+                    "asset": "OLS Demand Forecasting & Station Net Churn Rebalancing",
+                },
+                {
+                    "name": "warehouse_automation",
+                    "status": "active",
+                    "mode": "stocksense_pareto_abc_xyz",
+                    "asset": "StockSense Inventory Audits, Dynamic ROP/EOQ & Dead Stock Detection",
+                },
+                {
+                    "name": "growth_suite",
+                    "status": "active",
+                    "mode": "autonomous_growth_all_in_one",
+                    "asset": "Pixel AI Studio, SEO Blog Staging & 24/7 Inbound Closer",
+                },
+                {
+                    "name": "customer_portal",
+                    "status": "active",
+                    "mode": "tenant_self_service",
+                    "asset": "Profile, Quota Usage, Invoices & Service Execution",
+                },
+                {
+                    "name": "mobile_bridge",
+                    "status": "active",
+                    "mode": "pwa_offline_sync",
+                    "asset": "Offline Sync, Service Worker & Mobile Telemetry",
+                },
+                {
+                    "name": "system_watchdog_controller",
+                    "status": "active",
+                    "mode": "autonomous_supervisory_watchdog",
+                    "asset": "Active Stalled Task, GPS Spoof, Quota Depletion & Trust Chain Supervisor",
+                },
             ],
             "l4_data_layer": {
                 "active_database": "company_os.db (SQLite dev) / PostgreSQL (production)",
@@ -419,9 +492,9 @@ def get_project_status(
         },
         "recovery_protocol": {
             "section": "Master Document Section 16",
-            "last_verified_tests": "119/119 passing",
-            "current_milestone": "Revenue Engine Production Ready — All secrets configured",
-            "next_milestone": "Live deployment with DNS + HTTPS + webhook registration",
+            "last_verified_tests": "260+ passing (100% green)",
+            "current_milestone": "Sprint 1 Complete: Catalog Completeness, StockSense Integration & Sales Alignment",
+            "next_milestone": "Sprint 2: Watchdog Supervisor Agent & Automated Self-Healing",
         },
     }
 
@@ -532,6 +605,69 @@ def list_capabilities(
                 "permissions": ["system"],
                 "approval_gates": [],
                 "data_mode": "webhook_triggered",
+                "health_status": "healthy",
+            },
+            {
+                "id": "mango_quality_analytics",
+                "version": "1.0.0",
+                "description": "Computer vision quality grading, HSV/GLCM colorimetry & Brix projection for fresh produce.",
+                "permissions": ["manager", "portal_user"],
+                "approval_gates": [],
+                "data_mode": "computer_vision",
+                "health_status": "healthy",
+            },
+            {
+                "id": "bike_rebalance_analytics",
+                "version": "1.0.0",
+                "description": "Hourly micro-mobility demand forecasting (OLS/VIF) & dynamic station rebalancing dispatch.",
+                "permissions": ["manager", "portal_user"],
+                "approval_gates": [],
+                "data_mode": "spatiotemporal_regression",
+                "health_status": "healthy",
+            },
+            {
+                "id": "warehouse_automation",
+                "version": "2.4.0",
+                "description": "StockSense Pareto ABC-XYZ segmentation, dynamic ROP/EOQ reorder plan & dead stock alerts.",
+                "permissions": ["manager", "portal_user"],
+                "approval_gates": [],
+                "data_mode": "stocksense_engine",
+                "health_status": "healthy",
+            },
+            {
+                "id": "growth_suite",
+                "version": "1.0.0",
+                "description": "Pixel AI visual asset generation, SEO blog staging & 24/7 autonomous inbound sales closer.",
+                "permissions": ["manager", "portal_user"],
+                "approval_gates": ["external_messaging"],
+                "data_mode": "omnichannel_growth",
+                "health_status": "healthy",
+            },
+            {
+                "id": "customer_portal",
+                "version": "1.0.0",
+                "description": "Self-service tenant profile, usage analytics, billing history, and modular service execution.",
+                "permissions": ["portal_user", "manager", "owner"],
+                "approval_gates": [],
+                "data_mode": "tenant_saas",
+                "health_status": "healthy",
+            },
+            {
+                "id": "mobile_bridge",
+                "version": "1.0.0",
+                "description": "PWA manifest, offline queue synchronization, and field mobile telemetry bridge.",
+                "permissions": ["mobile_user", "manager"],
+                "approval_gates": [],
+                "data_mode": "offline_pwa",
+                "health_status": "healthy",
+            },
+            {
+                "id": "system_watchdog_controller",
+                "version": "1.0.0",
+                "description": "L1 active monitoring, stalled task detection, GPS spoof alert, quota exhaustion, and trust chain integrity supervisor.",
+                "permissions": ["manager", "owner"],
+                "approval_gates": [],
+                "data_mode": "live_supervisory_scan",
                 "health_status": "healthy",
             },
         ],
@@ -1062,6 +1198,28 @@ async def ingest_order_endpoint(
         raise HTTPException(status_code=422, detail=str(error)) from error
 
 
+@app.post("/v1/orders/{transaction_id}/fulfill")
+def fulfill_order_endpoint(
+    transaction_id: str,
+    x_correlation_id: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Fulfill a confirmed order: complete task, update order to FULFILLED, and cryptographically seal TrustBlock."""
+    correlation_id = x_correlation_id or str(uuid.uuid4())
+    if len(correlation_id) > 128:
+        raise HTTPException(status_code=422, detail="X-Correlation-ID is too long")
+    try:
+        return fulfill_order(
+            db=db,
+            transaction_id=transaction_id,
+            correlation_id=correlation_id,
+            fulfilled_by=principal.subject,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @app.post("/v1/seo/generate-draft")
 def seo_generate_draft_endpoint(
     payload: SeoDraftPayload,
@@ -1111,4 +1269,67 @@ def marketing_generate_campaign_endpoint(
     except MarketingConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/v1/seo/networks")
+def get_seo_networks_endpoint(
+    principal: APIPrincipal = Depends(require_manager),
+) -> dict[str, object]:
+    """List 4 owned media networks supported by WordPress publisher bridge."""
+    return {
+        "networks": get_supported_networks(),
+        "total_networks": len(get_supported_networks()),
+    }
+
+
+@app.post("/v1/seo/drafts/{draft_id}/publish")
+def publish_seo_draft_endpoint(
+    draft_id: str,
+    x_correlation_id: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Publish an SEO draft to its target WordPress network and cryptographically seal TrustBlock."""
+    correlation_id = x_correlation_id or str(uuid.uuid4())
+    if len(correlation_id) > 128:
+        raise HTTPException(status_code=422, detail="X-Correlation-ID is too long")
+    try:
+        return publish_seo_draft_to_wordpress(
+            db=db,
+            draft_id=draft_id,
+            correlation_id=correlation_id,
+            published_by=principal.subject,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get("/v1/orders")
+def list_orders_endpoint(
+    status: str | None = None,
+    limit: int = 100,
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """List customer orders, optionally filtered by status (e.g. CONFIRMED, FULFILLED)."""
+    orders = list_orders(db=db, status=status, limit=limit)
+    return {
+        "orders": orders,
+        "count": len(orders),
+        "status_filter": status,
+    }
+
+
+@app.post("/v1/orders/fulfill-pending")
+def fulfill_pending_orders_endpoint(
+    limit: int = 50,
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Batch-fulfill all pending confirmed orders with LLM manifest synthesis and cryptographic TrustBlocks."""
+    return fulfill_pending_orders(
+        db=db,
+        limit=limit,
+        fulfilled_by=principal.subject,
+    )

@@ -130,6 +130,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "modular_marketing": 120,
         "modular_seo": 120,
         "modular_trust": 120,
+        "modular_quality_ai": 120,
+        "modular_mobility_ai": 120,
         "free": 60,
     }
 

@@ -55,7 +55,120 @@ KEYWORDS_MAP: dict[str, tuple[str, ...]] = {
         "inbound sales", "inbound closer", "marketing agency", "agency replacement",
         "full funnel", "growth engine",
     ),
+    "warehouse_automation": (
+        "warehouse", "inventory", "stock", "stockout", "reorder", "eoq",
+        "sku", "depreciation", "dead stock", "deadstock", "holding cost",
+        "stocksense", "barcode", "storage layout", "stocktake", "3pl", "fulfillment",
+    ),
+    "mango_quality_analytics": (
+        "mango", "produce", "fruit", "harvest", "ripeness", "agri", "agritech",
+        "cold chain", "cold-chain", "packhouse", "grading", "brix", "sugar",
+        "shelf life", "shelf-life", "colorimetry", "hsv", "glcm", "export rejection",
+        "perishable", "horticulture", "sorting",
+    ),
+    "bike_rebalance_analytics": (
+        "bike", "bicycle", "micro-mobility", "micromobility", "scooter",
+        "dock", "docking", "station churn", "rebalance", "rebalancing",
+        "fleet demand", "transit", "circadian", "commuter peak", "rush hour",
+        "truck rebalance", "turnover ratio", "bike-share", "ebike",
+    ),
 }
+
+# Alias for external agents and service introspection
+SERVICE_KEYWORD_MAP = KEYWORDS_MAP
+
+# Domain pain point diagnoses and ROI impact metrics
+PAIN_POINT_DIAGNOSIS: dict[str, dict[str, object]] = {
+    "mango_quality_analytics": {
+        "pain_points": [
+            "Subjective manual sorting causes 15-20% export container rejection at destination ports",
+            "Lack of non-destructive Brix and firmness measurements leads to shelf-life uncertainty",
+            "Cold chain breakdown risks and non-uniform ripening across distributed packhouses",
+        ],
+        "roi_formula": "Saves ₹3,50,000 - ₹8,00,000 per perishable export container via automated CV defect sorting",
+        "roi_multiplier": 5.2,
+    },
+    "bike_rebalance_analytics": {
+        "pain_points": [
+            "Station starvation and dock overflow causing up to 28% commuter churn during peak rush hours",
+            "Inefficient rebalancing truck dispatch routes increasing fuel costs and transit lag",
+            "Unpredictable circadian tidal fleet demand across metro transit corridors",
+        ],
+        "roi_formula": "Increases daily ride turnover by 24% while reducing truck rebalancing fuel consumption by 35%",
+        "roi_multiplier": 4.8,
+    },
+    "warehouse_automation": {
+        "pain_points": [
+            "Unscheduled stockouts of critical high-margin SKUs causing missed SLAs and penalties",
+            "Capital tied up in dead stock (>90 days idle) increasing warehouse holding expenses",
+            "Manual reorder calculations without dynamic lead-time safety stock buffers",
+        ],
+        "roi_formula": "Reduces carrying costs by 22% and eliminates 95% of preventable stockouts via dynamic EOQ",
+        "roi_multiplier": 6.1,
+    },
+    "field_operations_automation": {
+        "pain_points": [
+            "Proxy attendance and mock-location GPS spoofing across distributed on-ground workforce",
+            "Unverified client visits resulting in disputed conveyance mileage reimbursements",
+            "Supervisor coordination lag delaying end-of-day CRM debrief logging",
+        ],
+        "roi_formula": "Saves 15+ supervisory hours weekly and cuts mileage fraud claims by 30%",
+        "roi_multiplier": 4.5,
+    },
+    "seo_blog_copilot": {
+        "pain_points": [
+            "High agency retainers for slow, generic content creation without topical depth",
+            "Lack of Generative Engine Optimization (GEO) structured for ChatGPT and Perplexity",
+            "Manual formatting, JSON-LD schema creation, and multi-site CMS publishing",
+        ],
+        "roi_formula": "Replaces ₹50,000/mo freelance copywriter spend with automated topical authority articles",
+        "roi_multiplier": 8.0,
+    },
+    "marketing_suite": {
+        "pain_points": [
+            "Fragmented ad copy production across Meta, Google, and LinkedIn",
+            "Slow iteration on creative ad angles and audience hooks",
+            "High agency commission fees with unpredictable conversion rates",
+        ],
+        "roi_formula": "Generates complete multi-channel campaign copy in seconds with 3x higher click-through",
+        "roi_multiplier": 5.0,
+    },
+    "trust_engine": {
+        "pain_points": [
+            "Regulatory compliance audit friction for fintech, healthtech, and enterprise clients",
+            "Tamperable centralized logs that fail third-party SOC 2 and ISO verification",
+            "Disputed transactions and operational workflow non-repudiation vulnerabilities",
+        ],
+        "roi_formula": "Provides instant cryptographic Merkle proof, eliminating audit preparation fees",
+        "roi_multiplier": 7.5,
+    },
+    "growth_all_in_one": {
+        "pain_points": [
+            "Solo founders juggling disparate graphic tools, SEO agencies, and WhatsApp chat support",
+            "Leads going cold because replies take more than 5 minutes",
+            "High customer acquisition cost with low website conversion",
+        ],
+        "roi_formula": "Provides an entire autonomous marketing & sales closer team for ₹9,999/mo",
+        "roi_multiplier": 10.0,
+    },
+}
+
+
+def calculate_estimated_roi(package_key: str, monthly_budget_inr: float = 50000.0) -> dict[str, object]:
+    """Calculate projected cost savings and ROI multiplier for a given package."""
+    diag = PAIN_POINT_DIAGNOSIS.get(package_key, PAIN_POINT_DIAGNOSIS["growth_all_in_one"])
+    multiplier = float(diag.get("roi_multiplier", 4.0))
+    projected_value = monthly_budget_inr * multiplier
+    net_savings = projected_value - monthly_budget_inr
+    return {
+        "package_key": package_key,
+        "monthly_budget_inr": monthly_budget_inr,
+        "projected_value_inr": projected_value,
+        "net_monthly_savings_inr": net_savings,
+        "roi_multiplier": f"{multiplier}x",
+        "roi_summary": str(diag.get("roi_formula", "")),
+        "key_pain_points": list(diag.get("pain_points", [])),
+    }
 
 
 def diagnose_lead_opportunity(
@@ -89,6 +202,9 @@ def diagnose_lead_opportunity(
         "field_operations_automation": "field_force",
         "trust_engine": "trust_engine",
         "growth_all_in_one": "growth_all_in_one",
+        "warehouse_automation": "warehouse_automation",
+        "mango_quality_analytics": "mango_quality_analytics",
+        "bike_rebalance_analytics": "bike_rebalance_analytics",
     }
 
     for pkg_key, keywords in KEYWORDS_MAP.items():

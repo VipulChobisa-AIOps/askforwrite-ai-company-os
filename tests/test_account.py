@@ -43,8 +43,6 @@ def override_get_db():
         db.close()
 
 
-app.dependency_overrides[get_db] = override_get_db
-
 MANAGER_HEADERS = {"X-API-Key": TEST_MANAGER_KEY}
 OWNER_HEADERS = {"X-API-Key": TEST_OWNER_KEY}
 
@@ -57,6 +55,10 @@ class AccountServiceTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         Base.metadata.drop_all(bind=test_engine)
+        app.dependency_overrides.pop(get_db, None)
+
+    def tearDown(self):
+        app.dependency_overrides.pop(get_db, None)
 
     def setUp(self):
         os.environ["MANAGER_API_KEY"] = TEST_MANAGER_KEY

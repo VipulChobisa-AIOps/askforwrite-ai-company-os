@@ -89,7 +89,7 @@ class SmtpEmailDispatcher:
     ) -> None:
         self.host = host or os.getenv("SMTP_HOST", "localhost")
         self.port = port or int(os.getenv("SMTP_PORT", "587"))
-        self.username = username or os.getenv("SMTP_USERNAME", "")
+        self.username = username or os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER", "")
         self.password = password or os.getenv("SMTP_PASSWORD", "")
         self.use_tls = use_tls
         self.default_sender = default_sender or os.getenv("OUTREACH_FROM_EMAIL", "outreach@askforwrite.com")
@@ -109,12 +109,18 @@ class SmtpEmailDispatcher:
         msg.set_content(body_text)
 
         try:
-            with smtplib.SMTP(self.host, self.port, timeout=10.0) as server:
-                if self.use_tls:
-                    server.starttls()
-                if self.username and self.password:
-                    server.login(self.username, self.password)
-                server.send_message(msg)
+            if self.port == 465:
+                with smtplib.SMTP_SSL(self.host, self.port, timeout=10.0) as server:
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+                    server.send_message(msg)
+            else:
+                with smtplib.SMTP(self.host, self.port, timeout=10.0) as server:
+                    if self.use_tls:
+                        server.starttls()
+                    if self.username and self.password:
+                        server.login(self.username, self.password)
+                    server.send_message(msg)
             return {
                 "provider": "smtp",
                 "status": "delivered",

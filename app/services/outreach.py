@@ -187,6 +187,7 @@ def draft_outreach(
             "org_id": org_id,
             "payment_link": payment_link,
             "package_key": package_key,
+            "custom_notes": custom_notes,
         },
         idempotency_key=f"appr-outreach-{idempotency_key}",
         requested_by=requested_by,
@@ -271,11 +272,17 @@ def dispatch_outreach(
         raise ValueError(f"Outreach record '{outreach_id}' not found")
 
     if outreach.status == "DISPATCHED":
+        lead = db.get(LeadRecordRow, outreach.lead_id) if outreach.lead_id else None
+        org = db.get(OrganizationRecord, outreach.org_id) if outreach.org_id else None
         return {
             "outreach_id": outreach.id,
             "status": "DISPATCHED",
             "message": "Outreach message already dispatched",
             "sent_at": outreach.sent_at.isoformat() if outreach.sent_at else None,
+            "recipient_email": outreach.recipient_email,
+            "receipt": None,
+            "lead_status": lead.status if lead else "CONTACTED",
+            "credits_remaining": (org.outreach_credits_limit - org.outreach_credits_used) if org else None,
         }
 
     # Verify Owner Approval status

@@ -264,49 +264,85 @@ def fetch_and_enrich_website(
         }
 
 
+# Curated B2B prospect directory for automated lead discovery and market targeting
+INDIA_B2B_DIRECTORY: tuple[dict[str, object], ...] = (
+    {
+        "company": "Maharashtra Fresh Produce Exports",
+        "website": "https://mhproduce.example.com",
+        "industry": "Fresh Produce & AgriTech Export",
+        "geography": "Nashik, Maharashtra, India",
+        "tags": (
+            "mango", "produce", "fruit", "harvest", "ripeness", "agri", "agritech",
+            "cold chain", "packhouse", "grading", "brix", "sugar", "shelf life",
+            "export rejection", "sorting",
+        ),
+    },
+    {
+        "company": "MetroMobility Fleet Labs",
+        "website": "https://metromobility.example.com",
+        "industry": "Urban Micro-Mobility & EV Fleet",
+        "geography": "Bengaluru, Karnataka, India",
+        "tags": (
+            "bike", "bicycle", "micro-mobility", "micromobility", "scooter",
+            "dock", "docking", "station churn", "rebalance", "rebalancing",
+            "fleet demand", "transit", "commuter peak", "bike-share",
+        ),
+    },
+    {
+        "company": "Gujarat Warehousing Co",
+        "website": "https://gjwarehousing.example.com",
+        "industry": "Warehousing & Supply Chain Fulfillment",
+        "geography": "Ahmedabad, Gujarat, India",
+        "tags": (
+            "warehouse", "inventory", "stock", "stockout", "reorder", "eoq",
+            "sku", "dead stock", "holding cost", "stocksense", "fulfillment",
+        ),
+    },
+    {
+        "company": "Shadowfax Technologies",
+        "website": "https://www.shadowfax.in",
+        "industry": "On-Demand Field Force Logistics & Hyperlocal Delivery",
+        "geography": "Bengaluru, Karnataka, India",
+        "tags": ("field", "attendance", "tracking", "gps", "sales force", "supervisor", "logistics"),
+    },
+    {
+        "company": "FarEye Logistics",
+        "website": "https://fareye.com",
+        "industry": "Last Mile Logistics & Delivery",
+        "geography": "Noida, Uttar Pradesh, India",
+        "tags": ("logistics", "delivery", "fleet", "tracking", "dispatch"),
+    },
+    {
+        "company": "Locus Robotics & Logistics",
+        "website": "https://locus.sh",
+        "industry": "Dispatch & Fleet Management",
+        "geography": "Bengaluru, Karnataka, India",
+        "tags": ("fleet", "dispatch", "routing", "supervisor", "geofence"),
+    },
+    {
+        "company": "GreyOrange Robotics",
+        "website": "https://www.greyorange.com",
+        "industry": "Warehouse Automation & Robotics",
+        "geography": "Roswell, GA, USA & India",
+        "tags": ("warehouse", "inventory", "stock", "automation", "reorder", "sku"),
+    },
+    {
+        "company": "HubSpot Inbound Marketing",
+        "website": "https://www.hubspot.com",
+        "industry": "Marketing & CRM Software",
+        "geography": "Cambridge, MA, USA",
+        "tags": ("marketing", "campaign", "seo", "content", "crm"),
+    },
+)
+
+
 class LiveEnrichmentLeadSource:
     """Real live web scraping and signal enrichment provider for lead discovery."""
 
     data_mode = "live_enrichment"
 
     # Known live candidate directory for automated discovery when given high-level queries
-    _directory = (
-        {
-            "company": "Shadowfax Technologies",
-            "website": "https://www.shadowfax.in",
-            "industry": "On-Demand Field Force Logistics & Hyperlocal Delivery",
-            "geography": "Bengaluru, Karnataka, India",
-            "tags": ("field", "attendance", "tracking", "gps", "sales force", "supervisor", "logistics"),
-        },
-        {
-            "company": "FarEye Logistics",
-            "website": "https://fareye.com",
-            "industry": "Last Mile Logistics & Delivery",
-            "geography": "Noida, Uttar Pradesh, India",
-            "tags": ("logistics", "delivery", "fleet", "tracking", "dispatch"),
-        },
-        {
-            "company": "Locus Robotics & Logistics",
-            "website": "https://locus.sh",
-            "industry": "Dispatch & Fleet Management",
-            "geography": "Bengaluru, Karnataka, India",
-            "tags": ("fleet", "dispatch", "routing", "supervisor", "geofence"),
-        },
-        {
-            "company": "GreyOrange Robotics",
-            "website": "https://www.greyorange.com",
-            "industry": "Warehouse Automation & Robotics",
-            "geography": "Roswell, GA, USA & India",
-            "tags": ("warehouse", "inventory", "stock", "automation"),
-        },
-        {
-            "company": "HubSpot Inbound Marketing",
-            "website": "https://www.hubspot.com",
-            "industry": "Marketing & CRM Software",
-            "geography": "Cambridge, MA, USA",
-            "tags": ("marketing", "campaign", "seo", "content", "crm"),
-        },
-    )
+    _directory = INDIA_B2B_DIRECTORY
 
     def __init__(self, timeout: float = 6.0, client: httpx.Client | None = None) -> None:
         self.timeout = timeout

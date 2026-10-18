@@ -132,7 +132,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         except Exception:
             duration_ms = round((time.perf_counter() - start) * 1000, 2)
             logger.error(
-                "%s %s → 500 (%.1fms)",
+                "%s %s -> 500 (%.1fms)",
                 request.method, request.url.path, duration_ms,
                 extra={
                     "request_id": request_id,
@@ -167,13 +167,13 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Keep logs concise: quiet during tests and healthchecks
         is_test = bool(os.environ.get("PYTEST_CURRENT_TEST"))
         if is_test or request.url.path in ("/health", "/", "/healthz"):
-            logger.debug("%s %s → %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
+            logger.debug("%s %s -> %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
         elif status >= 500:
-            logger.error("%s %s → %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
+            logger.error("%s %s -> %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
         elif status >= 400:
-            logger.warning("%s %s → %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
+            logger.warning("%s %s -> %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
         else:
-            logger.info("%s %s → %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
+            logger.info("%s %s -> %d (%.1fms)", request.method, request.url.path, status, duration_ms, extra=log_extra)
 
         return response
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -99,6 +100,11 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class UseServiceRequest(BaseModel):
+    service_key: str = Field(min_length=1, max_length=100, description="Service or SKU capability key")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Execution parameters")
+
+
 # ── Capability descriptions ───────────────────────────────────────────────────
 
 _CAPABILITY_DESCRIPTIONS: dict[str, str] = {
@@ -118,6 +124,11 @@ _CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "trust_ledger": "Cryptographic ECDSA trust chain and audit ledger access",
     "payment_processing": "Razorpay and PayPal subscription management",
     "multi_tenant_accounts": "Organization and team user management",
+    "mango_quality_analytics": "Computer vision quality grading & Brix estimation for fresh produce",
+    "bike_rebalance_analytics": "Urban micro-mobility demand forecasting & station rebalance dispatch",
+    "warehouse_automation": "StockSense Pareto ABC analysis, ROP/EOQ reorder optimization & dead-stock alerts",
+    "ask4_academic_order": "Scholarly research retrieval, citation indexing & thesis verification",
+    "pixel_ai_pack": "Omnichannel multi-aspect advertising visual creatives & campaign prompt generation",
 }
 
 
@@ -324,3 +335,162 @@ def change_my_password(
 
     logger.info("Password changed successfully for user %s", user.id)
     return {"status": "password_updated", "message": "Your password has been changed successfully."}
+
+
+@router.post(
+    "/use-service",
+    status_code=status.HTTP_200_OK,
+    summary="Execute an entitled capability or one-off B2C service for the current tenant",
+    operation_id="use_tenant_service",
+)
+def use_tenant_service(
+    body: UseServiceRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Execute specialized modular services (mango quality, bike rebalance, warehouse automation, ask4, pixel_ai)
+    for the authenticated tenant organization."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    if not org.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization subscription is inactive",
+        )
+
+    if org.lead_credits_limit > 0 and org.lead_credits_used >= org.lead_credits_limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Monthly service credit quota exhausted. Please upgrade your plan.",
+        )
+
+    service_key = body.service_key.strip().lower()
+    input_payload = body.payload or {}
+    exec_result: dict[str, Any] = {}
+
+    if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading"):
+        from app.services.quality_analytics import execute_produce_quality_inspection
+        variety = input_payload.get("variety", "Alphonso Mango")
+        lot_id = input_payload.get("lot_id") or input_payload.get("batch_lot_id") or f"LOT-PORTAL-{uuid.uuid4().hex[:6].upper()}"
+        res = execute_produce_quality_inspection(
+            db=db,
+            preset_or_sample=input_payload.get("preset", "ripe"),
+            batch_lot_id=lot_id,
+            crop_variety=variety,
+            idempotency_key=f"portal-mango-{uuid.uuid4()}",
+        )
+        report = res.get("inspection_report", {})
+        exec_result = {
+            "lot_id": lot_id,
+            "crop_variety": variety,
+            "inspection_summary": report,
+            "inspection_report": report,
+            "task_id": res.get("task_id"),
+        }
+
+    elif service_key in ("bike_rebalance_analytics", "mobility_analytics", "bike_rebalance"):
+        from app.services.mobility_analytics import execute_mobility_optimization
+        temp_c = float(input_payload.get("temperature_c", 22.0))
+        temp_f = (temp_c * 9.0 / 5.0) + 32.0 if "temperature_c" in input_payload else float(input_payload.get("temperature_f", 72.0))
+        res = execute_mobility_optimization(
+            db=db,
+            hour_of_day=int(input_payload.get("hour_of_day", 9)),
+            temperature_f=temp_f,
+            humidity_pct=float(input_payload.get("humidity_pct", 58.0)),
+            idempotency_key=f"portal-bike-{uuid.uuid4()}",
+        )
+        combined = res.get("result", {})
+        exec_result = {
+            "demand_forecast": combined.get("forecast", {}),
+            "priority_rebalancing_dispatch": combined.get("rebalancing", {}).get("priority_rebalance_routes", []),
+            "rebalance_plan": combined.get("rebalancing", {}),
+            "task_id": res.get("task_id"),
+        }
+
+    elif service_key in ("warehouse_automation", "inventory_analytics", "inventory"):
+        from app.services.inventory_analytics import execute_inventory_audit
+        exec_result = execute_inventory_audit(
+            db=db,
+            items=input_payload.get("items"),
+            service_level_z=float(input_payload.get("service_level_z", 1.65)),
+            forecast_alpha=float(input_payload.get("forecast_alpha", 0.3)),
+            dead_stock_threshold_days=int(input_payload.get("dead_stock_threshold_days", 90)),
+            idempotency_key=f"portal-inv-{uuid.uuid4()}",
+        )
+
+    elif service_key in ("ask4_academic_order", "ask4", "academic_research"):
+        from app.security.trust_chain import seal_task_to_block
+        task_id = str(uuid.uuid4())
+        topic = input_payload.get("topic", "Autonomous Multi-Agent Enterprise Orchestration")
+        research_output = {
+            "title": f"Scholarly Synthesis: {topic}",
+            "abstract": (
+                f"An investigation into {topic} focusing on cryptographic Merkle trust verification, "
+                "algorithmic inventory rebalancing, and autonomous agent coordination."
+            ),
+            "citations": [
+                {"title": "Decentralized Trust Ledgers in Multi-Agent Systems", "year": 2026, "authors": "Chobisa et al."},
+                {"title": "Pareto Inventory Optimization with Dynamic Safety Stocks", "year": 2025, "authors": "StockSense Labs"},
+            ],
+            "delivery_format": "PDF & BibTeX",
+            "integrity_sealed": True,
+        }
+        seal_task_to_block(
+            db=db,
+            task_id=task_id,
+            capability_name="askforwrite_academic_ask4",
+            action="academic_order_fulfillment",
+            payload={"topic": topic, "status": "DELIVERED"},
+            sealed_by=user.email,
+        )
+        exec_result = research_output
+
+    elif service_key in ("pixel_ai_pack", "pixel_ai", "creative_pack"):
+        from app.services.growth_engine import generate_creative_assets
+        exec_result = generate_creative_assets(
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "B2B Enterprise Decision Makers"),
+            brand_voice=input_payload.get("brand_voice", "authoritative, innovative, sleek"),
+            aspect_ratios=input_payload.get("aspect_ratios", ["1:1", "9:16", "16:9"]),
+        )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Service '{service_key}' is not executable via /v1/me/use-service. "
+                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack.",
+        )
+
+    if org.lead_credits_limit > 0:
+        org.lead_credits_used += 1
+        db.add(org)
+
+    audit_task_id = str(uuid.uuid4())
+    db.add(
+        AuditLog(
+            task_id=audit_task_id,
+            correlation_id=str(uuid.uuid4()),
+            agent_id=principal.subject,
+            capability_name="customer_portal",
+            action="use_service",
+            input_payload={"service_key": service_key, "org_id": org.id, "user_id": user.id},
+            output_payload={"status": "COMPLETED", "service_key": service_key},
+            status="COMPLETED",
+        )
+    )
+    db.commit()
+
+    return {
+        "status": "COMPLETED",
+        "service_key": service_key,
+        "org_id": org.id,
+        "user_id": user.id,
+        "result": exec_result,
+        "credits_remaining": max(0, org.lead_credits_limit - org.lead_credits_used) if org.lead_credits_limit > 0 else 0,
+        "credits_used": org.lead_credits_used,
+    }

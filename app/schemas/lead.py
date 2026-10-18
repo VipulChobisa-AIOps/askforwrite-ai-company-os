@@ -76,3 +76,11 @@ class LeadListResponse(BaseModel):
     total: int
     leads: list[LeadResponse]
     credits_remaining: int | None = None
+
+
+class SmbLeadDiscoverRequest(BaseModel):
+    vertical: str = Field(description="Catalog vertical (e.g. mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, field_operations_automation, seo_blog_copilot, marketing_suite, growth_all_in_one, trust_engine)")
+    region: str = Field(default="India", description="Geographic region/city for SMB targeting")
+    limit: int = Field(default=10, ge=1, le=50, description="Maximum candidate SMB leads to discover")
+    org_id: str | None = Field(default=None, max_length=36, description="Organization ID for multi-tenant isolation")
+    idempotency_key: str | None = Field(default=None, description="Optional client idempotency key")

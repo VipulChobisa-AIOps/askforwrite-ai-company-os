@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 class PaymentProvider(str, Enum):
     RAZORPAY = "razorpay"
     PAYPAL = "paypal"
+    AFW_DIRECTPAY = "afw_directpay"
+    SOVEREIGN_PAY = "sovereign_pay"
 
 
 class SubscriptionStatus(str, Enum):
