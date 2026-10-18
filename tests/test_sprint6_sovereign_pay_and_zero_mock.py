@@ -434,7 +434,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertIn("Instant UPI QR", html_content)
         self.assertIn("USDC Web3", html_content)
         self.assertIn("Direct Bank Wire", html_content)
-        self.assertIn("askforwrite@okhdfcbank", html_content)
+        self.assertIn(os.getenv("AFW_MERCHANT_UPI_VPA", "askforwrite@okhdfcbank"), html_content)
         self.assertIn("Instant Activation & Trust Block Verification", html_content)
 
     def test_direct_query_param_checkout_endpoint(self):

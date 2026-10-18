@@ -30,9 +30,11 @@ def generate_sovereign_vault() -> dict[str, str]:
     sol_private_bytes = sol_priv_key.private_bytes_raw()
     sol_secret_key = base58.b58encode(sol_private_bytes + sol_pub_bytes).decode("ascii")
 
-    vault_dir = Path(__file__).resolve().parent.parent / "keys"
+    root_dir = Path(__file__).resolve().parent.parent
+    vault_dir = root_dir / "keys"
     vault_dir.mkdir(parents=True, exist_ok=True)
     vault_file = vault_dir / "sovereign_vault.json"
+    wallets_json_file = root_dir / ".sovereign_wallets.json"
 
     vault_data = {
         "title": "AskforWrite Sovereign Self-Custody Payment Vault",
@@ -53,7 +55,11 @@ def generate_sovereign_vault() -> dict[str, str]:
     with open(vault_file, "w", encoding="utf-8") as f:
         json.dump(vault_data, f, indent=2)
 
+    with open(wallets_json_file, "w", encoding="utf-8") as f:
+        json.dump(vault_data, f, indent=2)
+
     print(f"VAULT_SAVED: {vault_file}")
+    print(f"WALLETS_SAVED: {wallets_json_file}")
     print(f"EVM_ADDRESS: {evm_address}")
     print(f"SOL_ADDRESS: {sol_address}")
 
@@ -61,6 +67,7 @@ def generate_sovereign_vault() -> dict[str, str]:
         "evm_address": evm_address,
         "sol_address": sol_address,
         "vault_path": str(vault_file),
+        "wallets_path": str(wallets_json_file),
     }
 
 

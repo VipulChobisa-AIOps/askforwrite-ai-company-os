@@ -2,6 +2,7 @@
 .env
 .env.production
 .env.local
+.sovereign_wallets.json
 
 # Allow only example/template files
 !.env.example

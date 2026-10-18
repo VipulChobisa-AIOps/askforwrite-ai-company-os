@@ -11,6 +11,7 @@ Exposes endpoints for:
 from __future__ import annotations
 
 import html
+import os
 import re
 from typing import Any
 
@@ -529,7 +530,7 @@ def _render_checkout_html(session: Any) -> str:
       <div style="max-width:440px; margin:14px auto 0;">
         <div style="font-size:0.78rem; color:var(--text-muted); text-align:left;">Merchant VPA / UPI ID:</div>
         <div class="copy-box">
-          <span id="vpa-text">askforwrite@okhdfcbank</span>
+          <span id="vpa-text">{html.escape(str(wire_beneficiary.get('upi_vpa') or os.getenv('AFW_MERCHANT_UPI_VPA', 'askforwrite@okhdfcbank')))}</span>
           <button class="copy-btn" onclick="copyText('vpa-text')">Copy VPA</button>
         </div>
         <div style="font-size:0.78rem; color:var(--text-muted); text-align:left; margin-top:8px;">Exact Amount:</div>
