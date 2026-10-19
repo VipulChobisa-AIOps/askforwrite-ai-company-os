@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="afw-grad-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="50%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="afw-border-512" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0.3" />
+    </linearGradient>
+    <filter id="afw-glow-512" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="24" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#07090e" />
+  <rect width="508" height="508" x="2" y="2" rx="110" fill="none" stroke="url(#afw-border-512)" stroke-width="4" />
+
+  <!-- Ambient Glow -->
+  <circle cx="256" cy="256" r="128" fill="#6366f1" opacity="0.3" filter="url(#afw-glow-512)" />
+
+  <!-- Geometric Triangle / Core AI Node -->
+  <path d="M256 102 L396 352 H116 Z" fill="url(#afw-grad-512)" stroke="rgba(255,255,255,0.75)" stroke-width="8" stroke-linejoin="round" />
+  
+  <!-- Inner Delta Reflection -->
+  <path d="M256 176 L332 320 H180 Z" fill="#07090e" opacity="0.85" />
+  <circle cx="256" cy="262" r="26" fill="#22d3ee" />
+
+  <!-- AFW Wordmark -->
+  <text x="256" y="432" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="54" font-weight="800" fill="#ffffff" letter-spacing="4" text-anchor="middle">AFW OS</text>
+</svg>

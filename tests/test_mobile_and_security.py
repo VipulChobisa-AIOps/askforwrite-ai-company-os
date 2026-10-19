@@ -59,6 +59,40 @@ class MobileAndSecurityTests(unittest.TestCase):
         self.assertEqual(data["display"], "standalone")
         self.assertGreaterEqual(len(data["icons"]), 1)
 
+    def test_dashboard_pwa_manifest_served(self):
+        """Verify /dashboard/manifest.json is served with 200 OK and valid PWA config."""
+        resp = self.client.get("/dashboard/manifest.json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["name"], "AskforWrite AI Company OS")
+        self.assertEqual(data["short_name"], "AFW OS")
+        self.assertEqual(data["start_url"], "/dashboard/")
+        self.assertEqual(data["display"], "standalone")
+        self.assertEqual(data["background_color"], "#07090e")
+        self.assertEqual(data["theme_color"], "#6366f1")
+        self.assertGreaterEqual(len(data["icons"]), 2)
+
+    def test_dashboard_service_worker_served(self):
+        """Verify /dashboard/sw.js is served with 200 OK and contains caching logic."""
+        resp = self.client.get("/dashboard/sw.js")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("self.addEventListener('install'", resp.text)
+        self.assertIn("STATIC_ASSETS", resp.text)
+        self.assertIn("/dashboard/", resp.text)
+
+    def test_dashboard_pwa_assets_and_html_meta(self):
+        """Verify index.html includes manifest links, theme-color, and icons exist."""
+        html_resp = self.client.get("/dashboard/index.html")
+        self.assertEqual(html_resp.status_code, 200)
+        self.assertIn('<link rel="manifest" href="/dashboard/manifest.json">', html_resp.text)
+        self.assertIn('<meta name="theme-color" content="#6366f1">', html_resp.text)
+        self.assertIn('navigator.serviceWorker.register', html_resp.text)
+
+        icon192 = self.client.get("/dashboard/icon-192.svg")
+        self.assertEqual(icon192.status_code, 200)
+        icon512 = self.client.get("/dashboard/icon-512.svg")
+        self.assertEqual(icon512.status_code, 200)
+
     def test_portal_and_app_redirects(self):
         """Verify /portal and /app redirect smoothly to the SPA interface."""
         resp = self.client.get("/portal", follow_redirects=False)

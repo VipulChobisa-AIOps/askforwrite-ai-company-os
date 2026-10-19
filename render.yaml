@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AskforWrite AI Company OS — Render 1-Click Cloud Blueprint
+# Repository: VipulChobisa-AIOps/askforwrite-ai-company-os
+# Production Custom Domain: os.askforwrite.in
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: "1"
+
+databases:
+  - name: askforwrite-db
+    databaseName: company_os
+    user: afw_admin
+    plan: starter
+    region: singapore
+    ipAllowList: [] # Allow internal connections from services in the same region
+
+services:
+  - type: web
+    name: askforwrite-ai-company-os
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore
+    healthCheckPath: /health
+    domains:
+      - os.askforwrite.in
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: askforwrite-db
+          property: connectionString
+      - key: MANAGER_API_KEY
+        generateValue: true
+      - key: OWNER_API_KEY
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: "https://os.askforwrite.in,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
+      - key: PAYMENT_PROVIDER
+        value: sovereign_direct
+      - key: UVICORN_WORKERS
+        value: "2"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Hostinger WordPress Integration Keys (Set in Render Dashboard if syncing posts)
+      - key: WP_BASE_URL
+        value: "https://askforwrite.in"
+      - key: WP_USERNAME
+        value: "vipul"
+      - key: WP_APP_PASSWORD
+        sync: false

@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AskforWrite Company OS — Admin Dashboard</title>
   <meta name="description" content="Owner admin dashboard for AskforWrite AI Company OS. Manage leads, approvals, outreach, organizations, and revenue.">
+  <link rel="manifest" href="/dashboard/manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AFW OS">
+  <link rel="icon" type="image/svg+xml" href="/dashboard/icon-192.svg">
+  <link rel="apple-touch-icon" href="/dashboard/icon-192.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -110,6 +117,10 @@
           <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input type="text" placeholder="Search leads, approvals..." id="global-search">
         </div>
+        <button class="icon-btn" id="btn-install-pwa" title="Install AFW OS App (Android & Desktop)" style="display:none;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);color:#a5b4fc;padding:0 10px;width:auto;height:36px;gap:6px;font-size:0.78rem;font-weight:600;border-radius:8px;cursor:pointer;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Install App</span>
+        </button>
         <button class="icon-btn" id="btn-refresh" title="Refresh data">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
@@ -1451,5 +1462,46 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script src="dashboard.js"></script>
+
+  <!-- ── PWA Service Worker Registration & 1-Click Installation ── -->
+  <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/dashboard/sw.js', { scope: '/dashboard/' })
+          .then((registration) => {
+            console.log('[AFW PWA] Service Worker registered with scope:', registration.scope);
+          })
+          .catch((err) => {
+            console.warn('[AFW PWA] Service Worker registration failed:', err);
+          });
+      });
+    }
+
+    // 1-Click Install Flow for Android & Desktop
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const installBtn = document.getElementById('btn-install-pwa');
+      if (installBtn) {
+        installBtn.style.display = 'inline-flex';
+        installBtn.onclick = async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          console.log('[AFW PWA] Install prompt outcome:', outcome);
+          deferredPrompt = null;
+          installBtn.style.display = 'none';
+        };
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      console.log('[AFW PWA] AskforWrite AI Company OS successfully installed.');
+      const installBtn = document.getElementById('btn-install-pwa');
+      if (installBtn) installBtn.style.display = 'none';
+    });
+  </script>
 </body>
 </html>
