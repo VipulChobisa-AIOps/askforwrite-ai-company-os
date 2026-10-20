@@ -9,7 +9,7 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
 ```
                                       ┌──────────────────────────────────────────────────────────┐
                                       │              Hostinger DNS Zone Editor                    │
-                                      │  CNAME: os.askforwrite.com / os.askforwrite.in ──> Cloud  │
+                                      │         CNAME: os.askforwrite.com ──> Cloud Host          │
                                       └────────────────────────────┬─────────────────────────────┘
                                                                    │
                                                                    ▼
@@ -34,10 +34,10 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
 
 ## Step 1: Add CNAME Record in Hostinger hPanel DNS Zone Editor
 
-Link your custom subdomain (`os.askforwrite.com` or `os.askforwrite.in`) to your cloud deployment instance (Render, Railway, or VPS).
+Link your custom subdomain `os.askforwrite.com` to your cloud deployment instance (Render, Railway, or VPS).
 
 1. Log in to [Hostinger hPanel](https://hpanel.hostinger.com/).
-2. Navigate to **Websites** -> Select your domain (**`askforwrite.com`** or **`askforwrite.in`**) -> Click **Manage**.
+2. Navigate to **Websites** -> Select your domain (**`askforwrite.com`**) -> Click **Manage**.
 3. In the left-hand search bar, type **DNS Zone Editor** (or scroll to **Advanced -> DNS Zone Editor**).
 4. In the **Manage DNS records** card, fill out the form:
    - **Type**: Select `CNAME` from the dropdown.
@@ -114,7 +114,7 @@ The Executive Command Portal and Customer Portal are now installable Progressive
 
 ### On Android (Chrome / Brave / Edge)
 1. Open Google Chrome on your Android smartphone.
-2. Navigate to `https://os.askforwrite.in/dashboard/`.
+2. Navigate to `https://os.askforwrite.com/dashboard/`.
 3. You will see an instant prompt banner or can tap the **three dots menu (⋮)** in the top right.
 4. Tap **"Install app"** or **"Add to Home screen"**.
 5. Confirm by tapping **Install**.
@@ -122,7 +122,7 @@ The Executive Command Portal and Customer Portal are now installable Progressive
 
 ### On Windows / Mac Desktop (Chrome / Edge)
 1. Open Google Chrome or Microsoft Edge on your computer.
-2. Navigate to `https://os.askforwrite.in/dashboard/`.
+2. Navigate to `https://os.askforwrite.com/dashboard/`.
 3. Look at the right side of the address bar for the **Install App icon** (computer monitor with a down arrow) or click the glowing **"Install App"** button in the dashboard top navigation bar.
 4. Click **Install**.
 5. The dashboard will instantly launch in a dedicated borderless desktop application window with taskbar pinning and auto-updating offline shell.
@@ -146,7 +146,7 @@ Deploy the backend engine to Render using the included blueprint:
    - High-performance PostgreSQL database (`askforwrite-db`).
    - Production Docker container (`askforwrite-ai-company-os`).
    - Health check monitoring on `/health`.
-6. Under **Custom Domains** on Render, add `os.askforwrite.in` and verify the CNAME certificate.
+6. Under **Custom Domains** on Render, add `os.askforwrite.com` and verify the CNAME certificate.
 
 ---
 
@@ -154,10 +154,10 @@ Deploy the backend engine to Render using the included blueprint:
 
 | Component | Target URL | Expected Result |
 | :--- | :--- | :--- |
-| **Backend Health** | `https://os.askforwrite.in/health` | `HTTP 200 {"status": "healthy"}` |
-| **PWA Manifest** | `https://os.askforwrite.in/dashboard/manifest.json` | `HTTP 200` valid JSON with `AFW OS` |
-| **Service Worker** | `https://os.askforwrite.in/dashboard/sw.js` | `HTTP 200` valid Javascript file |
-| **DirectPay Checkout** | `https://os.askforwrite.in/v1/pay/checkout?package=growth_all_in_one` | Responsive 0%-fee QR & Web3 checkout |
+| **Backend Health** | `https://os.askforwrite.com/health` | `HTTP 200 {"status": "healthy"}` |
+| **PWA Manifest** | `https://os.askforwrite.com/dashboard/manifest.json` | `HTTP 200` valid JSON with `AFW OS` |
+| **Service Worker** | `https://os.askforwrite.com/dashboard/sw.js` | `HTTP 200` valid Javascript file |
+| **DirectPay Checkout** | `https://os.askforwrite.com/v1/pay/checkout?package=growth_all_in_one` | Responsive 0%-fee QR & Web3 checkout |
 | **WordPress Widget** | `https://askforwrite.in` | Floating AI Closer in `wp_footer` |
 | **2026 AI Crawlers** | `https://askforwrite.in/llms.txt` | Markdown entity specification |
 

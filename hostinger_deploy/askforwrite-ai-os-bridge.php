@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: AskforWrite AI Company OS — Hostinger Bridge
- * Plugin URI: https://os.askforwrite.in
- * Description: Connects Hostinger WordPress sites (askforwrite.in, theaiscene.in, careersathi.in, edutechguide.in) to AskforWrite AI Company OS. Features 24/7 AI Sales Closer widget, AFW DirectPay zero-fee checkout shortcode, and automated 2026 GEO/AIO /llms.txt indexing.
+ * Plugin URI: https://os.askforwrite.com
+ * Description: Connects Hostinger WordPress sites (askforwrite.in, theaiscene.in, careersathi.in, edutechguide.in) to AskforWrite AI Company OS (os.askforwrite.com). Features 24/7 AI Sales Closer widget, AFW DirectPay zero-fee checkout shortcode, and automated 2026 GEO/AIO /llms.txt indexing.
  * Version: 1.0.0
  * Author: Vipul Chobisa & AskforWrite AI
  * Author URI: https://askforwrite.in
@@ -230,7 +230,7 @@ function afw_os_render_settings_page() {
                         <th scope="row"><label for="afw_os_api_base">AI OS Gateway Base URL</label></th>
                         <td>
                             <input name="afw_os_api_base" type="url" id="afw_os_api_base" value="<?php echo esc_attr($api_base); ?>" class="regular-text" style="width: 100%; max-width: 480px;" required>
-                            <p class="description">Production domain linked via CNAME (e.g. <code>https://os.askforwrite.in</code>).</p>
+                            <p class="description">Production domain linked via CNAME (e.g. <code>https://os.askforwrite.com</code>).</p>
                         </td>
                     </tr>
                     <tr>
