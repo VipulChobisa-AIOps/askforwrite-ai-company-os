@@ -551,7 +551,7 @@ def build_payment_link(
         pkg = CATALOG["company_os_starter"]
 
     prov = provider.lower().strip()
-    if prov in ("afw_directpay", "sovereign_pay", "directpay"):
+    if prov in ("afw_directpay", "sovereign_pay", "directpay", "sovereign_direct"):
         base_url = os.getenv("AFW_DIRECTPAY_URL", "https://os.askforwrite.com/v1/pay/checkout")
         comp = quote_plus(company or "")
         return f"{base_url}?package={pkg.key}&company={comp}"

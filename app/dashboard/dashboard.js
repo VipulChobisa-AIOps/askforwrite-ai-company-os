@@ -15,7 +15,11 @@
     set apiBase(value) {
       this._apiBase = value;
     },
-    ownerApiKey: localStorage.getItem('afw_api_key') || localStorage.getItem('askforwrite_owner_key') || '',
+    ownerApiKey: localStorage.getItem('askforwrite_owner_key') || localStorage.getItem('afw_api_key') || '',
+    accessToken: localStorage.getItem('afw_access_token') || '',
+    geminiApiKey: localStorage.getItem('afw_gemini_key') || '',
+    userRole: localStorage.getItem('afw_user_role') || (localStorage.getItem('askforwrite_owner_key') ? 'owner' : ''),
+    userName: localStorage.getItem('afw_user_name') || '',
     refreshInterval: 10000, // 10s auto-refresh
   };
 
@@ -48,6 +52,8 @@
   async function api(method, path, body = null) {
     const headers = { 'Content-Type': 'application/json' };
     if (CONFIG.ownerApiKey) headers['X-API-Key'] = CONFIG.ownerApiKey;
+    if (CONFIG.accessToken) headers['Authorization'] = `Bearer ${CONFIG.accessToken}`;
+    if (CONFIG.geminiApiKey) headers['X-Gemini-API-Key'] = CONFIG.geminiApiKey;
 
     const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
@@ -59,6 +65,7 @@
     }
     return res.json();
   }
+
 
   // ── Toast Notifications ──────────────────────────────────
   function toast(message, type = 'info') {
@@ -233,7 +240,87 @@
     }
   }
 
+  async function fetchCustomerPortalData() {
+    try {
+      const me = await api('GET', '/v1/me');
+      if (me) {
+        if ($('#portal-org-name')) $('#portal-org-name').textContent = me.org_name || 'Organization';
+        if ($('#portal-org-id')) $('#portal-org-id').textContent = me.org_id || '';
+        if ($('#portal-tier-badge')) {
+          $('#portal-tier-badge').textContent = (me.tier || 'Starter').toUpperCase() + ' Tier';
+        }
+        if (me.credits) {
+          const leadLimit = me.credits.lead_credits_limit || 0;
+          const leadRem = me.credits.lead_credits_remaining || 0;
+          if ($('#portal-stat-leads')) $('#portal-stat-leads').textContent = `${leadRem} / ${leadLimit}`;
+          if ($('#portal-lead-badge')) $('#portal-lead-badge').textContent = `${100 - (me.credits.lead_utilization_pct || 0)}% Left`;
+          if ($('#portal-fill-leads')) $('#portal-fill-leads').style.width = `${Math.min(100, me.credits.lead_utilization_pct || 0)}%`;
+
+          const outLimit = me.credits.outreach_credits_limit || 0;
+          const outRem = me.credits.outreach_credits_remaining || 0;
+          if ($('#portal-stat-outreach')) $('#portal-stat-outreach').textContent = `${outRem} / ${outLimit}`;
+          if ($('#portal-fill-outreach')) $('#portal-fill-outreach').style.width = `${Math.min(100, me.credits.outreach_utilization_pct || 0)}%`;
+        }
+
+        // Masked key display
+        const statusEl = $('#portal-gemini-key-status');
+        const maskedEl = $('#portal-gemini-key-masked');
+        if (me.has_custom_gemini_key && me.gemini_key_masked) {
+          if (statusEl) {
+            statusEl.textContent = 'Active (BYOK Isolated)';
+            statusEl.className = 'status-pill approved';
+          }
+          if (maskedEl) maskedEl.textContent = me.gemini_key_masked;
+        } else {
+          if (statusEl) {
+            statusEl.textContent = 'Not Configured (Deterministic Fallback)';
+            statusEl.className = 'status-pill pending';
+          }
+          if (maskedEl) maskedEl.textContent = 'None (Deterministic Fallback)';
+        }
+
+        // Update sidebar info
+        if (CONFIG.userRole === 'customer') {
+          if ($('#sidebar-user-name')) $('#sidebar-user-name').textContent = me.full_name || me.email || 'Customer';
+          if ($('#sidebar-user-role')) $('#sidebar-user-role').textContent = 'Customer (' + (me.tier || 'Starter') + ')';
+          if ($('#sidebar-user-avatar')) {
+            const initials = (me.full_name || me.email || 'CU').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+            $('#sidebar-user-avatar').textContent = initials;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Customer portal data fetch:', e.message);
+    }
+
+    try {
+      const invoices = await api('GET', '/v1/me/billing');
+      if (Array.isArray(invoices) && invoices.length > 0) {
+        const tbody = $('#portal-invoices-tbody');
+        if (tbody) {
+          tbody.innerHTML = invoices.map(inv => `
+            <tr>
+              <td><code>${esc(inv.invoice_id)}</code></td>
+              <td>AskforWrite AI Workspace</td>
+              <td>${inv.currency === 'USD' ? '$' : '₹'}${inv.amount}</td>
+              <td>${esc(inv.provider)}</td>
+              <td><span class="status-pill ${inv.status === 'PAID' ? 'approved' : 'pending'}">${esc(inv.status)}</span></td>
+              <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
+            </tr>
+          `).join('');
+        }
+      }
+    } catch (e) {
+      console.warn('Billing invoices fetch:', e.message);
+    }
+  }
+
   async function fetchAll() {
+    const isCustomer = CONFIG.userRole === 'customer' || (!CONFIG.ownerApiKey && CONFIG.accessToken);
+    if (isCustomer) {
+      await fetchCustomerPortalData();
+      return;
+    }
     await fetchDashboardData();
     await Promise.allSettled([
       fetchLeads(),
@@ -243,8 +330,10 @@
       fetchFieldForceData(),
       fetchWatchdogData(),
       fetchCeoBriefing(),
+      fetchCustomerPortalData(),
     ]);
   }
+
 
   // ── Connection Status ────────────────────────────────────
   function setConnectionStatus(online) {
@@ -1603,8 +1692,34 @@
       if (input) input.type = input.type === 'password' ? 'text' : 'password';
     });
     $('#btn-portal-upgrade')?.addEventListener('click', () => {
-      window.open('https://razorpay.me/@askforwrite', '_blank');
+      window.open('/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client', '_blank');
     });
+
+    // Customer Portal BYOK & Service Execution listeners
+    $('#btn-save-portal-gemini-key')?.addEventListener('click', handleSavePortalGeminiKey);
+    $('#btn-run-tenant-service')?.addEventListener('click', handleRunTenantService);
+    $('#btn-portal-refresh')?.addEventListener('click', fetchCustomerPortalData);
+
+    // Auth Gate tabs & submit buttons
+    $$('.auth-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        if (tab) switchAuthTab(tab);
+      });
+    });
+
+    $('#btn-customer-login')?.addEventListener('click', handleCustomerLogin);
+    $('#btn-customer-register')?.addEventListener('click', handleCustomerRegister);
+    $('#btn-owner-unlock')?.addEventListener('click', handleOwnerUnlock);
+    $('#btn-logout')?.addEventListener('click', handleLogout);
+
+    $('#login-password')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleCustomerLogin();
+    });
+    $('#auth-owner-key')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleOwnerUnlock();
+    });
+
 
     // Mobile Phone Simulator actions
     $('#btn-phone-checkin')?.addEventListener('click', async () => {
@@ -1802,7 +1917,7 @@
               <div style="font-size:0.7rem;color:var(--cyan);font-weight:700;margin-bottom:3px">AskforWrite AI Closer</div>
               Our Autonomous AI Growth Suite is ₹9,999/month ($129 USD). It provides unlimited Pixel AI ad visuals, 4-site SEO publishing, and a 24/7 automated WhatsApp sales closer!
               <div style="margin-top:8px">
-                <a href="https://razorpay.me/@askforwrite?amount=999900&notes_package=growth_all_in_one" target="_blank" class="primary-btn" style="display:inline-block;padding:6px 12px;font-size:0.75rem;text-decoration:none">
+                <a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="primary-btn" style="display:inline-block;padding:6px 12px;font-size:0.75rem;text-decoration:none">
                   Instant Checkout Link
                 </a>
               </div>
@@ -1919,10 +2034,12 @@
   // ── Settings Modal ───────────────────────────────────────
   function openSettingsModal() {
     const keyInput = $('#settings-api-key');
+    const geminiInput = $('#settings-gemini-key');
     const baseInput = $('#settings-api-base');
     const intervalSelect = $('#settings-refresh-interval');
 
     if (keyInput) keyInput.value = CONFIG.ownerApiKey || '';
+    if (geminiInput) geminiInput.value = CONFIG.geminiApiKey || '';
     if (baseInput) baseInput.value = CONFIG.apiBase || window.location.origin;
     if (intervalSelect) intervalSelect.value = String(CONFIG.refreshInterval);
 
@@ -1947,14 +2064,21 @@
 
   function saveSettings() {
     const key = ($('#settings-api-key')?.value || '').trim();
+    const geminiKey = ($('#settings-gemini-key')?.value || '').trim();
     const base = ($('#settings-api-base')?.value || '').trim() || window.location.origin;
     const interval = parseInt($('#settings-refresh-interval')?.value || '10000', 10);
 
     CONFIG.ownerApiKey = key;
+    CONFIG.geminiApiKey = geminiKey;
     CONFIG.apiBase = base;
     CONFIG.refreshInterval = isNaN(interval) ? 10000 : interval;
 
     localStorage.setItem('askforwrite_owner_key', key);
+    if (geminiKey) {
+      localStorage.setItem('afw_gemini_key', geminiKey);
+    } else {
+      localStorage.removeItem('afw_gemini_key');
+    }
     localStorage.setItem('askforwrite_api_base', base);
     localStorage.setItem('askforwrite_refresh_interval', String(CONFIG.refreshInterval));
 
@@ -1967,32 +2091,377 @@
   function resetSettings() {
     localStorage.removeItem('askforwrite_owner_key');
     localStorage.removeItem('afw_api_key');
+    localStorage.removeItem('afw_access_token');
+    localStorage.removeItem('afw_gemini_key');
+    localStorage.removeItem('afw_user_role');
+    localStorage.removeItem('afw_user_name');
     localStorage.removeItem('askforwrite_api_base');
     localStorage.removeItem('askforwrite_refresh_interval');
 
     CONFIG.ownerApiKey = '';
+    CONFIG.accessToken = '';
+    CONFIG.geminiApiKey = '';
+    CONFIG.userRole = '';
+    CONFIG.userName = '';
     CONFIG.apiBase = window.location.origin;
     CONFIG.refreshInterval = 10000;
 
     const keyInput = $('#settings-api-key');
+    const geminiInput = $('#settings-gemini-key');
     const baseInput = $('#settings-api-base');
     const intervalSelect = $('#settings-refresh-interval');
 
-    if (keyInput) keyInput.value = CONFIG.ownerApiKey;
+    if (keyInput) keyInput.value = '';
+    if (geminiInput) geminiInput.value = '';
     if (baseInput) baseInput.value = CONFIG.apiBase;
     if (intervalSelect) intervalSelect.value = String(CONFIG.refreshInterval);
 
     resetRefreshTimer();
     toast('Settings reset to defaults', 'info');
+    checkAuthGate();
     fetchAll();
+  }
+
+  // ── Auth Gate & Multi-Role Onboarding ────────────────────
+  function checkAuthGate() {
+    const hasOwnerKey = Boolean(CONFIG.ownerApiKey);
+    const hasAccessToken = Boolean(CONFIG.accessToken);
+
+    const gate = $('#auth-gate-overlay');
+    if (!hasOwnerKey && !hasAccessToken) {
+      if (gate) gate.style.display = 'flex';
+      return false;
+    }
+
+    if (gate) gate.style.display = 'none';
+
+    // Apply role-based navigation visibility
+    const isCustomer = CONFIG.userRole === 'customer' || (!hasOwnerKey && hasAccessToken);
+    const ownerTabs = ['dashboard', 'leads', 'approvals', 'outreach', 'organizations', 'revenue'];
+
+    ownerTabs.forEach(tab => {
+      const navItem = $(`#nav-${tab}`);
+      if (navItem) {
+        navItem.style.display = isCustomer ? 'none' : 'flex';
+      }
+    });
+
+    if (isCustomer) {
+      if (state.currentPage === 'dashboard' || ownerTabs.includes(state.currentPage)) {
+        navigateTo('portal');
+      }
+      if ($('#sidebar-user-name') && CONFIG.userName) {
+        $('#sidebar-user-name').textContent = CONFIG.userName;
+      }
+      if ($('#sidebar-user-role')) {
+        $('#sidebar-user-role').textContent = 'Customer Workspace';
+      }
+    } else {
+      if ($('#sidebar-user-name')) $('#sidebar-user-name').textContent = 'Vipul Choubisa';
+      if ($('#sidebar-user-role')) $('#sidebar-user-role').textContent = 'Owner';
+      if ($('#sidebar-user-avatar')) $('#sidebar-user-avatar').textContent = 'VC';
+    }
+
+    return true;
+  }
+
+  function switchAuthTab(tabName) {
+    $$('.auth-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
+    $$('.auth-tab-content').forEach(c => {
+      c.style.display = (c.id === `auth-tab-${tabName}`) ? 'block' : 'none';
+    });
+    const msg = $('#auth-gate-message');
+    if (msg) msg.style.display = 'none';
+  }
+
+  function showAuthGateError(text) {
+    const msg = $('#auth-gate-message');
+    if (msg) {
+      msg.textContent = text;
+      msg.style.display = 'block';
+      msg.style.background = 'rgba(239, 68, 68, 0.15)';
+      msg.style.color = '#fca5a5';
+      msg.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+    }
+  }
+
+  async function handleCustomerLogin() {
+    const email = ($('#login-email')?.value || '').trim();
+    const password = ($('#login-password')?.value || '').trim();
+    const geminiKey = ($('#login-gemini-key')?.value || '').trim();
+
+    if (!email || !password) {
+      showAuthGateError('Please enter both email and password.');
+      return;
+    }
+
+    try {
+      const btn = $('#btn-customer-login');
+      if (btn) { btn.disabled = true; btn.textContent = 'Signing in...'; }
+
+      const res = await api('POST', '/v1/auth/login', {
+        email,
+        password,
+        portal: 'customer',
+      });
+
+      CONFIG.accessToken = res.access_token;
+      CONFIG.userRole = res.role || 'customer';
+      CONFIG.userName = res.full_name || email;
+      localStorage.setItem('afw_access_token', res.access_token);
+      localStorage.setItem('afw_user_role', CONFIG.userRole);
+      localStorage.setItem('afw_user_name', CONFIG.userName);
+
+      if (geminiKey) {
+        CONFIG.geminiApiKey = geminiKey;
+        localStorage.setItem('afw_gemini_key', geminiKey);
+        try {
+          await api('POST', '/v1/me/gemini-key', { gemini_api_key: geminiKey });
+        } catch (e) {
+          console.warn('Sync BYOK key on login:', e);
+        }
+      }
+
+      toast(`Welcome back, ${res.full_name || 'Customer'}!`, 'success');
+      checkAuthGate();
+      navigateTo('portal');
+      await fetchCustomerPortalData();
+    } catch (err) {
+      showAuthGateError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      const btn = $('#btn-customer-login');
+      if (btn) { btn.disabled = false; btn.textContent = 'Sign In to Workspace'; }
+    }
+  }
+
+  async function handleCustomerRegister() {
+    const fullName = ($('#reg-name')?.value || '').trim();
+    const company = ($('#reg-company')?.value || '').trim();
+    const email = ($('#reg-email')?.value || '').trim();
+    const password = ($('#reg-password')?.value || '').trim();
+    const pkg = ($('#reg-package')?.value || 'free_trial').trim();
+    const geminiKey = ($('#reg-gemini-key')?.value || '').trim();
+
+    if (!fullName || !company || !email || !password) {
+      showAuthGateError('Please fill in all required registration fields.');
+      return;
+    }
+
+    try {
+      const btn = $('#btn-customer-register');
+      if (btn) { btn.disabled = true; btn.textContent = 'Creating Workspace...'; }
+
+      let res;
+      if (pkg === 'free_trial') {
+        res = await api('POST', '/v1/auth/register', {
+          email,
+          password,
+          full_name: fullName,
+          company_name: company,
+          role: 'customer',
+          gemini_api_key: geminiKey || null,
+        });
+      } else {
+        res = await api('POST', '/v1/auth/signup', {
+          company_name: company,
+          email,
+          password,
+          full_name: fullName,
+          package_key: pkg,
+          payment_provider: 'afw_directpay',
+          gemini_api_key: geminiKey || null,
+        });
+      }
+
+      CONFIG.accessToken = res.access_token;
+      CONFIG.userRole = res.role || 'customer';
+      CONFIG.userName = res.full_name || fullName;
+      localStorage.setItem('afw_access_token', res.access_token);
+      localStorage.setItem('afw_user_role', CONFIG.userRole);
+      localStorage.setItem('afw_user_name', CONFIG.userName);
+
+      if (geminiKey) {
+        CONFIG.geminiApiKey = geminiKey;
+        localStorage.setItem('afw_gemini_key', geminiKey);
+      }
+
+      toast(`Workspace created for ${company}!`, 'success');
+      checkAuthGate();
+      navigateTo('portal');
+      await fetchCustomerPortalData();
+
+      if (res.checkout_url && pkg !== 'free_trial') {
+        toast('Directpay checkout link generated for your package!', 'info');
+      }
+    } catch (err) {
+      showAuthGateError(err.message || 'Workspace creation failed.');
+    } finally {
+      const btn = $('#btn-customer-register');
+      if (btn) { btn.disabled = false; btn.textContent = 'Create Instant Workspace'; }
+    }
+  }
+
+  async function handleOwnerUnlock() {
+    const ownerKey = ($('#auth-owner-key')?.value || '').trim();
+    const ownerGemini = ($('#auth-owner-gemini-key')?.value || '').trim();
+
+    if (!ownerKey) {
+      showAuthGateError('Please enter your Owner / Manager API Key.');
+      return;
+    }
+
+    try {
+      const btn = $('#btn-owner-unlock');
+      if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
+
+      const testRes = await fetch(`${CONFIG.apiBase}/v1/project/status`, {
+        headers: { 'X-API-Key': ownerKey },
+      });
+      if (!testRes.ok) {
+        throw new Error('Invalid Owner API Key (Authentication Failed)');
+      }
+
+      CONFIG.ownerApiKey = ownerKey;
+      CONFIG.userRole = 'owner';
+      CONFIG.userName = 'Vipul Choubisa';
+      localStorage.setItem('askforwrite_owner_key', ownerKey);
+      localStorage.setItem('afw_user_role', 'owner');
+      localStorage.setItem('afw_user_name', 'Vipul Choubisa');
+
+      if (ownerGemini) {
+        CONFIG.geminiApiKey = ownerGemini;
+        localStorage.setItem('afw_gemini_key', ownerGemini);
+      }
+
+      toast('Owner Command Center unlocked!', 'success');
+      checkAuthGate();
+      navigateTo('dashboard');
+      await fetchAll();
+    } catch (err) {
+      showAuthGateError(err.message || 'Invalid Owner API Key.');
+    } finally {
+      const btn = $('#btn-owner-unlock');
+      if (btn) { btn.disabled = false; btn.textContent = 'Unlock Owner Command Center'; }
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('askforwrite_owner_key');
+    localStorage.removeItem('afw_api_key');
+    localStorage.removeItem('afw_access_token');
+    localStorage.removeItem('afw_user_role');
+    localStorage.removeItem('afw_user_name');
+    localStorage.removeItem('afw_gemini_key');
+
+    CONFIG.ownerApiKey = '';
+    CONFIG.accessToken = '';
+    CONFIG.geminiApiKey = '';
+    CONFIG.userRole = '';
+    CONFIG.userName = '';
+
+    toast('Logged out of workspace.', 'info');
+    checkAuthGate();
+  }
+
+  // ── Customer Portal BYOK & Services ──────────────────────
+  async function handleSavePortalGeminiKey() {
+    const key = ($('#portal-gemini-key-input')?.value || '').trim();
+    try {
+      const res = await api('POST', '/v1/me/gemini-key', { gemini_api_key: key });
+      if (key) {
+        CONFIG.geminiApiKey = key;
+        localStorage.setItem('afw_gemini_key', key);
+        toast(`Gemini BYOK Key saved (${res.gemini_key_masked})`, 'success');
+      } else {
+        CONFIG.geminiApiKey = '';
+        localStorage.removeItem('afw_gemini_key');
+        toast('Gemini BYOK Key removed. Reverting to deterministic fallback.', 'info');
+      }
+      if ($('#portal-gemini-key-input')) $('#portal-gemini-key-input').value = '';
+      await fetchCustomerPortalData();
+    } catch (err) {
+      toast(`Failed to save Gemini key: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleRunTenantService() {
+    const serviceKey = ($('#portal-service-selector')?.value || 'pixel_ai_pack').trim();
+    const rawParam = ($('#portal-service-param')?.value || '').trim();
+    let payload = {};
+
+    if (rawParam) {
+      if (rawParam.startsWith('{') && rawParam.endsWith('}')) {
+        try {
+          payload = JSON.parse(rawParam);
+        } catch {
+          payload = { query: rawParam };
+        }
+      } else {
+        if (serviceKey === 'pixel_ai_pack') {
+          payload = { product_name: rawParam, target_audience: 'B2B Enterprise Leaders' };
+        } else if (serviceKey === 'ask4_academic_order') {
+          payload = { topic: rawParam };
+        } else if (serviceKey === 'mango_quality_analytics') {
+          payload = { crop_variety: rawParam, preset: 'ripe' };
+        } else {
+          payload = { query: rawParam };
+        }
+      }
+    }
+
+    const outEl = $('#portal-service-output');
+    const btn = $('#btn-run-tenant-service');
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = 'Executing...'; }
+      if (outEl) {
+        outEl.style.display = 'block';
+        outEl.textContent = `⚡ Executing ${serviceKey}...\nPayload: ${JSON.stringify(payload, null, 2)}`;
+      }
+
+      const res = await api('POST', '/v1/me/use-service', {
+        service_key: serviceKey,
+        payload,
+      });
+
+      if (outEl) {
+        outEl.textContent = `✅ Status: ${res.status}\nRemaining Credits: ${res.credits_remaining}\nCredits Used: ${res.credits_used}\n\nResult:\n` + JSON.stringify(res.result, null, 2);
+      }
+      toast(`Service ${serviceKey} executed successfully!`, 'success');
+      await fetchCustomerPortalData();
+    } catch (err) {
+      if (outEl) {
+        outEl.style.display = 'block';
+        outEl.textContent = `❌ Execution Error: ${err.message}`;
+      }
+      toast(`Execution failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Execute Service'; }
+    }
   }
 
   // ── API Key & Settings Setup ─────────────────────────────
   function initApiKey() {
     // Read persisted settings from localStorage
-    const storedKey = localStorage.getItem('askforwrite_owner_key');
+    const storedKey = localStorage.getItem('askforwrite_owner_key') || localStorage.getItem('afw_api_key');
     if (storedKey !== null) {
       CONFIG.ownerApiKey = storedKey;
+    }
+    const storedToken = localStorage.getItem('afw_access_token');
+    if (storedToken !== null) {
+      CONFIG.accessToken = storedToken;
+    }
+    const storedGemini = localStorage.getItem('afw_gemini_key');
+    if (storedGemini !== null) {
+      CONFIG.geminiApiKey = storedGemini;
+    }
+    const storedRole = localStorage.getItem('afw_user_role');
+    if (storedRole !== null) {
+      CONFIG.userRole = storedRole;
+    }
+    const storedName = localStorage.getItem('afw_user_name');
+    if (storedName !== null) {
+      CONFIG.userName = storedName;
     }
     const storedInterval = localStorage.getItem('askforwrite_refresh_interval');
     if (storedInterval !== null) {
@@ -2009,7 +2478,9 @@
   async function init() {
     initApiKey();
     bindEvents();
-    const initialPage = window.location.hash.replace('#', '') || 'dashboard';
+    checkAuthGate();
+
+    const initialPage = window.location.hash.replace('#', '') || (CONFIG.userRole === 'customer' ? 'portal' : 'dashboard');
     navigateTo(initialPage);
 
     // Initial load
@@ -2024,6 +2495,8 @@
     openApprovalModal,
     openSettingsModal,
     closeSettingsModal,
+    checkAuthGate,
+    handleLogout,
     triggerLeadDiscovery,
     viewLead: (id) => {
       const lead = state.leads.find(l => l.id === id);
@@ -2035,6 +2508,7 @@
       CONFIG.ownerApiKey = key;
       localStorage.setItem('askforwrite_owner_key', key);
       toast('API key saved', 'success');
+      checkAuthGate();
       fetchAll();
     },
   };
@@ -2046,3 +2520,4 @@
     init();
   }
 })();
+

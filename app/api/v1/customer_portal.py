@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.database import get_db
 from app.db.models import (
@@ -40,6 +41,20 @@ from app.services.catalog import CATALOG, get_package
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/me", tags=["customer-portal"])
+
+
+def mask_gemini_key(key: str | None) -> str | None:
+    """Mask all but the last 4 characters of a Gemini API key (e.g. AIza••••••••••••••••1a2b)."""
+    if not key or not key.strip():
+        return None
+    k = key.strip()
+    if len(k) <= 8:
+        return "••••" + k[-4:] if len(k) >= 4 else "••••"
+    prefix = k[:4]
+    suffix = k[-4:]
+    masked_length = max(4, len(k) - 8)
+    return f"{prefix}{'•' * masked_length}{suffix}"
+
 
 
 # ── Response Schemas ──────────────────────────────────────────────────────────
@@ -93,6 +108,8 @@ class MeResponse(BaseModel):
     credits: CreditUsageSummary
     capabilities: list[CapabilityEntry]
     portal_url: str
+    has_custom_gemini_key: bool = False
+    gemini_key_masked: str | None = None
 
 
 class PasswordChangeRequest(BaseModel):
@@ -103,6 +120,11 @@ class PasswordChangeRequest(BaseModel):
 class UseServiceRequest(BaseModel):
     service_key: str = Field(min_length=1, max_length=100, description="Service or SKU capability key")
     payload: dict[str, Any] = Field(default_factory=dict, description="Execution parameters")
+
+
+class UpdateGeminiKeyRequest(BaseModel):
+    gemini_api_key: str | None = Field(default=None, max_length=256)
+
 
 
 # ── Capability descriptions ───────────────────────────────────────────────────
@@ -193,6 +215,10 @@ def get_me(
     entitled = pkg.entitled_capabilities if pkg else set()
     package_name = pkg.name if pkg else None
 
+    org_gemini_key = meta.get("gemini_api_key")
+    has_custom = bool(org_gemini_key and str(org_gemini_key).strip())
+    masked = mask_gemini_key(org_gemini_key) if has_custom else None
+
     return MeResponse(
         user_id=user.id,
         email=user.email,
@@ -207,10 +233,60 @@ def get_me(
         credits=_credit_usage(org),
         capabilities=_build_capability_entries(entitled),
         portal_url="https://os.askforwrite.com/portal",
+        has_custom_gemini_key=has_custom,
+        gemini_key_masked=masked,
     )
 
 
+@router.post(
+    "/gemini-key",
+    status_code=status.HTTP_200_OK,
+    summary="Configure or clear tenant BYOK Gemini API Key",
+    operation_id="update_me_gemini_key",
+)
+def update_me_gemini_key(
+    body: UpdateGeminiKeyRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Save or clear the tenant's Bring-Your-Own-Key Gemini API Key."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    new_key = (body.gemini_api_key or "").strip()
+    meta = dict(org.metadata_json or {})
+
+    if new_key:
+        if len(new_key) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid Gemini API key format (must contain at least 10 characters)",
+            )
+        meta["gemini_api_key"] = new_key
+        has_custom = True
+        masked = mask_gemini_key(new_key)
+    else:
+        meta.pop("gemini_api_key", None)
+        has_custom = False
+        masked = None
+
+    org.metadata_json = meta
+    flag_modified(org, "metadata_json")
+    db.commit()
+
+    return {
+        "status": "updated",
+        "has_custom_gemini_key": has_custom,
+        "gemini_key_masked": masked,
+    }
+
+
 @router.get(
+
     "/usage",
     response_model=CreditUsageSummary,
     summary="Get monthly credit usage and remaining balance",
@@ -369,9 +445,20 @@ def use_tenant_service(
             detail="Monthly service credit quota exhausted. Please upgrade your plan.",
         )
 
+    # Ensure tenant's stored BYOK Gemini key is used if no header key was provided
+    meta = org.metadata_json or {}
+    org_gemini_key = meta.get("gemini_api_key")
+    from app.agents.llm_client import _REQUEST_GEMINI_KEY, set_request_llm_context
+
+    if not _REQUEST_GEMINI_KEY.get() and org_gemini_key:
+        set_request_llm_context(gemini_key=org_gemini_key, is_owner=False)
+    elif not _REQUEST_GEMINI_KEY.get():
+        set_request_llm_context(gemini_key=None, is_owner=False)
+
     service_key = body.service_key.strip().lower()
     input_payload = body.payload or {}
     exec_result: dict[str, Any] = {}
+
 
     if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading"):
         from app.services.quality_analytics import execute_produce_quality_inspection

@@ -1,5 +1,6 @@
 """Production middleware: CORS, request-ID propagation, and rate limiting."""
 
+import hmac
 import os
 import time
 import uuid
@@ -19,6 +20,7 @@ def add_production_middleware(app: FastAPI) -> None:
     _add_cors(app)
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(LLMContextMiddleware)
     # Rate limiting only in non-development environments
     app_env = os.environ.get("APP_ENV", "development").casefold()
     if app_env != "development":
@@ -39,11 +41,20 @@ def _add_cors(app: FastAPI) -> None:
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
-        allow_headers=["X-API-Key", "X-Correlation-ID", "Content-Type"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=[
+            "X-API-Key",
+            "X-Correlation-ID",
+            "Content-Type",
+            "Authorization",
+            "X-Gemini-API-Key",
+            "X-Org-ID",
+            "X-Org-Tier",
+        ],
         expose_headers=["X-Request-ID"],
         max_age=3600,
     )
+
 
 
 # ── Security Headers ──────────────────────────────────────────────────
@@ -93,6 +104,46 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         return response
+
+
+# ── Strict BYOK Gemini Context Isolation ─────────────────────────────
+
+class LLMContextMiddleware(BaseHTTPMiddleware):
+    """Inspects incoming headers and sets request-scoped BYOK Gemini API key & owner status."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        header_gemini_key = request.headers.get("X-Gemini-API-Key")
+        api_key = request.headers.get("X-API-Key")
+        auth_header = request.headers.get("Authorization", "")
+
+        owner_key = os.environ.get("OWNER_API_KEY", "")
+        manager_key = os.environ.get("MANAGER_API_KEY", "")
+
+        is_owner = False
+        if api_key:
+            if owner_key and hmac.compare_digest(api_key, owner_key):
+                is_owner = True
+            elif manager_key and hmac.compare_digest(api_key, manager_key):
+                is_owner = True
+        elif auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            try:
+                from app.security.auth import decode_access_token
+
+                payload = decode_access_token(token)
+                role = payload.get("role", "customer")
+                is_owner = role in {"owner", "manager"}
+            except Exception:
+                is_owner = False
+        else:
+            is_owner = False
+
+        from app.agents.llm_client import set_request_llm_context
+
+        set_request_llm_context(gemini_key=header_gemini_key, is_owner=is_owner)
+
+        return await call_next(request)
+
 
 
 

@@ -112,15 +112,21 @@ def decode_access_token(token: str) -> dict[str, Any]:
 def get_current_principal(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
+    x_gemini_api_key: str | None = Header(default=None),
 ) -> APIPrincipal:
     """Resolve API principal from either X-API-Key header OR Bearer token."""
+    from app.agents.llm_client import set_request_llm_context
+
     # 1. Bearer Token Resolution (Customer / Admin Login)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization[7:].strip()
         payload = decode_access_token(token)
+        role = payload.get("role", "customer")
+        is_owner = role in {"owner", "manager"}
+        set_request_llm_context(gemini_key=x_gemini_api_key, is_owner=is_owner)
         return APIPrincipal(
             subject=payload.get("email") or payload.get("sub", "unknown"),
-            role=payload.get("role", "customer"),
+            role=role,
             user_id=payload.get("sub"),
             org_id=payload.get("org_id"),
             email=payload.get("email"),
@@ -147,9 +153,11 @@ def get_current_principal(
                 detail=f"{environment_name} must contain at least 32 characters",
             )
         if expected_key and hmac.compare_digest(expected_key, x_api_key):
+            set_request_llm_context(gemini_key=x_gemini_api_key, is_owner=(role in {"owner", "manager"}))
             return APIPrincipal(subject=subject, role=role)
 
     raise HTTPException(status_code=401, detail="Invalid API key")
+
 
 
 def require_manager(

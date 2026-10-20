@@ -94,11 +94,14 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div class="user-avatar">VC</div>
+      <div class="user-avatar" id="sidebar-user-avatar">VC</div>
       <div class="user-info">
-        <span class="user-name">Vipul Choubisa</span>
-        <span class="user-role">Owner</span>
+        <span class="user-name" id="sidebar-user-name">Vipul Choubisa</span>
+        <span class="user-role" id="sidebar-user-role">Owner</span>
       </div>
+      <button class="icon-btn" id="btn-logout" title="Switch Account / Logout" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:6px;display:flex;align-items:center;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </aside>
 
@@ -552,6 +555,70 @@
           </div>
         </div>
 
+        <!-- BYOK Gemini API Key Isolation Card -->
+        <div class="card" style="margin-top:20px;border:1px solid rgba(168,85,247,0.3);background:linear-gradient(135deg,rgba(15,23,42,0.85) 0%,rgba(88,28,135,0.12) 100%)">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:1.5rem">🤖</span>
+              <div>
+                <h3 style="margin:0;font-size:1.05rem">Bring Your Own Gemini API Key (BYOK — Zero Owner Quota Usage)</h3>
+                <span style="font-size:0.78rem;color:var(--text-muted)">Commercial tenant quota isolation. All AI calls run securely against your own key with zero cost to AskforWrite.</span>
+              </div>
+            </div>
+            <span class="status-pill pending" id="portal-gemini-key-status">Checking...</span>
+          </div>
+          <div class="card-body" style="padding:16px 20px">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <input type="password" id="portal-gemini-key-input" class="settings-input" placeholder="Enter Gemini API Key (e.g. AIzaSy... or leave empty to clear)" style="flex:1;min-width:280px" autocomplete="off">
+              <button class="primary-btn" id="btn-save-portal-gemini-key" style="padding:10px 18px">
+                💾 Save Gemini Key
+              </button>
+            </div>
+            <div style="margin-top:10px;font-size:0.78rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <span>Masked Active Key: <strong id="portal-gemini-key-masked" style="color:var(--cyan);font-family:monospace">None</strong></span>
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--purple);text-decoration:underline">Get a free Gemini API Key at aistudio.google.com ↗</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Service Execution Card -->
+        <div class="card" style="margin-top:20px">
+          <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-size:1.5rem">⚡</span>
+              <div>
+                <h3 style="margin:0;font-size:1.05rem">Run Entitled AI Service (POST /v1/me/use-service)</h3>
+                <span style="font-size:0.78rem;color:var(--text-muted)">Directly execute tenant AI services and observe real-time quota deduction.</span>
+              </div>
+            </div>
+            <span class="card-badge" id="portal-service-credits-display">1 Credit / Run</span>
+          </div>
+          <div class="card-body" style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:12px;align-items:flex-end;margin-bottom:14px">
+              <div>
+                <label class="modal-label" for="portal-service-selector">Select Service</label>
+                <select id="portal-service-selector" class="settings-select" style="width:100%">
+                  <option value="pixel_ai_pack">Pixel AI Creative Ad Pack</option>
+                  <option value="warehouse_automation">Warehouse StockSense ABC/EOQ</option>
+                  <option value="mango_quality_analytics">AgriTech Produce Vision & Ripeness</option>
+                  <option value="bike_rebalance_analytics">Urban Micro-Mobility Rebalancer</option>
+                  <option value="ask4_academic_order">Ask4 Academic & Citation Order</option>
+                </select>
+              </div>
+              <div>
+                <label class="modal-label" for="portal-service-param">Parameters (Optional JSON or Keyword)</label>
+                <input type="text" id="portal-service-param" class="settings-input" placeholder='e.g. {"topic":"Supply Chain AI"} or product name'>
+              </div>
+              <div>
+                <button class="primary-btn" id="btn-run-tenant-service" style="padding:10px 18px;white-space:nowrap">
+                  ▶ Execute Service
+                </button>
+              </div>
+            </div>
+            <div id="portal-service-output" style="display:none;background:rgba(0,0,0,0.4);border:1px solid var(--glass-border);border-radius:var(--radius-sm);padding:14px;max-height:260px;overflow-y:auto;font-family:monospace;font-size:0.8rem;white-space:pre-wrap;color:var(--text-secondary)"></div>
+          </div>
+        </div>
+
         <!-- Invoices & Billing Table -->
         <div class="card" style="margin-top:20px">
           <div class="card-header">
@@ -577,7 +644,7 @@
                   <td>₹12,000 / $149</td>
                   <td>Razorpay (rzp_live)</td>
                   <td><span class="status-pill approved">PAID</span></td>
-                  <td><a href="https://razorpay.me/@askforwrite" target="_blank" class="text-btn">Receipt ↗</a></td>
+                  <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
                 </tr>
               </tbody>
             </table>
@@ -740,7 +807,7 @@
             </div>
             <div style="text-align: right;">
               <div style="font-size: 1.6rem; font-weight: 800; color: white;">₹9,999 <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400;">/month ($129 USD)</span></div>
-              <a href="https://razorpay.me/@askforwrite?amount=999900&notes_package=growth_all_in_one" target="_blank" class="primary-btn" style="display: inline-block; text-decoration: none; margin-top: 8px; padding: 8px 18px;">
+              <a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="primary-btn" style="display: inline-block; text-decoration: none; margin-top: 8px; padding: 8px 18px;">
                 Subscribe to Growth Suite
               </a>
             </div>
@@ -1428,6 +1495,13 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 16px;">
+          <label class="modal-label" for="settings-gemini-key">Your Gemini API Key (BYOK)</label>
+          <input type="password" id="settings-gemini-key" class="settings-input" placeholder="AIzaSy... (Personal or Tenant Key)" autocomplete="off">
+          <span style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-top: 5px;">Optional BYOK Gemini API key for zero-cost quota isolation (<code>X-Gemini-API-Key</code>).</span>
+        </div>
+
+
+        <div class="form-group" style="margin-bottom: 16px;">
           <label class="modal-label" for="settings-api-base">API Base URL</label>
           <input type="text" id="settings-api-base" class="settings-input" placeholder="http://localhost:8000">
           <span style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-top: 5px;">Backend API endpoint URL (defaults to current origin).</span>
@@ -1455,6 +1529,121 @@
           <button class="primary-btn" id="btn-save-settings">Save & Apply</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ── Full-Screen Glassmorphic Auth Gate ────────────────────────────── -->
+  <div class="auth-gate-overlay" id="auth-gate-overlay" style="display:none">
+    <div class="auth-gate-card">
+      <div class="auth-gate-header">
+        <div class="brand-icon" style="margin: 0 auto 12px; width: 44px; height: 44px;">
+          <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+            <path d="M4 24L14 4L24 24H4Z" fill="url(#grad-auth)" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+            <defs><linearGradient id="grad-auth" x1="4" y1="24" x2="24" y2="4"><stop stop-color="#2563eb"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs>
+          </svg>
+        </div>
+        <h2>AskforWrite Company OS</h2>
+        <p class="auth-gate-subtitle">Enterprise Autonomous Multi-Agent Workspace &amp; Security Gate</p>
+      </div>
+
+      <!-- Auth Navigation Tabs -->
+      <div class="auth-tabs-nav">
+        <button type="button" class="auth-tab-btn active" id="auth-tab-btn-login" data-tab="login">
+          Customer Login
+        </button>
+        <button type="button" class="auth-tab-btn" id="auth-tab-btn-register" data-tab="register">
+          Sign-Up / Free Trial
+        </button>
+        <button type="button" class="auth-tab-btn" id="auth-tab-btn-owner" data-tab="owner">
+          Owner Console
+        </button>
+      </div>
+
+      <!-- Tab 1: Customer Login -->
+      <div class="auth-tab-content active" id="auth-tab-login">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="modal-label" for="login-email">Work Email</label>
+          <input type="email" id="login-email" class="settings-input" placeholder="founder@company.com" autocomplete="email">
+        </div>
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="modal-label" for="login-password">Password</label>
+          <input type="password" id="login-password" class="settings-input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="form-group" style="margin-bottom: 18px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="modal-label" for="login-gemini-key" style="margin:0;">Your Gemini API Key (BYOK)</label>
+            <span style="font-size:0.72rem; color:var(--purple);">Optional • Zero Owner Quota</span>
+          </div>
+          <input type="password" id="login-gemini-key" class="settings-input" placeholder="AIzaSy... (Personal or Tenant Key)" autocomplete="off">
+          <span class="auth-hint">Commercial isolation: runs AI tasks on your own quota at zero extra markup.</span>
+        </div>
+        <button type="button" class="primary-btn auth-submit-btn" id="btn-customer-login">
+          Sign In to Workspace
+        </button>
+      </div>
+
+      <!-- Tab 2: Customer Sign-Up / Free Trial -->
+      <div class="auth-tab-content" id="auth-tab-register" style="display:none">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="form-group">
+            <label class="modal-label" for="reg-name">Full Name</label>
+            <input type="text" id="reg-name" class="settings-input" placeholder="Vipul Choubisa" autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label class="modal-label" for="reg-company">Company Name</label>
+            <input type="text" id="reg-company" class="settings-input" placeholder="Acme Global Ltd">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="form-group">
+            <label class="modal-label" for="reg-email">Work Email</label>
+            <input type="email" id="reg-email" class="settings-input" placeholder="alex@acme.com" autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label class="modal-label" for="reg-password">Password</label>
+            <input type="password" id="reg-password" class="settings-input" placeholder="Min 6 characters" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="modal-label" for="reg-package">Select Plan</label>
+          <select id="reg-package" class="settings-select" style="width:100%;">
+            <option value="free_trial">14-Day Free Trial (₹0 • 20 Discovery Credits)</option>
+            <option value="growth_all_in_one" selected>Growth All-in-One Suite (₹9,999/mo • Unlimited Creatives)</option>
+            <option value="company_os_starter">Company OS Starter (₹4,999/mo • 100 Credits)</option>
+            <option value="field_force_modular">Field Force Modular Ops (₹3,999/mo • 50 Credits)</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 18px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label class="modal-label" for="reg-gemini-key" style="margin:0;">Your Gemini API Key (BYOK)</label>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:0.72rem; color:var(--cyan); text-decoration:underline">Get Free Key ↗</a>
+          </div>
+          <input type="password" id="reg-gemini-key" class="settings-input" placeholder="AIzaSy... (Get free at aistudio.google.com)" autocomplete="off">
+          <span class="auth-hint">Strict BYOK: guarantees your tenant never hammers or gets throttled by other users.</span>
+        </div>
+        <button type="button" class="primary-btn auth-submit-btn" id="btn-customer-register">
+          Create Instant Workspace
+        </button>
+      </div>
+
+      <!-- Tab 3: Owner Command Center -->
+      <div class="auth-tab-content" id="auth-tab-owner" style="display:none">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="modal-label" for="auth-owner-key">Owner / Manager API Key</label>
+          <input type="password" id="auth-owner-key" class="settings-input" placeholder="Enter OWNER_API_KEY (min 32 chars)" autocomplete="off">
+          <span class="auth-hint">Verified live against <code>GET /v1/project/status</code> to unlock full company operations.</span>
+        </div>
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label class="modal-label" for="auth-owner-gemini-key">Owner Gemini API Key (Optional Override)</label>
+          <input type="password" id="auth-owner-gemini-key" class="settings-input" placeholder="AIzaSy... (Overrides server GEMINI_API_KEY for this session)" autocomplete="off">
+        </div>
+        <button type="button" class="primary-btn auth-submit-btn" id="btn-owner-unlock">
+          Unlock Owner Command Center
+        </button>
+      </div>
+
+      <!-- Message / Error Banner -->
+      <div id="auth-gate-message" style="display:none; padding:10px 14px; border-radius:8px; font-size:0.82rem; margin-top:14px; text-align:center;"></div>
     </div>
   </div>
 

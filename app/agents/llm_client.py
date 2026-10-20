@@ -9,6 +9,7 @@ is not provided or the Gemini service is unreachable.
 
 import logging
 import os
+from contextvars import ContextVar
 from functools import lru_cache
 
 from dotenv import load_dotenv
@@ -19,6 +20,44 @@ logger = logging.getLogger("afw.company_os.llm_client")
 
 # Default model used across agents; override per-agent as needed.
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+# ── BYOK Tenant Isolation State ──────────────────────────────────────────────
+_REQUEST_GEMINI_KEY: ContextVar[str | None] = ContextVar("request_gemini_key", default=None)
+_REQUEST_IS_OWNER: ContextVar[bool] = ContextVar("request_is_owner", default=True)
+
+
+def set_request_llm_context(gemini_key: str | None, is_owner: bool) -> None:
+    """Set thread/task local context for Gemini BYOK key and owner flag."""
+    cleaned = gemini_key.strip() if gemini_key and gemini_key.strip() else None
+    _REQUEST_GEMINI_KEY.set(cleaned)
+    _REQUEST_IS_OWNER.set(bool(is_owner))
+
+
+@lru_cache(maxsize=64)
+def get_gemini_client_for_key(api_key: str):
+    """Return a LangSmith-wrapped Gemini client for a tenant's BYOK key (cached up to 64 keys)."""
+    cleaned = (api_key or "").strip()
+    if not cleaned or cleaned == "mock-gemini-key":
+        return None
+    try:
+        from google import genai
+        from langsmith import wrappers
+
+        raw_client = genai.Client(api_key=cleaned)
+        return wrappers.wrap_gemini(
+            raw_client,
+            tracing_extra={
+                "tags": ["os_gateway", "gemini", "byok"],
+                "metadata": {
+                    "system": "AskforWrite AI Company OS",
+                    "integration": "google-genai-byok",
+                },
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"Could not initialize BYOK Gemini Client: {exc}")
+        return None
+
 
 
 def has_gemini_api_key() -> bool:
@@ -94,11 +133,27 @@ def generate(
 ) -> str:
     """
     Generate text via Gemini with automatic LangSmith tracing.
-    Falls back to deterministic rule-based output when Gemini is unavailable.
+    Enforces strict BYOK isolation:
+    - If a BYOK request key is set in context, uses that key.
+    - If _REQUEST_IS_OWNER is False and no BYOK key is set, NEVER falls back to Owner's key;
+      immediately uses deterministic fallback (zero cost to Owner).
+    - Only uses server's GEMINI_API_KEY if _REQUEST_IS_OWNER is True.
     """
-    client = get_gemini_client()
+    req_key = _REQUEST_GEMINI_KEY.get()
+    is_owner = _REQUEST_IS_OWNER.get()
+
+    if req_key:
+        client = get_gemini_client_for_key(req_key)
+    elif not is_owner:
+        # Commercial tenant without BYOK key: zero quota consumption of Owner's key
+        logger.info("Non-owner request with no BYOK Gemini key. Utilizing deterministic fallback.")
+        return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
+    else:
+        client = get_gemini_client()
+
     if client is None:
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
+
 
     try:
         from google import genai

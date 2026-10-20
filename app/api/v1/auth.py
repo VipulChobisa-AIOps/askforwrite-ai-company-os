@@ -65,6 +65,7 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=2, max_length=250)
     company_name: str = Field(min_length=2, max_length=200)
     role: Literal["admin", "customer", "member"] = "admin"
+    gemini_api_key: str | None = Field(default=None, max_length=256)
 
 
 class SignupRequest(BaseModel):
@@ -73,7 +74,8 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128, description="Secure account password")
     full_name: str = Field(min_length=2, max_length=250, description="Full name of the account owner")
     package_key: str = Field(default="company_os_starter", description="Selected package from Catalog")
-    payment_provider: Literal["razorpay", "paypal"] = "razorpay"
+    payment_provider: Literal["afw_directpay", "sovereign_direct", "razorpay", "paypal"] = "afw_directpay"
+    gemini_api_key: str | None = Field(default=None, max_length=256)
 
 
 class SignupResponse(BaseModel):
@@ -197,6 +199,9 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)) -> Lo
     # Create Organization
     slug_base = _slugify(payload.company_name)
     slug = f"{slug_base}-{str(uuid.uuid4())[:6]}"
+    meta = {}
+    if payload.gemini_api_key and payload.gemini_api_key.strip():
+        meta["gemini_api_key"] = payload.gemini_api_key.strip()
     org = OrganizationRecord(
         name=payload.company_name.strip(),
         slug=slug,
@@ -206,6 +211,7 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)) -> Lo
         outreach_credits_limit=10,
         outreach_credits_used=0,
         is_active=True,
+        metadata_json=meta,
     )
     db.add(org)
     db.flush()
@@ -265,6 +271,15 @@ def signup_customer(payload: SignupRequest, db: Session = Depends(get_db)) -> Si
     # Create Organization with package entitlements
     slug_base = _slugify(payload.company_name)
     slug = f"{slug_base}-{str(uuid.uuid4())[:6]}"
+    meta = {
+        "package_key": pkg.key,
+        "package_name": pkg.name,
+        "category": pkg.category,
+        "entitled_capabilities": list(pkg.entitled_capabilities),
+        "payment_provider": payload.payment_provider,
+    }
+    if payload.gemini_api_key and payload.gemini_api_key.strip():
+        meta["gemini_api_key"] = payload.gemini_api_key.strip()
     org = OrganizationRecord(
         name=payload.company_name.strip(),
         slug=slug,
@@ -274,13 +289,7 @@ def signup_customer(payload: SignupRequest, db: Session = Depends(get_db)) -> Si
         outreach_credits_limit=pkg.outreach_credits_monthly,
         outreach_credits_used=0,
         is_active=True,
-        metadata_json={
-            "package_key": pkg.key,
-            "package_name": pkg.name,
-            "category": pkg.category,
-            "entitled_capabilities": list(pkg.entitled_capabilities),
-            "payment_provider": payload.payment_provider,
-        },
+        metadata_json=meta,
     )
     db.add(org)
     db.flush()

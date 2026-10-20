@@ -88,12 +88,31 @@ def get_growth_suite_status() -> dict[str, Any]:
     }
 
 
+def _inject_org_byok_key(principal: APIPrincipal, db: Session) -> None:
+    if not principal.org_id:
+        return
+    from app.agents.llm_client import _REQUEST_GEMINI_KEY, set_request_llm_context
+
+    if _REQUEST_GEMINI_KEY.get():
+        return
+    from app.db.models import OrganizationRecord
+
+    org = db.get(OrganizationRecord, principal.org_id)
+    if org and org.metadata_json and org.metadata_json.get("gemini_api_key"):
+        set_request_llm_context(
+            gemini_key=org.metadata_json["gemini_api_key"],
+            is_owner=(principal.role in {"owner", "manager"}),
+        )
+
+
 @router.post("/creative")
 def generate_creative_endpoint(
     payload: CreativeRequest,
     principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Generate multi-format visual creative specs for the Pixel AI engine."""
+    _inject_org_byok_key(principal, db)
     return generate_creative_assets(
         product_name=payload.product_name,
         target_audience=payload.target_audience,
@@ -111,7 +130,9 @@ def generate_unified_campaign_endpoint(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute unified Growth Suite generation: Creative Visuals + SEO Blog + Omnichannel Ads + Closer setup."""
+    _inject_org_byok_key(principal, db)
     correlation_id = x_correlation_id or str(uuid.uuid4())
+
     try:
         return execute_unified_growth_run(
             db=db,
