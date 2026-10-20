@@ -32,11 +32,13 @@ services:
           name: askforwrite-db
           property: connectionString
       - key: MANAGER_API_KEY
-        generateValue: true
+        sync: false
       - key: OWNER_API_KEY
-        generateValue: true
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
       - key: SECRET_KEY
-        generateValue: true
+        sync: false
       - key: ALLOWED_ORIGINS
         value: "https://os.askforwrite.com,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
       - key: PAYMENT_PROVIDER
@@ -82,18 +84,20 @@ services:
         value: "smtp.hostinger.com"
       - key: SMTP_PORT
         value: "465"
+      - key: SMTP_USER
+        value: "info@askforwrite.in"
       - key: SMTP_USERNAME
-        sync: false
+        value: "info@askforwrite.in"
       - key: SMTP_PASSWORD
         sync: false
       - key: OUTREACH_FROM_EMAIL
-        value: "contact@askforwrite.in"
+        value: "info@askforwrite.in"
       # Hostinger WordPress Integration Keys (Set in Render Dashboard if syncing posts)
       - key: WP_SITE_URL
         value: "https://askforwrite.in"
       - key: WP_BASE_URL
         value: "https://askforwrite.in"
       - key: WP_USERNAME
-        value: "vipul"
+        value: "info@askforwrite.in"
       - key: WP_APP_PASSWORD
         sync: false
