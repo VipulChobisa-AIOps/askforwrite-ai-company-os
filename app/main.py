@@ -153,7 +153,7 @@ app = FastAPI(
         {"name": "subscriptions", "description": "Subscription and plan management via Razorpay/PayPal"},
         {"name": "webhooks", "description": "Payment provider webhook ingestion and tenant provisioning"},
         {"name": "audit-export", "description": "Compliance audit log export (JSON/CSV) — Owner only"},
-        {"name": "legal", "description": "Public Terms of Service and Privacy Policy"},
+        {"name": "legal", "description": "Public Terms of Service, Privacy Policy, MSME Statutory Declaration & Copyrights (UDYAM-RJ-14-0018404)"},
         {"name": "watchdog", "description": "L1 active monitoring, stalled task detection & self-healing watchdog agent"},
     ],
     lifespan=lifespan,
@@ -219,6 +219,33 @@ def portal_redirect() -> RedirectResponse:
 def admin_redirect() -> RedirectResponse:
     """Redirect /admin directly to the dashboard interface."""
     return RedirectResponse(url="/dashboard/")
+
+
+@app.get("/terms", include_in_schema=False)
+@app.get("/tos", include_in_schema=False)
+def terms_redirect() -> RedirectResponse:
+    """Redirect /terms and /tos to official Terms of Service."""
+    return RedirectResponse(url="/legal/tos")
+
+
+@app.get("/privacy", include_in_schema=False)
+def privacy_redirect() -> RedirectResponse:
+    """Redirect /privacy to official Privacy Policy."""
+    return RedirectResponse(url="/legal/privacy")
+
+
+@app.get("/msme", include_in_schema=False)
+@app.get("/declaration", include_in_schema=False)
+def msme_redirect() -> RedirectResponse:
+    """Redirect /msme to official MSME statutory declaration UDYAM-RJ-14-0018404."""
+    return RedirectResponse(url="/legal/declaration")
+
+
+@app.get("/refund-policy", include_in_schema=False)
+@app.get("/refunds", include_in_schema=False)
+def refund_redirect() -> RedirectResponse:
+    """Redirect /refund-policy to official Refund Policy."""
+    return RedirectResponse(url="/legal/refund-policy")
 
 
 @app.get("/mobile/manifest.json", include_in_schema=False)

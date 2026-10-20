@@ -651,6 +651,23 @@ def _render_checkout_html(session: Any) -> str:
       </div>
     </div>
   </div>
+
+  <!-- Statutory MSME Enterprise Declaration & Legal Footer -->
+  <div style="margin-top: 36px; padding: 20px 16px; border-top: 1px solid rgba(255,255,255,0.08); text-align: center; font-size: 0.76rem; color: #94a3b8; line-height: 1.6;">
+    <div style="font-weight: 700; color: #cbd5e1; font-size: 0.82rem; margin-bottom: 4px;">
+      🏛️ ASKFORWRITE MSME • Statutory Enterprise Registration: <span style="font-family:'JetBrains Mono',monospace; color:#38bdf8;">UDYAM-RJ-14-0018404</span>
+    </div>
+    <div>Registered Enterprise Office: Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001</div>
+    <div style="margin-top: 8px;">
+      <a href="/legal/tos" target="_blank" style="color: #38bdf8; text-decoration: underline; margin: 0 8px;">Terms of Service</a> |
+      <a href="/legal/privacy" target="_blank" style="color: #38bdf8; text-decoration: underline; margin: 0 8px;">Privacy & BYOK Policy</a> |
+      <a href="/legal/declaration" target="_blank" style="color: #38bdf8; text-decoration: underline; margin: 0 8px;">MSME Statutory Declaration</a> |
+      <a href="/legal/refund-policy" target="_blank" style="color: #38bdf8; text-decoration: underline; margin: 0 8px;">Refund Policy</a>
+    </div>
+    <div style="margin-top: 8px; color: #64748b; font-size: 0.72rem;">
+      © 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.
+    </div>
+  </div>
 </div>
 
 <script>

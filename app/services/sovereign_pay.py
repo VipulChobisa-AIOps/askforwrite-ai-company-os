@@ -459,8 +459,15 @@ def generate_bank_wire_proforma_invoice(
         "proforma_invoice_number": invoice_num,
         "payment_reference_code": ref_code,
         "issue_date": datetime.now(UTC).strftime("%Y-%m-%d"),
+        "enterprise_declaration": {
+            "firm_legal_name": "ASKFORWRITE",
+            "category": "Micro, Small & Medium Enterprise (MSME)",
+            "udyam_registration_number": "UDYAM-RJ-14-0018404",
+            "jurisdiction": "Udaipur, Rajasthan, India - 313001",
+            "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
+        },
         "beneficiary": {
-            "entity_name": os.getenv("AFW_BANK_BENEFICIARY", "Vipul_Kumar_Chobisa"),
+            "entity_name": os.getenv("AFW_BANK_BENEFICIARY", "ASKFORWRITE / Vipul Kumar Chobisa"),
             "bank_name": os.getenv("AFW_BANK_NAME", "ICICI Bank Ltd"),
             "account_number": os.getenv("AFW_BANK_ACCOUNT_NUMBER", "694001501126"),
             "account_type": os.getenv("AFW_BANK_ACCOUNT_TYPE", "Saving Account"),

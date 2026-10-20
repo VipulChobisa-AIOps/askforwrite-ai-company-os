@@ -2490,11 +2490,190 @@
     resetRefreshTimer();
   }
 
+  // ── Legal & Compliance Declarations Modal ─────────────────
+  let legalDocsCache = null;
+
+  async function openLegalModal(tabId = 'tos') {
+    const overlay = $('#legal-modal-overlay');
+    if (overlay) overlay.style.display = 'flex';
+    await switchLegalTab(tabId);
+  }
+
+  function closeLegalModal() {
+    const overlay = $('#legal-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  async function fetchLegalDocuments() {
+    if (legalDocsCache) return legalDocsCache;
+    try {
+      legalDocsCache = await api('GET', '/legal/all');
+      return legalDocsCache;
+    } catch (err) {
+      console.warn('Could not fetch dynamic legal docs, using built-in metadata', err);
+      return null;
+    }
+  }
+
+  async function switchLegalTab(tabId) {
+    document.querySelectorAll('.legal-tab-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = $(`#legal-tab-btn-${tabId}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const contentBox = $('#legal-modal-content');
+    if (!contentBox) return;
+
+    contentBox.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted)"><span class="spinner" style="margin-right:8px"></span> Loading statutory legal declarations...</div>';
+
+    const docs = await fetchLegalDocuments();
+
+    if (tabId === 'tos') {
+      const tos = docs?.terms_of_service || {
+        title: "AskforWrite AI Company OS — Terms of Service & Enterprise Agreement",
+        effective_date: "2026-10-14",
+        company: "ASKFORWRITE",
+        udyam_registration: "UDYAM-RJ-14-0018404",
+        sections: [
+          { heading: "1. Acceptance of Terms & Statutory Entity", body: "Operated by ASKFORWRITE, registered MSME under Government of India Udyam Registration Number UDYAM-RJ-14-0018404 in Udaipur, Rajasthan, India. All users agree to these terms." },
+          { heading: "2. Autonomous Multi-Agent Service", body: "Provides enterprise AI orchestration with Human-in-the-Loop governance and immutable ECDSA P-256 Merkle block sealing." },
+          { heading: "3. Strict BYOK Gemini API Isolation", body: "Commercial tenants bring their own Gemini API keys. Zero owner quota consumption. Fallback to deterministic rule-based output when no key is set." },
+          { heading: "4. Intellectual Property & Copyright", body: "All code, algorithms, and interface assets are the exclusive intellectual property of ASKFORWRITE (UDYAM-RJ-14-0018404). © 2026 ASKFORWRITE. All Rights Reserved." },
+          { heading: "5. Jurisdiction & MSMED Act", body: "Governed by the laws of India, Information Technology Act 2000, and MSMED Act 2006. Disputes subject to arbitration in Udaipur, Rajasthan." }
+        ]
+      };
+
+      renderLegalDocument(contentBox, tos);
+    } else if (tabId === 'privacy') {
+      const priv = docs?.privacy_policy || {
+        title: "AskforWrite AI Company OS — Privacy Policy & Data Protection Declaration",
+        effective_date: "2026-10-14",
+        company: "ASKFORWRITE",
+        udyam_registration: "UDYAM-RJ-14-0018404",
+        sections: [
+          { heading: "1. Data Collection Scope", body: "We collect account credentials (hashed with PBKDF2/bcrypt), tenant metadata, and cryptographic audit proofs. No credit card numbers are ever stored." },
+          { heading: "2. Strict BYOK Key Zero-Retention Guarantee", body: "Tenant Gemini API keys are encrypted at rest, masked in UI (AIza••••••••••••••••1a2b), never printed in logs, never shared across tenants, and never used to train models. Cleared on demand." },
+          { heading: "3. Multi-Tenant Cryptographic Partitioning", body: "Tenant data is partitioned by unique org_id and sealed in tamper-evident trust chains." },
+          { heading: "4. Data Grievance Officer", body: "Vipul Kumar Chobisa, ASKFORWRITE (UDYAM-RJ-14-0018404), Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001. Email: compliance@askforwrite.in." }
+        ]
+      };
+
+      renderLegalDocument(contentBox, priv);
+    } else if (tabId === 'declaration') {
+      const decl = docs?.msme_declaration || {
+        title: "ASKFORWRITE — Statutory MSME Enterprise Declaration & Legal Identity",
+        firm_legal_name: "ASKFORWRITE",
+        trade_name: "ASKFORWRITE",
+        enterprise_type: "Micro Enterprise (Services)",
+        udyam_registration_number: "UDYAM-RJ-14-0018404",
+        issuing_ministry: "Ministry of Micro, Small and Medium Enterprises, Government of India",
+        registered_office: { locality: "Udaipur Bus Stand", city: "Udaipur", state: "Rajasthan", country: "India", pincode: "313001" },
+        banking_and_settlement_coordinates: { bank_name: "ICICI Bank Ltd", ifsc_code: "ICIC0006940", merchant_upi_vpa: "ask4write@icici" }
+      };
+
+      contentBox.innerHTML = `
+        <div style="margin-bottom:18px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span class="legal-statutory-pill">GOVERNMENT OF INDIA MSME REGISTRY</span>
+            <span class="legal-statutory-pill" style="color:var(--cyan);border-color:rgba(6,182,212,0.3)">UDYAM-RJ-14-0018404</span>
+          </div>
+          <h2 style="font-size:1.3rem;font-weight:800;color:var(--text-primary);margin:0 0 6px 0">${escapeHtml(decl.title)}</h2>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin:0">Official Statutory Enterprise Declaration pursuant to the Micro, Small and Medium Enterprises Development Act, 2006.</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="legal-section-card">
+            <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase">Firm Legal Entity</div>
+            <div style="font-weight:700;color:var(--text-primary);font-size:1.05rem">${escapeHtml(decl.firm_legal_name)}</div>
+            <div style="font-size:0.74rem;color:var(--cyan)">Micro Enterprise (Services)</div>
+          </div>
+          <div class="legal-section-card">
+            <div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase">Udyam Registration Number</div>
+            <div style="font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--cyan);font-size:1rem">${escapeHtml(decl.udyam_registration_number)}</div>
+            <div style="font-size:0.74rem;color:var(--text-muted)">Ministry of MSME, Govt of India</div>
+          </div>
+        </div>
+
+        <div class="legal-section-card">
+          <div class="legal-section-title">🏢 Registered Enterprise Coordinates</div>
+          <p style="margin:0 0 8px 0">Locality: Udaipur Bus Stand, City: Udaipur, District: Udaipur, State: Rajasthan, Country: India - 313001.</p>
+          <div style="font-size:0.8rem;color:var(--text-muted)">National Industry Classifications: 6201 (Computer programming), 6202 (Computer consultancy), 6209 (Other IT &amp; AI systems).</div>
+        </div>
+
+        <div class="legal-section-card">
+          <div class="legal-section-title">🏛️ Banking &amp; Sovereign DirectPay Settlement Coordinates</div>
+          <div style="font-size:0.82rem;line-height:1.6">
+            <strong>Bank:</strong> ICICI Bank Ltd | <strong>Branch:</strong> Udaipur Bus Stand (IFSC: <code>ICIC0006940</code>)<br>
+            <strong>Merchant UPI VPA:</strong> <code>ask4write@icici</code> | <strong>SWIFT:</strong> <code>ICICINBBXXX</code><br>
+            <strong>Beneficiary:</strong> ASKFORWRITE / Vipul Kumar Chobisa
+          </div>
+        </div>
+
+        <div class="legal-section-card">
+          <div class="legal-section-title">⚖️ Statutory Protections &amp; Grievance Redressal</div>
+          <p style="margin:0 0 8px 0">Protected under Section 15 and Section 16 of the MSMED Act, 2006. Grievance &amp; Compliance Officer: Vipul Kumar Chobisa (compliance@askforwrite.in).</p>
+          <div style="font-size:0.76rem;color:#64748b">© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.</div>
+        </div>
+      `;
+    } else if (tabId === 'refunds') {
+      const ref = docs?.refund_policy || {
+        title: "AskforWrite AI Company OS — Refund, Cancellation & Settlement Policy",
+        effective_date: "2026-10-14",
+        company: "ASKFORWRITE",
+        udyam_registration: "UDYAM-RJ-14-0018404",
+        sections: [
+          { heading: "1. Subscription Cancellations", body: "Tenants may cancel subscriptions anytime via the Customer Portal. Service remains active through the end of the paid billing period with zero cancellation penalty." },
+          { heading: "2. 7-Day Money-Back Guarantee", body: "Full refunds within 7 days of initial subscription if under 20% of monthly credits (leads/outreach/tokens) were utilized. Returned to source UPI or bank account in 5-7 days." },
+          { heading: "3. DirectPay Instant Reconciliation", body: "Direct UPI/Wire transactions automatically seal NIST P-256 blocks. Unmatched proofs are reconciled by our automated watchdog within 12 hours." },
+          { heading: "4. Grievance Contact", body: "Billing support: billing@askforwrite.in. Statutory MSME Samadhaan forum: Udaipur, Rajasthan." }
+        ]
+      };
+
+      renderLegalDocument(contentBox, ref);
+    }
+  }
+
+  function renderLegalDocument(container, doc) {
+    let html = `
+      <div style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span class="legal-statutory-pill">MSME UDYAM-RJ-14-0018404</span>
+          <span style="font-size:0.75rem;color:var(--text-muted)">Effective: ${escapeHtml(doc.effective_date || '2026-10-14')}</span>
+        </div>
+        <h2 style="font-size:1.3rem;font-weight:800;color:var(--text-primary);margin:0 0 4px 0">${escapeHtml(doc.title)}</h2>
+        <div style="font-size:0.8rem;color:var(--cyan)">Entity: ${escapeHtml(doc.company || 'ASKFORWRITE')} • Udaipur, Rajasthan, India</div>
+      </div>
+    `;
+
+    (doc.sections || []).forEach(sec => {
+      html += `
+        <div class="legal-section-card">
+          <div class="legal-section-title">${escapeHtml(sec.heading)}</div>
+          <div style="font-size:0.85rem;line-height:1.6;color:var(--text-secondary)">${escapeHtml(sec.body)}</div>
+        </div>
+      `;
+    });
+
+    html += `
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:0.74rem;color:#64748b;text-align:center">
+        ${escapeHtml(doc.copyright || '© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.')} • Official Inquiries: ${escapeHtml(doc.contact || 'legal@askforwrite.in')}
+      </div>
+    `;
+
+    container.innerHTML = html;
+  }
+
+  window.openLegalModal = openLegalModal;
+  window.closeLegalModal = closeLegalModal;
+  window.switchLegalTab = switchLegalTab;
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
     openSettingsModal,
     closeSettingsModal,
+    openLegalModal,
+    closeLegalModal,
+    switchLegalTab,
     checkAuthGate,
     handleLogout,
     triggerLeadDiscovery,

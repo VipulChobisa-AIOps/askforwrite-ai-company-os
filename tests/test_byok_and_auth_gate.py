@@ -318,3 +318,78 @@ class BYOKAndAuthGateTests(unittest.TestCase):
         self.assertIn('id="sidebar-user-name"', html)
         self.assertIn('id="sidebar-user-role"', html)
         self.assertIn('id="btn-logout"', html)
+
+        # MSME declarations and legal modal
+        self.assertIn("UDYAM-RJ-14-0018404", html)
+        self.assertIn("ASKFORWRITE", html)
+        self.assertIn('class="sidebar-legal-badge"', html)
+        self.assertIn('id="legal-modal-overlay"', html)
+        self.assertIn('class="auth-gate-compliance"', html)
+
+    # ── PART 4: MSME Statutory Declarations & Legal Policies ─────────────────
+
+    def test_msme_statutory_declaration_and_policies_endpoints(self):
+        """Public legal endpoints serve official MSME declarations and Udyam details."""
+        # 1. MSME Declaration
+        decl_resp = self.client.get("/legal/declaration")
+        self.assertEqual(decl_resp.status_code, 200)
+        decl = decl_resp.json()
+        self.assertEqual(decl["firm_legal_name"], "ASKFORWRITE")
+        self.assertEqual(decl["udyam_registration_number"], "UDYAM-RJ-14-0018404")
+        self.assertIn("Udaipur", decl["registered_office"]["city"])
+        self.assertIn("UDYAM-RJ-14-0018404", decl["copyright"])
+
+        # 2. Refund Policy
+        refund_resp = self.client.get("/legal/refund-policy")
+        self.assertEqual(refund_resp.status_code, 200)
+        refund = refund_resp.json()
+        self.assertIn("UDYAM-RJ-14-0018404", refund["copyright"])
+        self.assertGreaterEqual(len(refund["sections"]), 3)
+
+        # 3. Bundled All Legal Documents
+        all_resp = self.client.get("/legal/all")
+        self.assertEqual(all_resp.status_code, 200)
+        all_docs = all_resp.json()
+        self.assertIn("metadata", all_docs)
+        self.assertIn("terms_of_service", all_docs)
+        self.assertIn("privacy_policy", all_docs)
+        self.assertIn("msme_declaration", all_docs)
+        self.assertIn("refund_policy", all_docs)
+        self.assertEqual(all_docs["metadata"]["udyam_registration"], "UDYAM-RJ-14-0018404")
+
+        # 4. Redirect aliases
+        for path, target in [
+            ("/terms", "/legal/tos"),
+            ("/privacy", "/legal/privacy"),
+            ("/msme", "/legal/declaration"),
+            ("/refund-policy", "/legal/refund-policy"),
+        ]:
+            r = self.client.get(path, follow_redirects=False)
+            self.assertEqual(r.status_code, 307)
+            self.assertEqual(r.headers["location"], target)
+
+    def test_sovereign_checkout_contains_msme_legal_declaration(self):
+        """AFW DirectPay sovereign checkout HTML displays statutory MSME declaration."""
+        session_resp = self.client.post(
+            "/v1/pay/create-session",
+            json={
+                "package_key": "growth_all_in_one",
+                "company_name": "Rajasthan Enterprise Corp",
+                "customer_email": "billing@rajasthanent.in",
+                "currency": "INR",
+            },
+        )
+        self.assertEqual(session_resp.status_code, 200)
+        session_id = session_resp.json()["session_id"]
+
+        checkout_resp = self.client.get(f"/v1/pay/{session_id}/checkout")
+        self.assertEqual(checkout_resp.status_code, 200)
+        html = checkout_resp.text
+        self.assertIn("UDYAM-RJ-14-0018404", html)
+        self.assertIn("ASKFORWRITE MSME", html)
+        self.assertIn("Udaipur Bus Stand", html)
+        self.assertIn("/legal/tos", html)
+        self.assertIn("/legal/privacy", html)
+        self.assertIn("/legal/declaration", html)
+        self.assertIn("/legal/refund-policy", html)
+
