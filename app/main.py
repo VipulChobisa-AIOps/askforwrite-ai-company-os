@@ -2,7 +2,7 @@
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -189,6 +189,23 @@ app.include_router(sovereign_pay_router)
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
 if dashboard_dir.exists():
     app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
+
+
+@app.get("/health", tags=["system"])
+def health_check() -> dict[str, str]:
+    """Production health check endpoint for Render, cloud monitors, and load balancers."""
+    return {
+        "status": "healthy",
+        "service": "AskforWrite AI Company OS",
+        "version": "0.2.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    """Redirect root domain visits directly to the dashboard."""
+    return RedirectResponse(url="/dashboard/")
 
 
 @app.get("/portal", include_in_schema=False)
