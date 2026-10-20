@@ -41,6 +41,29 @@ services:
         value: "https://os.askforwrite.com,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
+      # Sovereign Pay Direct 0%-Fee Coordinates (Vipul ICICI & Self-Custody Wallets)
+      - key: AFW_MERCHANT_UPI_VPA
+        value: "ask4write@icici"
+      - key: AFW_MERCHANT_NAME
+        value: "AskforWrite AI Solutions"
+      - key: AFW_MERCHANT_EVM_WALLET
+        value: "0x811db32e3802eD9a75F7bbd24f6C3C03216346a2"
+      - key: AFW_MERCHANT_SOL_WALLET
+        value: "CNCZWYQL8AC8vDuN6mn4Qfnj2pKghMDuNRzEyepWtXfR"
+      - key: AFW_BANK_BENEFICIARY
+        value: "Vipul_Kumar_Chobisa"
+      - key: AFW_BANK_NAME
+        value: "ICICI Bank Ltd"
+      - key: AFW_BANK_ACCOUNT_NUMBER
+        value: "694001501126"
+      - key: AFW_BANK_ACCOUNT_TYPE
+        value: "Saving Account"
+      - key: AFW_BANK_IFSC
+        value: "ICIC0006940"
+      - key: AFW_BANK_SWIFT
+        value: "ICICINBBXXX"
+      - key: AFW_BANK_BRANCH
+        value: "Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001"
       - key: UVICORN_WORKERS
         value: "2"
       - key: LOG_LEVEL

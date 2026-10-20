@@ -355,7 +355,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
 
     def test_pure_python_svg_qr_generation(self):
         """Verify generate_inline_qr_svg generates self-contained valid SVG string."""
-        sample_uri = "upi://pay?pa=askforwrite@okhdfcbank&pn=AskforWrite&am=9999.00&cu=INR&tn=AFW+OS&tr=sample123"
+        sample_uri = "upi://pay?pa=ask4write@icici&pn=AskforWrite&am=9999.00&cu=INR&tn=AFW+OS&tr=sample123"
         svg = generate_inline_qr_svg(sample_uri)
         self.assertTrue(svg.startswith("<svg"))
         self.assertTrue(svg.strip().endswith("</svg>"))
@@ -407,7 +407,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
 
         # Rail 3: Bank wire invoice
         self.assertIn("bank_wire_invoice", data)
-        expected_bank = os.getenv("AFW_BANK_NAME", "HDFC Bank Ltd")
+        expected_bank = os.getenv("AFW_BANK_NAME", "ICICI Bank Ltd")
         self.assertEqual(data["bank_wire_invoice"]["beneficiary"]["bank_name"], expected_bank)
         self.assertIn("digital_seal_hash", data["bank_wire_invoice"])
 
@@ -435,7 +435,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertIn("Instant UPI QR", html_content)
         self.assertIn("USDC Web3", html_content)
         self.assertIn("Direct Bank Wire", html_content)
-        self.assertIn(os.getenv("AFW_MERCHANT_UPI_VPA", "askforwrite@okhdfcbank"), html_content)
+        self.assertIn(os.getenv("AFW_MERCHANT_UPI_VPA", "ask4write@icici"), html_content)
         self.assertIn("Instant Activation & Trust Block Verification", html_content)
 
     def test_direct_query_param_checkout_endpoint(self):

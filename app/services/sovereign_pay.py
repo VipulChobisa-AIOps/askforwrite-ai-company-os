@@ -324,14 +324,14 @@ def get_web3_stablecoin_payload(amount_usd: float, session_id: str) -> dict[str,
         "AFW_MERCHANT_EVM_WALLET",
         os.getenv(
             "SOVEREIGN_USDC_ETH_WALLET",
-            "0xAF3896582aBE3f305c4EB7A1e1Bf498c8942918B",
+            "0x811db32e3802eD9a75F7bbd24f6C3C03216346a2",
         ),
     )
     sol_deposit_address = os.getenv(
         "AFW_MERCHANT_SOL_WALLET",
         os.getenv(
             "SOVEREIGN_USDC_SOL_WALLET",
-            "AFW4V5aJk9QZ9wP8Uq1rGkM5yXoB2cK3mR4f1a2s3d4e",
+            "CNCZWYQL8AC8vDuN6mn4Qfnj2pKghMDuNRzEyepWtXfR",
         ),
     )
 
@@ -460,14 +460,14 @@ def generate_bank_wire_proforma_invoice(
         "payment_reference_code": ref_code,
         "issue_date": datetime.now(UTC).strftime("%Y-%m-%d"),
         "beneficiary": {
-            "entity_name": os.getenv("AFW_BANK_BENEFICIARY", "AskforWrite AI Solutions"),
-            "bank_name": os.getenv("AFW_BANK_NAME", "HDFC Bank Ltd"),
-            "account_number": os.getenv("AFW_BANK_ACCOUNT_NUMBER", "50200088921455"),
-            "account_type": os.getenv("AFW_BANK_ACCOUNT_TYPE", "Current Account"),
-            "ifsc_code": os.getenv("AFW_BANK_IFSC", "HDFC0000240"),
-            "swift_code": os.getenv("AFW_BANK_SWIFT", "HDFCINBBXXX"),
-            "branch": os.getenv("AFW_BANK_BRANCH", "Indiranagar Branch, Bengaluru, Karnataka, India"),
-            "upi_vpa": os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "askforwrite@okhdfcbank"),
+            "entity_name": os.getenv("AFW_BANK_BENEFICIARY", "Vipul_Kumar_Chobisa"),
+            "bank_name": os.getenv("AFW_BANK_NAME", "ICICI Bank Ltd"),
+            "account_number": os.getenv("AFW_BANK_ACCOUNT_NUMBER", "694001501126"),
+            "account_type": os.getenv("AFW_BANK_ACCOUNT_TYPE", "Saving Account"),
+            "ifsc_code": os.getenv("AFW_BANK_IFSC", "ICIC0006940"),
+            "swift_code": os.getenv("AFW_BANK_SWIFT", "ICICINBBXXX"),
+            "branch": os.getenv("AFW_BANK_BRANCH", "Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001"),
+            "upi_vpa": os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici"),
         },
         "customer": {
             "company_name": company_name,
@@ -549,7 +549,7 @@ def create_sovereign_pay_session(
     cust_name = (customer_name or comp_clean).strip()
 
     # 1. Rail 1: UPI Direct payload
-    merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "askforwrite@okhdfcbank")
+    merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
     merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
     merchant_name_encoded = quote_plus(merchant_name)
     note = f"AFW OS {pkg.key[:20]} {comp_clean[:20]}".strip()
