@@ -23,6 +23,7 @@ services:
     region: singapore
     healthCheckPath: /health
     domains:
+      - os.askforwrite.com
       - os.askforwrite.in
     envVars:
       - key: APP_ENV
@@ -38,7 +39,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
-        value: "https://os.askforwrite.in,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
+        value: "https://os.askforwrite.com,https://os.askforwrite.in,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
       - key: UVICORN_WORKERS

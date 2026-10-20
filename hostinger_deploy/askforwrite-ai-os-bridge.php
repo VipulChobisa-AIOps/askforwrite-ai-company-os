@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
 }
 
 // ── Default Constants ────────────────────────────────────────────────────────
-define('AFW_OS_DEFAULT_API_BASE', 'https://os.askforwrite.in');
+define('AFW_OS_DEFAULT_API_BASE', 'https://os.askforwrite.com');
 define('AFW_OS_VERSION', '1.0.0');
 
 // ── 1. Automatic 24/7 AI Sales Closer Injection ──────────────────────────────

@@ -9,13 +9,13 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
 ```
                                       ┌──────────────────────────────────────────────────────────┐
                                       │              Hostinger DNS Zone Editor                    │
-                                      │   CNAME: os.askforwrite.in  ──>  Render / Cloud Host      │
+                                      │  CNAME: os.askforwrite.com / os.askforwrite.in ──> Cloud  │
                                       └────────────────────────────┬─────────────────────────────┘
                                                                    │
                                                                    ▼
        ┌─────────────────────────────────────────────────────────────────────────────────────────┐
        │                       AskforWrite AI Company OS (Render / Docker Cloud)                 │
-       │                   https://os.askforwrite.in (FastAPI + NIST P-256 Ledger)               │
+       │             https://os.askforwrite.com (FastAPI + NIST P-256 Ledger + DirectPay)        │
        ├─────────────────────────────────┬──────────────────────────────────┬────────────────────┤
        │       24/7 AI Sales Closer       │          AFW DirectPay           │ Installable PWA    │
        │  /dashboard/widget.js (0% drop) │ /v1/pay/checkout (UPI/Card/USDC) │ /dashboard/        │
@@ -24,8 +24,8 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
                         ▼                                 ▼                            ▼
   ┌──────────────────────────────────────────────────────────────┐          ┌──────────────────────┐
   │         4x Hostinger WordPress Sites (Bridge Plugin)          │          │ 1-Click Installation │
-  │    • askforwrite.in          • careersathi.in                │          │ • Android (Chrome)   │
-  │    • theaiscene.in           • edutechguide.in               │          │ • Windows / macOS    │
+  │    • askforwrite.in (or subdomain)   • careersathi.in        │          │ • Android (Chrome)   │
+  │    • theaiscene.in                   • edutechguide.in       │          │ • Windows / macOS    │
   │  Features: Auto Widget Injection | [afw_directpay] | /llms.txt │          │   Desktop Standalone │
   └──────────────────────────────────────────────────────────────┘          └──────────────────────┘
 ```
@@ -34,21 +34,21 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
 
 ## Step 1: Add CNAME Record in Hostinger hPanel DNS Zone Editor
 
-Link your custom subdomain `os.askforwrite.in` to your cloud deployment instance (Render, Railway, or VPS).
+Link your custom subdomain (`os.askforwrite.com` or `os.askforwrite.in`) to your cloud deployment instance (Render, Railway, or VPS).
 
 1. Log in to [Hostinger hPanel](https://hpanel.hostinger.com/).
-2. Navigate to **Websites** -> Select **`askforwrite.in`** -> Click **Manage**.
+2. Navigate to **Websites** -> Select your domain (**`askforwrite.com`** or **`askforwrite.in`**) -> Click **Manage**.
 3. In the left-hand search bar, type **DNS Zone Editor** (or scroll to **Advanced -> DNS Zone Editor**).
 4. In the **Manage DNS records** card, fill out the form:
    - **Type**: Select `CNAME` from the dropdown.
-   - **Name**: Enter `os` (Hostinger automatically appends `.askforwrite.in`).
+   - **Name**: Enter `os` (Hostinger automatically appends your domain, e.g. `os.askforwrite.com`).
    - **Target**: Enter your Render web service hostname (e.g. `askforwrite-ai-company-os.onrender.com` or your VPS reverse-proxy address).
    - **TTL**: Select `300` (5 minutes) or leave default `14400`.
 5. Click **Add Record**.
 6. **DNS Propagation Verification**:
    Open PowerShell or Terminal and run:
    ```powershell
-   nslookup os.askforwrite.in
+   nslookup os.askforwrite.com
    ```
    *Expected Response:* Shows the alias mapping directly to your cloud instance.
 
