@@ -75,7 +75,9 @@ def configure_logging() -> None:
     - development → colored human-readable output
     """
     app_env = os.environ.get("APP_ENV", "development").casefold()
-    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    raw_level = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
+    valid_levels = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+    log_level = raw_level if raw_level in valid_levels else "INFO"
 
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
