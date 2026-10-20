@@ -10,7 +10,7 @@ databases:
   - name: askforwrite-db
     databaseName: company_os
     user: afw_admin
-    plan: starter
+    plan: free
     region: singapore
     ipAllowList: [] # Allow internal connections from services in the same region
 
@@ -19,7 +19,7 @@ services:
     name: askforwrite-ai-company-os
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     region: singapore
     healthCheckPath: /health
     domains:
