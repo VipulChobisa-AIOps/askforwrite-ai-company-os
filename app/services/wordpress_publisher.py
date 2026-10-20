@@ -100,7 +100,7 @@ def publish_seo_draft_to_wordpress(
     corr_id = correlation_id or str(uuid.uuid4())
 
     # Check for live WordPress credentials
-    wp_site_url = os.getenv("WP_SITE_URL")
+    wp_site_url = os.getenv("WP_SITE_URL") or os.getenv("WP_BASE_URL")
     wp_username = os.getenv("WP_USERNAME")
     wp_app_password = os.getenv("WP_APP_PASSWORD")
 

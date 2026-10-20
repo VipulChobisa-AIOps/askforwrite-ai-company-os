@@ -56,6 +56,7 @@ def verify_password(plain_password: str, hashed_password: str | None) -> bool:
 def _get_signing_secret() -> str:
     return (
         os.environ.get("JWT_SECRET_KEY")
+        or os.environ.get("SECRET_KEY")
         or os.environ.get("AUTH_SECRET_KEY")
         or os.environ.get("OWNER_API_KEY")
         or os.environ.get("MANAGER_API_KEY")
