@@ -532,7 +532,7 @@
     } catch (err) {
       hideTypingIndicator();
       appendBotMessage(
-        "I'm experiencing a momentary connection lag. Please contact us directly at support@askforwrite.in or try again in a moment.",
+        "I'm experiencing a momentary connection lag. Please contact us directly at info@askforwrite.in or try again in a moment.",
         ['🚀 What capabilities are included?', '⚡ Instant Onboarding / Buy']
       );
     } finally {

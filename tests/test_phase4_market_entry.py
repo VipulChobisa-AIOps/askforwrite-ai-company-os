@@ -594,7 +594,7 @@ class TestOpenAPISchema(Phase4BaseTest):
     def test_openapi_has_contact_info(self):
         schema = self.client.get("/openapi.json").json()
         self.assertIn("contact", schema["info"])
-        self.assertEqual(schema["info"]["contact"]["email"], "support@askforwrite.in")
+        self.assertEqual(schema["info"]["contact"]["email"], "info@askforwrite.in")
 
     def test_openapi_has_license_info(self):
         schema = self.client.get("/openapi.json").json()

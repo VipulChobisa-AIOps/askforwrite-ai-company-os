@@ -55,7 +55,7 @@ class MockEmailDispatcher:
                 "Configure real SMTP credentials (SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD)."
             )
 
-        sender = from_email or os.getenv("OUTREACH_FROM_EMAIL", "outreach@askforwrite.com")
+        sender = from_email or os.getenv("OUTREACH_FROM_EMAIL", "info@askforwrite.in")
         message = DispatchedMessage(
             recipient_email=recipient_email,
             subject=subject,
@@ -92,7 +92,7 @@ class SmtpEmailDispatcher:
         self.username = username or os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER", "")
         self.password = password or os.getenv("SMTP_PASSWORD", "")
         self.use_tls = use_tls
-        self.default_sender = default_sender or os.getenv("OUTREACH_FROM_EMAIL", "outreach@askforwrite.com")
+        self.default_sender = default_sender or os.getenv("OUTREACH_FROM_EMAIL", "info@askforwrite.in")
 
     def send(
         self,

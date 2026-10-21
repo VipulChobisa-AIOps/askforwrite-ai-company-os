@@ -135,7 +135,7 @@ app = FastAPI(
     ),
     contact={
         "name": "AskforWrite Support",
-        "email": "support@askforwrite.in",
+        "email": "info@askforwrite.in",
         "url": "https://askforwrite.in",
     },
     license_info={
