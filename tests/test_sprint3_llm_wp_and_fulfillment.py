@@ -252,7 +252,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
 
         order = OrderRecord(
             transaction_id=tx_id,
-            customer_email="b2c_customer@askforwrite.com",
+            customer_email="info@askforwrite.in",
             amount=4999.0,
             currency="INR",
             status="CONFIRMED",

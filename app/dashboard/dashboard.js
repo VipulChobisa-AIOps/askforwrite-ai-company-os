@@ -2687,7 +2687,7 @@
           { heading: "1. Data Collection Scope", body: "We collect account credentials (hashed with PBKDF2/bcrypt), tenant metadata, and cryptographic audit proofs. No credit card numbers are ever stored." },
           { heading: "2. Strict BYOK Key Zero-Retention Guarantee", body: "Tenant Gemini API keys are encrypted at rest, masked in UI (AIza••••••••••••••••1a2b), never printed in logs, never shared across tenants, and never used to train models. Cleared on demand." },
           { heading: "3. Multi-Tenant Cryptographic Partitioning", body: "Tenant data is partitioned by unique org_id and sealed in tamper-evident trust chains." },
-          { heading: "4. Data Grievance Officer", body: "Vipul Kumar Chobisa, ASKFORWRITE (UDYAM-RJ-14-0018404), Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001. Email: compliance@askforwrite.in." }
+          { heading: "4. Data Grievance Officer", body: "Vipul Kumar Chobisa, ASKFORWRITE (UDYAM-RJ-14-0018404), Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001. Email: info@askforwrite.in." }
         ]
       };
 
@@ -2744,7 +2744,7 @@
 
         <div class="legal-section-card">
           <div class="legal-section-title">⚖️ Statutory Protections &amp; Grievance Redressal</div>
-          <p style="margin:0 0 8px 0">Protected under Section 15 and Section 16 of the MSMED Act, 2006. Grievance &amp; Compliance Officer: Vipul Kumar Chobisa (compliance@askforwrite.in).</p>
+          <p style="margin:0 0 8px 0">Protected under Section 15 and Section 16 of the MSMED Act, 2006. Grievance &amp; Compliance Officer: Vipul Kumar Chobisa (info@askforwrite.in).</p>
           <div style="font-size:0.76rem;color:#64748b">© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.</div>
         </div>
       `;
@@ -2758,7 +2758,7 @@
           { heading: "1. Subscription Cancellations", body: "Tenants may cancel subscriptions anytime via the Customer Portal. Service remains active through the end of the paid billing period with zero cancellation penalty." },
           { heading: "2. 7-Day Money-Back Guarantee", body: "Full refunds within 7 days of initial subscription if under 20% of monthly credits (leads/outreach/tokens) were utilized. Returned to source UPI or bank account in 5-7 days." },
           { heading: "3. DirectPay Instant Reconciliation", body: "Direct UPI/Wire transactions automatically seal NIST P-256 blocks. Unmatched proofs are reconciled by our automated watchdog within 12 hours." },
-          { heading: "4. Grievance Contact", body: "Billing support: billing@askforwrite.in. Statutory MSME Samadhaan forum: Udaipur, Rajasthan." }
+          { heading: "4. Grievance Contact", body: "Billing support: info@askforwrite.in. Statutory MSME Samadhaan forum: Udaipur, Rajasthan." }
         ]
       };
 
@@ -2789,7 +2789,7 @@
 
     html += `
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:0.74rem;color:#64748b;text-align:center">
-        ${escapeHtml(doc.copyright || '© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.')} • Official Inquiries: ${escapeHtml(doc.contact || 'legal@askforwrite.in')}
+        ${escapeHtml(doc.copyright || '© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.')} • Official Inquiries: ${escapeHtml(doc.contact || 'info@askforwrite.in')}
       </div>
     `;
 

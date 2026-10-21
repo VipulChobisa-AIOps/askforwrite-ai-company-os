@@ -199,7 +199,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
             db=self.db,
             approval_id=approval_id,
             decision="APPROVED",
-            decided_by="owner@askforwrite.com",
+            decided_by="info@askforwrite.in",
             decision_note="Approved Trojan-Horse proof preview outbound shift draft",
         )
         self.assertEqual(decision_res["status"], "APPROVED")

@@ -125,7 +125,7 @@ echo "  [OK] Nginx configured for $DOMAIN"
 # ── Step 6: SSL Certificate ─────────────────────────────────────────
 echo ""
 echo "── Step 6: Obtaining SSL certificate ──"
-sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email admin@askforwrite.in
+sudo certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email info@askforwrite.in
 echo "  [OK] HTTPS enabled for $DOMAIN"
 
 # ── Step 7: Start Docker Compose ────────────────────────────────────

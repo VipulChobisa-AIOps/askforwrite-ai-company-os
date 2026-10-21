@@ -98,5 +98,5 @@ I actively own, operate, and syndicate high-impact digital properties powered by
 ### 📬 Connect With Me
 
 * 🌐 **Company Website**: [https://askforwrite.in](https://askforwrite.in)
-* 💼 **Email**: [info@askforwrite.in](mailto:info@askforwrite.in) | [contact@askforwrite.in](mailto:contact@askforwrite.in)
+* 💼 **Email**: [info@askforwrite.in](mailto:info@askforwrite.in)
 * 🐙 **GitHub**: [@VipulChobisa-AIOps](https://github.com/VipulChobisa-AIOps)

@@ -193,7 +193,7 @@ class TestRealWorldEndToEndSimulation(unittest.TestCase):
             },
             json={
                 "proposal_id": proposal_id,
-                "assigned_to": "ops-lead@askforwrite.in",
+                "assigned_to": "info@askforwrite.in",
                 "idempotency_key": "sim-del-exec-001",
             },
         )

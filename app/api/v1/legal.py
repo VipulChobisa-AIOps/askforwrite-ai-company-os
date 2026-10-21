@@ -39,10 +39,10 @@ COMPANY_METADATA = {
     "ministry": "Ministry of Micro, Small and Medium Enterprises, Government of India",
     "jurisdiction": "Udaipur, Rajasthan, India - 313001",
     "primary_website": "https://os.askforwrite.com",
-    "legal_email": "legal@askforwrite.in",
-    "privacy_email": "privacy@askforwrite.in",
-    "compliance_email": "compliance@askforwrite.in",
-    "billing_email": "billing@askforwrite.in",
+    "legal_email": "info@askforwrite.in",
+    "privacy_email": "info@askforwrite.in",
+    "compliance_email": "info@askforwrite.in",
+    "billing_email": "info@askforwrite.in",
     "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
 }
 
@@ -55,7 +55,7 @@ TERMS_OF_SERVICE = {
     "enterprise_type": "MSME Registered Enterprise (Government of India)",
     "udyam_registration": "UDYAM-RJ-14-0018404",
     "registered_office": "Udaipur, Rajasthan, India - 313001",
-    "contact": "legal@askforwrite.in",
+    "contact": "info@askforwrite.in",
     "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
     "sections": [
         {
@@ -94,7 +94,7 @@ TERMS_OF_SERVICE = {
             "body": (
                 "Accounts are partitioned by cryptographic Organization IDs (tenants). You are solely responsible for safeguarding "
                 "your API keys, JWT bearer tokens, and passwords. Any activity conducted under your credentials is your legal "
-                "responsibility. In the event of suspected unauthorized access, you must notify security@askforwrite.in immediately. "
+                "responsibility. In the event of suspected unauthorized access, you must notify info@askforwrite.in immediately. "
                 "Owner Command Center access requires authorized 32-character API key authentication and remains restricted to "
                 "verified company managers."
             ),
@@ -165,7 +165,7 @@ PRIVACY_POLICY = {
     "enterprise_type": "MSME Registered Enterprise (Government of India)",
     "udyam_registration": "UDYAM-RJ-14-0018404",
     "registered_office": "Udaipur, Rajasthan, India - 313001",
-    "contact": "privacy@askforwrite.in",
+    "contact": "info@askforwrite.in",
     "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
     "sections": [
         {
@@ -202,7 +202,7 @@ PRIVACY_POLICY = {
                 "Tenant operational data is retained for the active subscription period plus a 90-day grace period, after which it is "
                 "permanently purged upon request. Under the Digital Personal Data Protection Act, 2023 (DPDPA), users have the absolute "
                 "right to access, rectify, export (via GET /v1/audit/export in JSON/CSV), or delete their personal data by contacting "
-                "privacy@askforwrite.in."
+                "info@askforwrite.in."
             ),
         },
         {
@@ -229,7 +229,7 @@ PRIVACY_POLICY = {
                 "In accordance with the Information Technology Act, 2000, and the Digital Personal Data Protection Act, 2023, "
                 "the details of the Data Grievance Officer are: "
                 "Name: Vipul Kumar Chobisa | Firm: ASKFORWRITE (UDYAM-RJ-14-0018404) | "
-                "Email: compliance@askforwrite.in | Address: Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001. "
+                "Email: info@askforwrite.in | Address: Udaipur Bus Stand, Udaipur, Rajasthan, India - 313001. "
                 "All grievances are acknowledged within 24 hours and resolved within statutory timeframes."
             ),
         },
@@ -275,8 +275,8 @@ MSME_DECLARATION = {
     "compliance_officer": {
         "name": "Vipul Kumar Chobisa",
         "designation": "Proprietor & Principal Compliance Officer",
-        "email": "compliance@askforwrite.in",
-        "phone_inquiries": "support@askforwrite.in",
+        "email": "info@askforwrite.in",
+        "phone_inquiries": "info@askforwrite.in",
     },
     "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
 }
@@ -288,14 +288,14 @@ REFUND_POLICY = {
     "effective_date": str(_REFUND_EFFECTIVE),
     "company": "ASKFORWRITE",
     "enterprise_type": "MSME Registered Enterprise (UDYAM-RJ-14-0018404)",
-    "contact": "billing@askforwrite.in",
+    "contact": "info@askforwrite.in",
     "copyright": "© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404). All Rights Reserved.",
     "sections": [
         {
             "heading": "1. Subscription Cancellations",
             "body": (
                 "You may cancel your monthly or annual subscription at any time directly through the Customer Portal "
-                "or by emailing billing@askforwrite.in. Upon cancellation, your workspace remains active until the end of "
+                "or by emailing info@askforwrite.in. Upon cancellation, your workspace remains active until the end of "
                 "the current paid billing period, with zero automated renewal charges thereafter."
             ),
         },
@@ -320,7 +320,7 @@ REFUND_POLICY = {
         {
             "heading": "4. Dispute Resolution & Grievances",
             "body": (
-                "For any billing discrepancy or payment concern, please contact billing@askforwrite.in with your transaction "
+                "For any billing discrepancy or payment concern, please contact info@askforwrite.in with your transaction "
                 "reference number. Under the MSMED Act, 2006, commercial payment disputes may also be addressed via the MSME "
                 "Samadhaan conciliation mechanism in Udaipur, Rajasthan."
             ),

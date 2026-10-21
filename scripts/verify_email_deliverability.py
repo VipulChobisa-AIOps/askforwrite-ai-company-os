@@ -58,7 +58,7 @@ Configure the following TXT and MX records in your Hostinger hPanel DNS zone:
    → Cryptographically signs outbound outreach emails to prevent spoofing.
 
 4. [DMARC Policy] (TXT _dmarc)
-   v=DMARC1; p=quarantine; rua=mailto:dmarc@askforwrite.in; pct=100; adkim=r; aspf=r
+   v=DMARC1; p=quarantine; rua=mailto:info@askforwrite.in; pct=100; adkim=r; aspf=r
    → Protects domain reputation and ensures 99%+ inbox placement (Gmail/Outlook).
 """)
 

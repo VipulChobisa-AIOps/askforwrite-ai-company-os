@@ -95,7 +95,7 @@ def get_mobile_user(
                 # Return a virtual user from the token if DB record is not yet synced
                 return UserRecord(
                     id=user_id,
-                    email=payload.get("email", "mobile@askforwrite.in"),
+                    email=payload.get("email", "info@askforwrite.in"),
                     full_name="Field Agent",
                     role=payload.get("role", "executive"),
                     org_id=payload.get("org_id"),
@@ -114,7 +114,7 @@ def get_mobile_user(
             return user
         return UserRecord(
             id=str(uuid.uuid4()),
-            email="manager@askforwrite.in",
+            email="info@askforwrite.in",
             full_name="Field Operations Manager",
             role="manager",
             is_active=True,
