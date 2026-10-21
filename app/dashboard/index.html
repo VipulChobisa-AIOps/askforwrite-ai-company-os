@@ -161,6 +161,37 @@
 
       <!-- ══════ DASHBOARD PAGE ══════ -->
       <section class="page active" id="page-dashboard">
+        <!-- ── Live AI Opportunity Scanner & Quick Closer ── -->
+        <div class="opportunity-scanner-banner" id="opportunity-scanner-banner">
+          <div class="scanner-banner-header">
+            <div class="scanner-badge-pill">
+              <span class="live-dot-pulse"></span>
+              <span>LIVE AI ENGINE</span>
+            </div>
+            <div class="scanner-banner-title-wrap">
+              <h2 class="scanner-banner-title">⚡ 60-Second AI Opportunity Scanner &amp; Quick Closer</h2>
+              <p class="scanner-banner-desc">Audit any live prospect website in real-time. Detect SEO/GEO gaps, Perplexity/Claude/ChatGPT crawler visibility (/llms.txt), and generate a customized instant Trojan Horse preview with 1-click ₹2,499 ($29) AFW DirectPay.</p>
+            </div>
+          </div>
+          <div class="scanner-banner-form">
+            <div class="scanner-input-group">
+              <input type="url" id="scanner-url-input" class="scanner-input" placeholder="Enter prospect website (e.g. https://targetcompany.com)" />
+            </div>
+            <div class="scanner-input-group sm">
+              <input type="text" id="scanner-company-input" class="scanner-input" placeholder="Company Name (optional)" />
+            </div>
+            <div class="scanner-input-group sm">
+              <input type="email" id="scanner-email-input" class="scanner-input" placeholder="Decision Maker Email (optional)" />
+            </div>
+            <button type="button" class="primary-btn scanner-submit-btn" id="btn-run-opportunity-scan">
+              <span>Scan Prospect Now</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+          <!-- Results Container -->
+          <div class="scanner-results-container" id="scanner-results-container" style="display:none"></div>
+        </div>
+
         <!-- Stats Cards -->
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card" data-accent="purple">
@@ -1673,6 +1704,9 @@
         <button type="button" class="auth-tab-btn" id="auth-tab-btn-register" data-tab="register">
           Sign-Up / Free Trial
         </button>
+        <button type="button" class="auth-tab-btn" id="auth-tab-btn-scan" data-tab="scan">
+          ⚡ Free 60s Scan
+        </button>
         <button type="button" class="auth-tab-btn" id="auth-tab-btn-owner" data-tab="owner">
           Owner Console
         </button>
@@ -1743,6 +1777,41 @@
         <button type="button" class="primary-btn auth-submit-btn" id="btn-customer-register">
           Create Instant Workspace
         </button>
+      </div>
+
+      <!-- Tab 4: Free 60s Opportunity Scan -->
+      <div class="auth-tab-content" id="auth-tab-scan" style="display:none">
+        <div style="margin-bottom:12px; padding:10px 12px; border-radius:var(--radius-sm); background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.25);">
+          <div style="font-weight:700; font-size:0.85rem; color:#c7d2fe; display:flex; align-items:center; gap:6px;">
+            <span>⚡ AI Discovery &amp; Revenue Leak Scanner</span>
+            <span style="font-size:0.65rem; padding:2px 6px; border-radius:10px; background:rgba(34,197,94,0.2); color:#4ade80; border:1px solid rgba(34,197,94,0.4);">100% Free</span>
+          </div>
+          <p style="margin:4px 0 0; font-size:0.75rem; color:var(--text-muted); line-height:1.35;">
+            Input your website URL to instantly scan SEO, LLM search crawler readiness (/llms.txt), and find high-friction revenue leaks in 60s.
+          </p>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="modal-label" for="scan-modal-url">Website URL</label>
+          <input type="url" id="scan-modal-url" class="settings-input" placeholder="https://example.com" autocomplete="url">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+          <div class="form-group">
+            <label class="modal-label" for="scan-modal-company">Business Name</label>
+            <input type="text" id="scan-modal-company" class="settings-input" placeholder="Acme Services">
+          </div>
+          <div class="form-group">
+            <label class="modal-label" for="scan-modal-email">Work Email</label>
+            <input type="email" id="scan-modal-email" class="settings-input" placeholder="founder@acme.com">
+          </div>
+        </div>
+
+        <button type="button" class="primary-btn auth-submit-btn" id="btn-modal-run-scan">
+          ⚡ Run Free 60s Scan
+        </button>
+
+        <!-- Scan Result Area -->
+        <div id="scan-modal-result" style="display:none; margin-top:14px;"></div>
       </div>
 
       <!-- Tab 3: Owner Command Center -->

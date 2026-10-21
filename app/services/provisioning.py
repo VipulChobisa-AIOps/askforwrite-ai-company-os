@@ -242,7 +242,46 @@ def auto_provision_tenant_on_payment(
     except Exception as exc:
         logger.error("Failed to send welcome email to %s: %s", email, exc)
 
-    # 5. Audit Log
+    # 5. Instant Time-To-Value Seed: Seed 10 pre-enriched, high-intent leads tailored to client's vertical
+    seeded_leads_count = 0
+    try:
+        from app.agents.smb_search_source import discover_smb_leads
+        from app.db.models import LeadRecordRow
+
+        seed_vertical = pkg.key or "growth_all_in_one"
+        seed_leads = discover_smb_leads(vertical=seed_vertical, limit=10)
+
+        for cand in seed_leads:
+            cand_domain = cand.get("domain") or "candidate.com"
+            existing_lead = db.query(LeadRecordRow).filter_by(org_id=org_id, domain=cand_domain).first()
+            if not existing_lead:
+                lead_row = LeadRecordRow(
+                    id=str(uuid.uuid4()),
+                    org_id=org_id,
+                    domain=cand_domain,
+                    task_id=f"onboarding_seed_{org_id[:8]}",
+                    company=cand.get("company", "Commercial Enterprise"),
+                    website=cand.get("website", f"https://{cand_domain}"),
+                    industry=cand.get("industry", "Commercial Enterprise"),
+                    geography=cand.get("geography", "India"),
+                    observed_signals=list(cand.get("observed_signals", [])),
+                    sources=[{"source": "onboarding_instant_seed", "catalog_key": seed_vertical}],
+                    product_match=cand.get("recommended_package", pkg.key),
+                    fit_score=float(cand.get("fit_score", 0.95)),
+                    confidence=float(cand.get("confidence", 0.92)),
+                    public_contact_channel=cand.get("public_contact_channel"),
+                    recommended_next_step="outreach_review",
+                    do_not_contact=False,
+                    status="DISCOVERED",
+                )
+                db.add(lead_row)
+                seeded_leads_count += 1
+        db.flush()
+        logger.info("Successfully seeded %d initial commercial leads for new tenant %s", seeded_leads_count, org_id)
+    except Exception as exc:
+        logger.warning("Lead seeding fallback during tenant provisioning: %s", exc)
+
+    # 6. Audit Log
     db.add(
         AuditLog(
             task_id=str(uuid.uuid4()),
@@ -251,7 +290,7 @@ def auto_provision_tenant_on_payment(
             capability_name="customer_onboarding",
             action="tenant_auto_provisioned",
             input_payload={"email": email, "package_key": pkg.key, "provider": event.provider.value},
-            output_payload={"org_id": org_id, "user_id": user_id, "invoice_id": invoice_id},
+            output_payload={"org_id": org_id, "user_id": user_id, "invoice_id": invoice_id, "seeded_leads": seeded_leads_count},
             status="COMPLETED",
         )
     )
@@ -264,4 +303,5 @@ def auto_provision_tenant_on_payment(
         "email": email,
         "package_key": pkg.key,
         "temp_password": temp_password,
+        "seeded_leads_count": seeded_leads_count,
     }

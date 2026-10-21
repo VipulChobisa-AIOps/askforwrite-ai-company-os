@@ -4,7 +4,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
@@ -186,26 +186,53 @@ app.include_router(scheduler_router)
 app.include_router(sovereign_pay_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
+# ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
 if dashboard_dir.exists():
     app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
+    app.mount("/static", StaticFiles(directory=str(dashboard_dir)), name="static")
 
 
 @app.get("/health", tags=["system"])
-def health_check() -> dict[str, str]:
+def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     """Production health check endpoint for Render, cloud monitors, and load balancers."""
+    db_status = "connected"
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "degraded"
+
     return {
         "status": "healthy",
         "service": "AskforWrite AI Company OS",
         "version": "0.2.0",
+        "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
 @app.get("/", include_in_schema=False)
-def root_redirect() -> RedirectResponse:
-    """Redirect root domain visits directly to the dashboard."""
-    return RedirectResponse(url="/dashboard/")
+def root(request: Request) -> Any:
+    """Root entrypoint: returns service metadata for API clients or redirects browsers to dashboard."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and "application/json" not in accept:
+        return RedirectResponse(url="/dashboard/")
+    return {
+        "status": "online",
+        "service": "AskforWrite AI Company OS",
+        "version": "0.2.0",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "dashboard_url": "/dashboard/",
+        "api_prefix": "/v1",
+        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
+    }
+
+
+@app.get("/login", include_in_schema=False)
+def login_redirect() -> RedirectResponse:
+    """Redirect /login directly to the portal login view."""
+    return RedirectResponse(url="/dashboard/#portal")
 
 
 @app.get("/portal", include_in_schema=False)

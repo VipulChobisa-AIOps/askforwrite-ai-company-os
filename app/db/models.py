@@ -610,6 +610,39 @@ class ShiftRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SovereignPaymentSessionRecord(Base):
+    """Durable first-party sovereign checkout session surviving restarts and multi-worker routing."""
+    __tablename__ = "sovereign_payment_sessions"
+    __table_args__ = (
+        Index("ix_sovereign_session_status", "status"),
+        Index("ix_sovereign_session_email", "customer_email"),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    package_key: Mapped[str] = mapped_column(String(100), index=True)
+    package_name: Mapped[str] = mapped_column(String(250))
+    company_name: Mapped[str] = mapped_column(String(250))
+    customer_email: Mapped[str] = mapped_column(String(250), index=True)
+    customer_name: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    customer_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="INR")
+    amount: Mapped[float] = mapped_column(Float)
+    preferred_rail: Mapped[str] = mapped_column(String(32), default="upi_direct")
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
+    upi_uri: Mapped[str] = mapped_column(Text)
+    upi_qr_svg: Mapped[str] = mapped_column(Text)
+    usdc_payload: Mapped[dict] = mapped_column(JSON)
+    bank_wire_invoice: Mapped[dict] = mapped_column(JSON)
+    checkout_url: Mapped[str] = mapped_column(String(500))
+    verification_proof: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    verified_rail: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trust_block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 def _reject_audit_mutation(mapper, connection, target) -> None:
     raise ValueError("Audit records are append-only")
 

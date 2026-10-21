@@ -243,13 +243,30 @@ def run_discovery(
     limit: int = 10,
 ) -> DiscoveryResult:
     """Qualify candidates without performing outreach or claiming persistence."""
+    import os
     normalized_objective = objective.strip()
     if not normalized_objective:
         raise ValueError("objective must not be empty")
     if not 1 <= limit <= 50:
         raise ValueError("limit must be between 1 and 50")
 
-    source_provider = provider or OfflineSignalProvider()
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    is_production = app_env in ("production", "prod")
+
+    if provider is not None:
+        if is_production and getattr(provider, "data_mode", "") == "offline_synthetic":
+            raise ValueError(
+                "OfflineSignalProvider (offline_synthetic) is strictly prohibited in production. "
+                "Production lead discovery must route through real commercial search sources (SMBSearchSourceProvider)."
+            )
+        source_provider = provider
+    else:
+        if is_production:
+            from app.agents.sources import SMBSearchSourceProvider
+            source_provider = SMBSearchSourceProvider()
+        else:
+            source_provider = OfflineSignalProvider()
+
     candidates = source_provider.search(normalized_objective, limit=limit)
     leads = tuple(
         _to_lead(candidate, source_provider.data_mode)

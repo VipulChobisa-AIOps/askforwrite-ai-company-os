@@ -1713,6 +1713,16 @@
     $('#btn-owner-unlock')?.addEventListener('click', handleOwnerUnlock);
     $('#btn-logout')?.addEventListener('click', handleLogout);
 
+    // Opportunity Scanner listeners
+    $('#btn-run-opportunity-scan')?.addEventListener('click', () => handleOpportunityScan('banner'));
+    $('#scanner-url-input')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleOpportunityScan('banner');
+    });
+    $('#btn-modal-run-scan')?.addEventListener('click', () => handleOpportunityScan('modal'));
+    $('#scan-modal-url')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleOpportunityScan('modal');
+    });
+
     $('#login-password')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleCustomerLogin();
     });
@@ -2361,6 +2371,130 @@
 
     toast('Logged out of workspace.', 'info');
     checkAuthGate();
+  }
+
+  // ── Live Opportunity Scanner & Lead Magnet ────────────────
+  function renderScanResult(data, container) {
+    if (!container) return;
+    const leaksHtml = (data.top_pain_leaks || []).map(leak => `
+      <div class="scanner-leak-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;color:#ef4444;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>${leak}</span>
+      </div>
+    `).join('');
+
+    container.innerHTML = `
+      <div class="scanner-results-card">
+        <div class="scanner-score-row">
+          <div>
+            <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:700; letter-spacing:0.05em;">Live Audit Result</div>
+            <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary);">${data.company_name} <span style="font-size:0.85rem; font-weight:400; color:var(--text-muted);">(${data.domain})</span></div>
+          </div>
+          <div class="scanner-score-badge">
+            <div style="text-align:right;">
+              <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Opportunity Gap</div>
+              <div class="scanner-score-val">${data.seo_geo_gap_score}/100</div>
+            </div>
+            <span style="font-size:0.72rem; padding:4px 8px; border-radius:6px; background:rgba(245, 158, 11, 0.15); color:#f59e0b; border:1px solid rgba(245, 158, 11, 0.3); font-weight:700;">
+              ${data.audit_status || 'LIVE_VERIFIED'}
+            </span>
+          </div>
+        </div>
+
+        <div style="font-size:0.82rem; font-weight:700; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+          <span>Critical Revenue &amp; AI Visibility Leaks</span>
+          <span style="font-size:0.7rem; color:var(--text-muted); font-weight:400;">(${data.top_pain_leaks?.length || 0} high-priority issues)</span>
+        </div>
+        <div class="scanner-leaks-list">
+          ${leaksHtml}
+        </div>
+
+        <div class="scanner-offer-box">
+          <div>
+            <div style="font-weight:700; color:var(--text-primary); font-size:0.92rem; display:flex; align-items:center; gap:8px;">
+              <span>🚀 ${data.package_name || 'Autonomous SEO & AI Closer Fix Pack'}</span>
+              <span style="font-size:0.72rem; background:rgba(34, 197, 94, 0.2); color:#4ade80; padding:2px 8px; border-radius:10px; font-weight:700;">₹${data.price_inr} / $${data.price_usd}</span>
+            </div>
+            <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:3px;">
+              ${data.remediation_offer || 'Instant deployment: /llms.txt manifest, structured SEO schema, and 50 live leads.'}
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${data.preview_url ? `<a href="${data.preview_url}" target="_blank" class="secondary-btn" style="padding:8px 14px; font-size:0.82rem; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+              <span>View Preview</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>` : ''}
+            <a href="${data.checkout_url}" target="_blank" class="primary-btn" style="padding:9px 18px; font-size:0.84rem; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg, #2563eb, #10b981);">
+              <span>Fix Now • ₹${data.price_inr}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+    container.style.display = 'block';
+  }
+
+  async function handleOpportunityScan(source = 'banner') {
+    const isModal = source === 'modal';
+    const urlInput = isModal ? $('#scan-modal-url') : $('#scanner-url-input');
+    const compInput = isModal ? $('#scan-modal-company') : $('#scanner-company-input');
+    const emailInput = isModal ? $('#scan-modal-email') : $('#scanner-email-input');
+    const btn = isModal ? $('#btn-modal-run-scan') : $('#btn-run-opportunity-scan');
+    const container = isModal ? $('#scan-modal-result') : $('#scanner-results-container');
+
+    const url = (urlInput?.value || '').trim();
+    const company_name = (compInput?.value || '').trim();
+    const email = (emailInput?.value || '').trim();
+
+    if (!url) {
+      if (isModal) {
+        showAuthGateError('Please enter a website URL to scan.');
+      } else {
+        toast('Please enter a website URL (e.g. https://example.com)', 'warning');
+      }
+      return;
+    }
+
+    const origText = btn ? btn.textContent : '';
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⚡ Scanning live website...';
+      }
+      if (container) {
+        container.style.display = 'block';
+        container.innerHTML = `
+          <div style="padding:16px; text-align:center; color:var(--text-secondary); background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm);">
+            <div style="margin-bottom:6px; font-weight:600; color:var(--cyan);">Auditing SEO tags, /llms.txt manifest, and GEO readiness...</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">This takes ~3-5 seconds. Checking live responses.</div>
+          </div>
+        `;
+      }
+
+      const res = await api('POST', '/v1/previews/scan', {
+        url,
+        company_name,
+        email,
+      });
+
+      renderScanResult(res, container);
+      toast(`Scan complete for ${res.domain}! Detected ${res.top_pain_leaks?.length || 0} optimization opportunities.`, 'success');
+    } catch (err) {
+      if (container) {
+        container.innerHTML = `
+          <div style="padding:14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:var(--radius-sm); color:#fca5a5; font-size:0.85rem;">
+            Failed to audit URL: ${err.message || 'Please check that the website is accessible.'}
+          </div>
+        `;
+      }
+      toast(`Scan failed: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
   }
 
   // ── Customer Portal BYOK & Services ──────────────────────

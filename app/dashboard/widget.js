@@ -33,7 +33,7 @@
     (window.location.origin && window.location.origin !== 'null' ? window.location.origin : 'http://localhost:8000');
 
   const COMPANY_NAME = config.company ||
-    (currentScript ? currentScript.getAttribute('data-company') : null) ||
+    (currentScript ? (currentScript.getAttribute('data-company') || currentScript.getAttribute('data-afw-tenant')) : null) ||
     'AskforWrite';
 
   const CURRENCY = config.currency || 'INR';

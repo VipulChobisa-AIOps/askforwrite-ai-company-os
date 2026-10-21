@@ -227,6 +227,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Rate limiting disabled in development for main app
+        app_env = os.environ.get("APP_ENV", "development").casefold()
+        if app_env == "development" and getattr(request.app, "title", "") == "AskforWrite AI Company OS":
+            return await call_next(request)
+
         # Extract caller identity (Tenant Org ID > API Key > Bearer token > Client IP)
         org_id = request.headers.get("X-Org-ID")
         api_key = request.headers.get("X-API-Key")

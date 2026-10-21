@@ -77,8 +77,38 @@ class OfflineSignalProvider:
     )
 
     def search(self, query: str, limit: int = 10) -> list[SignalBundle]:
+        import os
+        if os.getenv("APP_ENV", "").strip().lower() in ("production", "prod"):
+            raise RuntimeError(
+                "OfflineSignalProvider (synthetic fixtures) is strictly prohibited in production. "
+                "Use SMBSearchSourceProvider or a live SourceProvider."
+            )
         del query
         return list(self._fixtures[:limit])
+
+
+class SMBSearchSourceProvider:
+    """Live commercial SMB prospect provider backed by real Indian enterprise domains and live search."""
+
+    data_mode = "smb_live_directory"
+
+    def search(self, query: str, limit: int = 10) -> list[SignalBundle]:
+        from app.agents.smb_search_source import discover_smb_leads
+        raw_leads = discover_smb_leads(vertical=query, limit=limit)
+        bundles: list[SignalBundle] = []
+        for lead in raw_leads:
+            bundles.append(
+                SignalBundle(
+                    company=lead.get("company", "Commercial Enterprise"),
+                    website=lead.get("website", ""),
+                    industry=lead.get("industry", "Commercial Enterprise"),
+                    geography=lead.get("geography", "India"),
+                    signals=tuple(lead.get("observed_signals", ())),
+                    public_contact_channel=lead.get("public_contact_channel"),
+                    do_not_contact=bool(lead.get("do_not_contact", False)),
+                )
+            )
+        return bundles
 
 
 class _PageMetadataParser(HTMLParser):

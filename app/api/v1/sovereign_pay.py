@@ -62,6 +62,7 @@ class VerifyPaymentRequest(BaseModel):
 @router.post("/create-session")
 def create_session_endpoint(
     payload: CreateSessionRequest,
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Create a new sovereign payment session across 3 native settlement rails with 0% gateway commission."""
     session = create_sovereign_pay_session(
@@ -72,6 +73,7 @@ def create_session_endpoint(
         preferred_rail=payload.preferred_rail,
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
+        db=db,
     )
     return {
         "session_id": session.session_id,
@@ -131,9 +133,10 @@ def confirm_payment_owner_endpoint(
 @router.get("/{session_id}/status")
 def get_session_status_endpoint(
     session_id: str,
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Check the real-time settlement and verification status of a sovereign payment session."""
-    session = get_sovereign_pay_session(session_id)
+    session = get_sovereign_pay_session(session_id, db=db)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found")
     return session.to_dict()
@@ -756,9 +759,10 @@ def _render_checkout_html(session: Any) -> str:
 @router.get("/{session_id}/checkout", response_class=HTMLResponse)
 def get_checkout_page_endpoint(
     session_id: str,
+    db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Render public responsive HTML checkout page for AFW DirectPay."""
-    session = get_sovereign_pay_session(session_id)
+    session = get_sovereign_pay_session(session_id, db=db)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -773,6 +777,7 @@ def direct_checkout_endpoint(
     company: str = Query(default="Commercial Enterprise", description="Client or company name"),
     email: str | None = Query(default=None, description="Client billing email"),
     currency: str = Query(default="INR", description="Settlement currency"),
+    db: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Direct URL query-param entrypoint for AFW DirectPay checkout (/v1/pay/checkout?package={pkg}&company={co})."""
     pkg = get_package(package) or CATALOG.get(package) or CATALOG["growth_all_in_one"]
@@ -786,5 +791,6 @@ def direct_checkout_endpoint(
         customer_email=client_email,
         currency=currency.upper(),
         preferred_rail="upi_direct" if currency.upper() == "INR" else "web3_usdc",
+        db=db,
     )
     return HTMLResponse(content=_render_checkout_html(session))

@@ -25,20 +25,20 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
         self.script_directory = ScriptDirectory.from_config(self.config)
 
     def test_migration_chain_has_single_head_and_correct_revisions(self):
-        """Verify the migration chain ends at e5f6a1b2c3d4 with down_revision d4e5f6a1b2c3."""
+        """Verify the migration chain ends at f6a1b2c3d4e5 with down_revision e5f6a1b2c3d4."""
         heads = self.script_directory.get_heads()
         self.assertEqual(len(heads), 1, f"Expected exactly 1 migration head, got: {heads}")
         head_rev = heads[0]
-        self.assertEqual(head_rev, "e5f6a1b2c3d4")
+        self.assertEqual(head_rev, "f6a1b2c3d4e5")
 
         head_script = self.script_directory.get_revision(head_rev)
         self.assertIsNotNone(head_script)
-        self.assertEqual(head_script.down_revision, "d4e5f6a1b2c3")
+        self.assertEqual(head_script.down_revision, "e5f6a1b2c3d4")
 
         # Verify down revision script exists
-        down_script = self.script_directory.get_revision("d4e5f6a1b2c3")
+        down_script = self.script_directory.get_revision("e5f6a1b2c3d4")
         self.assertIsNotNone(down_script)
-        self.assertEqual(down_script.down_revision, "c3d4e5f6a1b2")
+        self.assertEqual(down_script.down_revision, "d4e5f6a1b2c3")
 
     def test_sprint5_migration_upgrade_and_downgrade_parity(self):
         """Verify upgrade() and downgrade() of e5f6a1b2c3d4 against SQLite engine."""

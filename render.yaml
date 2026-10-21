@@ -32,13 +32,13 @@ services:
           name: askforwrite-db
           property: connectionString
       - key: MANAGER_API_KEY
-        sync: false
+        generateValue: true
       - key: OWNER_API_KEY
-        sync: false
+        generateValue: true
       - key: JWT_SECRET_KEY
-        sync: false
+        generateValue: true
       - key: SECRET_KEY
-        sync: false
+        generateValue: true
       - key: ALLOWED_ORIGINS
         value: "https://os.askforwrite.com,https://askforwrite.in,https://theaiscene.in,https://careersathi.in,https://edutechguide.in,http://localhost:8000"
       - key: PAYMENT_PROVIDER

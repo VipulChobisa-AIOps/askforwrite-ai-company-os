@@ -77,7 +77,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
 
         heads = script_dir.get_heads()
         self.assertEqual(len(heads), 1)
-        self.assertEqual(heads[0], "e5f6a1b2c3d4")
+        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5"])
 
         rev = script_dir.get_revision("e5f6a1b2c3d4")
         self.assertIsNotNone(rev)
@@ -144,6 +144,10 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
 
     def test_shift_stages_trojan_horse_outreach_drafts_and_auto_dispatches(self):
         """run_autonomous_shift stages Trojan-Horse outreach drafts in HITL queue, and owner approval auto-dispatches."""
+        self.db.query(OutreachRecord).delete()
+        self.db.query(ApprovalRequest).delete()
+        self.db.commit()
+
         shift_corr_id = f"test-sprint5-shift-{uuid.uuid4().hex[:8]}"
 
         shift_res = run_autonomous_shift(

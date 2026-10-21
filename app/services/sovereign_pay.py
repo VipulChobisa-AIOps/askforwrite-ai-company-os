@@ -26,7 +26,7 @@ from urllib.parse import quote_plus
 import httpx
 from sqlalchemy.orm import Session
 
-from app.db.models import ApprovalRequest
+from app.db.models import ApprovalRequest, SovereignPaymentSessionRecord
 from app.security.trust_chain import seal_task_to_block
 from app.services.catalog import CATALOG, get_package
 from app.services.email_dispatcher import get_email_dispatcher
@@ -542,6 +542,7 @@ def create_sovereign_pay_session(
     preferred_rail: str = "upi_direct",
     customer_name: str | None = None,
     customer_phone: str | None = None,
+    db: Session | None = None,
 ) -> SovereignPaySession:
     """Create a new AFW DirectPay sovereign payment session with payloads for all 3 settlement rails."""
     pkg = get_package(package_key) or CATALOG.get(package_key) or CATALOG["growth_all_in_one"]
@@ -603,16 +604,104 @@ def create_sovereign_pay_session(
         checkout_url=checkout_url,
     )
 
+    # Persist session to PostgreSQL table for durable cross-worker and cold-restart survivability
+    record = SovereignPaymentSessionRecord(
+        session_id=session_id,
+        package_key=pkg.key,
+        package_name=pkg.name,
+        company_name=comp_clean,
+        customer_email=email_clean,
+        customer_name=cust_name,
+        customer_phone=customer_phone,
+        currency=clean_curr,
+        amount=amount,
+        preferred_rail=preferred_rail,
+        status="PENDING",
+        upi_uri=upi_uri,
+        upi_qr_svg=upi_qr_svg,
+        usdc_payload=usdc_payload,
+        bank_wire_invoice=bank_wire_invoice,
+        checkout_url=checkout_url,
+        created_at=datetime.now(UTC),
+    )
+    if db is not None:
+        try:
+            db.add(record)
+            db.commit()
+        except Exception as exc:
+            logger.warning(f"Failed to commit SovereignPaymentSessionRecord to db: {exc}")
+    else:
+        try:
+            from app.db.database import SessionLocal
+            with SessionLocal() as local_db:
+                local_db.add(record)
+                local_db.commit()
+        except Exception as exc:
+            logger.warning(f"Failed to persist SovereignPaymentSessionRecord via SessionLocal: {exc}")
+
     with _SESSION_LOCK:
         SOVEREIGN_PAY_SESSIONS[session_id] = session
 
     return session
 
 
-def get_sovereign_pay_session(session_id: str) -> SovereignPaySession | None:
-    """Retrieve an active or completed sovereign payment session."""
+def _record_to_session(record: SovereignPaymentSessionRecord) -> SovereignPaySession:
+    """Reconstruct in-memory dataclass from durable database record."""
+    return SovereignPaySession(
+        session_id=record.session_id,
+        package_key=record.package_key,
+        package_name=record.package_name,
+        company_name=record.company_name,
+        customer_email=record.customer_email,
+        customer_name=record.customer_name or record.company_name,
+        customer_phone=record.customer_phone,
+        currency=record.currency,
+        amount=record.amount,
+        preferred_rail=record.preferred_rail,
+        status=record.status,
+        upi_uri=record.upi_uri,
+        upi_qr_svg=record.upi_qr_svg,
+        usdc_payload=record.usdc_payload,
+        bank_wire_invoice=record.bank_wire_invoice,
+        checkout_url=record.checkout_url,
+        verification_proof=record.verification_proof,
+        verified_rail=record.verified_rail,
+        trust_block_hash=record.trust_block_hash,
+        trust_block_index=record.trust_block_index,
+        created_at=record.created_at.isoformat() if record.created_at else datetime.now(UTC).isoformat(),
+        verified_at=record.verified_at.isoformat() if record.verified_at else None,
+    )
+
+
+def get_sovereign_pay_session(session_id: str, db: Session | None = None) -> SovereignPaySession | None:
+    """Retrieve an active or completed sovereign payment session from memory or PostgreSQL."""
     with _SESSION_LOCK:
-        return SOVEREIGN_PAY_SESSIONS.get(session_id)
+        cached = SOVEREIGN_PAY_SESSIONS.get(session_id)
+        if cached:
+            return cached
+
+    # Multi-worker / cold-restart fallback: query persistent PostgreSQL table
+    try:
+        if db is not None:
+            record = db.query(SovereignPaymentSessionRecord).filter_by(session_id=session_id).first()
+            if record:
+                sess = _record_to_session(record)
+                with _SESSION_LOCK:
+                    SOVEREIGN_PAY_SESSIONS[session_id] = sess
+                return sess
+        else:
+            from app.db.database import SessionLocal
+            with SessionLocal() as local_db:
+                record = local_db.query(SovereignPaymentSessionRecord).filter_by(session_id=session_id).first()
+                if record:
+                    sess = _record_to_session(record)
+                    with _SESSION_LOCK:
+                        SOVEREIGN_PAY_SESSIONS[session_id] = sess
+                    return sess
+    except Exception as exc:
+        logger.warning(f"PostgreSQL session lookup failed for '{session_id}': {exc}")
+
+    return None
 
 
 def verify_sovereign_payment(
@@ -708,6 +797,12 @@ def verify_sovereign_payment(
                 created_at=datetime.now(UTC),
             )
             db.add(approval)
+        # Update durable DB record
+        record = db.query(SovereignPaymentSessionRecord).filter_by(session_id=session.session_id).first()
+        if record:
+            record.status = "AWAITING_OWNER_CONFIRMATION"
+            record.verification_proof = clean_proof
+            record.verified_rail = clean_rail
         db.commit()
 
         # Send immediate email alert to owner
@@ -820,6 +915,17 @@ def verify_sovereign_payment(
     session.trust_block_hash = trust_block.block_hash
     session.trust_block_index = trust_block.index
     session.verified_at = datetime.now(UTC).isoformat()
+
+    # Update durable DB record
+    record = db.query(SovereignPaymentSessionRecord).filter_by(session_id=session.session_id).first()
+    if record:
+        record.status = "COMPLETED"
+        record.verification_proof = clean_proof
+        record.verified_rail = clean_rail
+        record.trust_block_hash = trust_block.block_hash
+        record.trust_block_index = trust_block.index
+        record.verified_at = datetime.now(UTC)
+        db.commit()
 
     return {
         "status": "VERIFIED",
@@ -947,6 +1053,15 @@ def confirm_sovereign_payment_by_owner(
     session.trust_block_hash = trust_block.block_hash
     session.trust_block_index = trust_block.index
     session.verified_at = datetime.now(UTC).isoformat()
+
+    # Update durable DB record
+    record = db.query(SovereignPaymentSessionRecord).filter_by(session_id=session.session_id).first()
+    if record:
+        record.status = "COMPLETED"
+        record.trust_block_hash = trust_block.block_hash
+        record.trust_block_index = trust_block.index
+        record.verified_at = datetime.now(UTC)
+        db.commit()
 
     return {
         "status": "CONFIRMED_AND_PROVISIONED",
