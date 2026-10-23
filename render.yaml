@@ -24,6 +24,7 @@ services:
     healthCheckPath: /health
     domains:
       - os.askforwrite.com
+      - os.askforwrite.in
     envVars:
       - key: APP_ENV
         value: production
@@ -40,7 +41,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
-        value: "https://os.askforwrite.com,https://askforwrite.in,https://askforwrite.com,https://askforwrite.info,https://ask4write.com,https://node.askforwrite.in,https://shop.ask4write.com,http://localhost:8000"
+        value: "https://os.askforwrite.com,https://os.askforwrite.in,https://askforwrite.in,https://askforwrite.com,https://askforwrite.info,https://ask4write.com,https://node.askforwrite.in,https://shop.ask4write.com,http://localhost:8000"
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
       # Sovereign Pay Direct 0%-Fee Coordinates (Vipul ICICI & Self-Custody Wallets)
