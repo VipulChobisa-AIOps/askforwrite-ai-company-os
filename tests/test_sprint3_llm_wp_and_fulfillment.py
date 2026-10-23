@@ -110,9 +110,16 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         self.assertIsNotNone(campaign.decided_at)
 
     def test_wordpress_publisher_supported_networks(self):
-        """Supported networks must include the 4 authority platforms."""
+        """Supported networks must include the AskforWrite authority platforms."""
         networks = get_supported_networks()
-        expected = ["askforwrite.in", "theaiscene.in", "careersathi.in", "edutechguide.in"]
+        expected = [
+            "askforwrite.in",
+            "askforwrite.com",
+            "ask4write.com",
+            "askforwrite.info",
+            "shop.ask4write.com",
+            "node.askforwrite.in",
+        ]
         for net in expected:
             self.assertIn(net, networks)
             self.assertTrue(networks[net]["base_url"].startswith("https://"))
@@ -122,14 +129,14 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertIn("networks", data)
-        self.assertEqual(data["total_networks"], 4)
+        self.assertEqual(data["total_networks"], len(expected))
 
     def test_publish_seo_draft_to_wordpress_direct_and_endpoint(self):
         """Direct WordPress publisher call must publish, log AuditLog, and seal a TrustBlock."""
         task = TaskRecord(
             id=f"task-seo-{uuid.uuid4().hex[:8]}",
             correlation_id=f"corr-{uuid.uuid4().hex[:8]}",
-            objective="SEO Article for AI Scene",
+            objective="SEO Article for AskforWrite",
             status="PENDING",
         )
         self.db.add(task)
@@ -137,7 +144,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         draft = SeoDraftRecord(
             id=f"draft-{uuid.uuid4().hex[:8]}",
             task_id=task.id,
-            target_network="theaiscene.in",
+            target_network="askforwrite.com",
             keywords=["deep learning", "multimodal ai"],
             content="# Deep Learning in 2026\n\nMultimodal foundation models are automating enterprise workflows.",
             status="DRAFT",
@@ -153,8 +160,8 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         )
 
         self.assertEqual(pub_res["status"], "PUBLISHED")
-        self.assertEqual(pub_res["network"], "theaiscene.in")
-        self.assertTrue(pub_res["url"].startswith("https://theaiscene.in/articles/"))
+        self.assertEqual(pub_res["network"], "askforwrite.com")
+        self.assertTrue(pub_res["url"].startswith("https://askforwrite.com/articles/"))
         self.assertIsNotNone(pub_res["block_hash"])
 
         self.db.refresh(draft)
@@ -168,7 +175,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         draft2 = SeoDraftRecord(
             id=f"draft-api-{uuid.uuid4().hex[:8]}",
             task_id=task.id,
-            target_network="careersathi.in",
+            target_network="ask4write.com",
             keywords=["tech jobs", "ai careers"],
             content="# AI Career Acceleration\n\nUpskilling for autonomous agent orchestration.",
             status="DRAFT",
@@ -180,7 +187,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         self.assertEqual(api_resp.status_code, 200)
         api_data = api_resp.json()
         self.assertEqual(api_data["status"], "PUBLISHED")
-        self.assertTrue(api_data["url"].startswith("https://careersathi.in/articles/"))
+        self.assertTrue(api_data["url"].startswith("https://ask4write.com/articles/"))
 
     def test_seo_approval_auto_triggers_wordpress_publishing(self):
         """When an SEO draft approval is decided as APPROVED, it must auto-publish via WordPress bridge."""
@@ -195,7 +202,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         draft = SeoDraftRecord(
             id=f"seo-bridge-{uuid.uuid4().hex[:8]}",
             task_id=task.id,
-            target_network="edutechguide.in",
+            target_network="shop.ask4write.com",
             keywords=["edutech", "ai tutor"],
             content="# Next Gen EduTech\nAI tutors personalized for higher education.",
             status="DRAFT",
@@ -223,7 +230,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
             approval_id=appr.id,
             decision="APPROVED",
             decided_by="owner",
-            reason="Verified content quality for edutechguide.in",
+            reason="Verified content quality for shop.ask4write.com",
         )
 
         self.assertEqual(decision["status"], "APPROVED")

@@ -58,14 +58,15 @@ An enterprise-grade, single-person autonomous company operating system featuring
 
 ### 🌐 Digital Media Network & Web Properties
 
-I actively own, operate, and syndicate high-impact digital properties powered by autonomous AI content pipelines:
+I actively own, operate, and syndicate high-impact digital properties powered by autonomous AI operations:
 
 | Property | Domain | Core Focus & Niche |
 |---|---|---|
-| **AskforWrite AI** | [askforwrite.in](https://askforwrite.in) | Enterprise AI Operating Systems, Sovereign B2B Solutions & Commerce |
-| **The AI Scene** | [theaiscene.in](https://theaiscene.in) | Generative AI breakthroughs, LLM Benchmarks & Applied Machine Intelligence |
-| **CareerSathi** | [careersathi.in](https://careersathi.in) | AI Career Pathways, Professional Upskilling & Workforce Transitions |
-| **EduTechGuide** | [edutechguide.in](https://edutechguide.in) | Next-Gen Learning Platforms, EdTech Systems & Academic Analytics |
+| **AskforWrite AI (IN)** | [askforwrite.in](https://askforwrite.in) | Enterprise AI Operating Systems, Sovereign B2B Solutions & Commerce |
+| **AskforWrite Global (COM)** | [askforwrite.com](https://askforwrite.com) | Global Enterprise AI Hub, Cloud Gateway & Multi-Tenant OS (`os.askforwrite.com`) |
+| **Ask4Write Commerce** | [ask4write.com](https://ask4write.com) | Commercial AI Solutions, Brand Systems & E-Commerce (`shop.ask4write.com`) |
+| **AskforWrite Tech Docs** | [askforwrite.info](https://askforwrite.info) | API Documentation, Knowledge Base & Architectural Whitepapers |
+| **AskforWrite Node** | [node.askforwrite.in](https://node.askforwrite.in) | Distributed Node Infrastructure, Edge Endpoints & Real-time Services |
 
 ---
 

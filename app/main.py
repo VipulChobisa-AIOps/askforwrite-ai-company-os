@@ -359,18 +359,6 @@ class MarketingCampaignPayload(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
 
 
-@app.get("/")
-def root() -> dict[str, object]:
-    return {
-        "system": "AskforWrite AI Company OS",
-        "status": "online",
-        "docs_url": "/docs",
-        "health_url": "/health",
-        "dashboard_url": "/dashboard/",
-        "api_prefix": "/v1",
-        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
-    }
-
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
@@ -1404,4 +1392,4 @@ def fulfill_pending_orders_endpoint(
         db=db,
         limit=limit,
         fulfilled_by=principal.subject,
-    )
+    )

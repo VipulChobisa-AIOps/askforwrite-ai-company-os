@@ -193,14 +193,16 @@ def run_autonomous_shift(
         logger.error(f"Outbound SDR step failed: {exc}", exc_info=True)
         step_results["outbound_sdr"] = {"status": "ERROR", "error": str(exc)}
 
-    # ── 2. Owned Media SEO Agent: Generate & Stage Drafts for 4 WordPress Sites ─────
+    # ── 2. Owned Media SEO Agent: Generate & Stage Drafts for AskforWrite Network ──
     try:
         networks = get_supported_networks()
         seo_keyword_map = {
             "askforwrite.in": ["Autonomous AI Company OS", "Enterprise AI Agents", "Multi-Agent Systems"],
-            "theaiscene.in": ["Generative AI Developments", "Multimodal Agentic Architecture", "Claude & Gemini Tools"],
-            "careersathi.in": ["AI Career Enablement", "Autonomous Workforce Skills", "Future of Work 2026"],
-            "edutechguide.in": ["Higher Education AI Frameworks", "EdTech Digital Campus Automation", "AI Academic Integrity"],
+            "askforwrite.com": ["Enterprise AI Operations", "Autonomous Agent Workflows", "B2B AI Architecture"],
+            "ask4write.com": ["AI Solutions Store", "Automated Workforce Packages", "Commercial Agentic Tools"],
+            "askforwrite.info": ["AI Architecture Technical Documentation", "Agent API Specifications", "Trust Ledger Security"],
+            "shop.ask4write.com": ["Digital AI Toolkits", "Instant Enterprise Automation Templates", "Zero-MDR DirectPay"],
+            "node.askforwrite.in": ["Distributed Edge Node AI", "Low-Latency Autonomous API", "Private Node Interconnect"],
         }
 
         staged_seo_drafts = []

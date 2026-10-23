@@ -2,11 +2,13 @@
 """Autonomous 24/7 Publishing Daemon for AskforWrite AI Company OS.
 
 Executes autonomous shifts on a recurring schedule:
-1. Generates 2026 GEO/AIO and topical authority articles across the 4 WordPress sites:
+1. Generates 2026 GEO/AIO and topical authority articles across the owned AskforWrite sites:
    • askforwrite.in
-   • theaiscene.in
-   • careersathi.in
-   • edutechguide.in
+   • askforwrite.com
+   • ask4write.com
+   • askforwrite.info
+   • shop.ask4write.com
+   • node.askforwrite.in
 2. Stages drafts with Schema.org graph markup and verified citation triples.
 3. If AUTO_PUBLISH_TO_WORDPRESS is enabled (or live credentials exist), automatically
    publishes approved drafts directly to WordPress REST endpoints (/wp-json/wp/v2/posts).
@@ -116,7 +118,7 @@ def main() -> int:
     logger.info("=" * 70)
     logger.info(" AskforWrite AI Company OS -- 24/7 Autonomous Publisher Daemon")
     logger.info(f" * Schedule: Every {args.interval_hours} hours ({interval_sec} seconds)")
-    logger.info(" * Networks: askforwrite.in | theaiscene.in | careersathi.in | edutechguide.in")
+    logger.info(" * Networks: askforwrite.in | askforwrite.com | ask4write.com | askforwrite.info | shop.ask4write.com | node.askforwrite.in")
     logger.info(" * Ledger:   ECDSA NIST P-256 Merkle Block Sealing")
     logger.info("=" * 70)
 

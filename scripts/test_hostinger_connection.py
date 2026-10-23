@@ -27,24 +27,34 @@ if sys.platform == "win32":
 
 SITES = [
     {
-        "id": "askforwrite",
-        "name": "AskforWrite Main Platform",
+        "id": "askforwrite_in",
+        "name": "AskforWrite Main Platform (IN)",
         "url": "https://askforwrite.in",
     },
     {
-        "id": "theaiscene",
-        "name": "The AI Scene India",
-        "url": "https://theaiscene.in",
+        "id": "askforwrite_com",
+        "name": "AskforWrite Global Hub (COM)",
+        "url": "https://askforwrite.com",
     },
     {
-        "id": "careersathi",
-        "name": "Career Sathi EdTech",
-        "url": "https://careersathi.in",
+        "id": "ask4write_com",
+        "name": "Ask4Write Brand & Commerce Hub",
+        "url": "https://ask4write.com",
     },
     {
-        "id": "edutechguide",
-        "name": "EduTech Guide Platform",
-        "url": "https://edutechguide.in",
+        "id": "askforwrite_info",
+        "name": "AskforWrite Knowledge Base & Tech Docs",
+        "url": "https://askforwrite.info",
+    },
+    {
+        "id": "shop_ask4write",
+        "name": "Ask4Write Digital Storefront",
+        "url": "https://shop.ask4write.com",
+    },
+    {
+        "id": "node_askforwrite",
+        "name": "AskforWrite Node Infrastructure",
+        "url": "https://node.askforwrite.in",
     },
 ]
 

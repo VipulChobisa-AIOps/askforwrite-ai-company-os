@@ -1,10 +1,12 @@
-"""4-Site WordPress REST Publisher Bridge for SEO Blog Automation Copilot.
+"""WordPress REST Publisher Bridge for SEO Blog Automation Copilot.
 
-Integrates with the 4 owned authority media platforms:
-1. askforwrite.in  — Main AI & Company OS Authority Platform
-2. theaiscene.in   — Generative AI & Developer Intelligence Network
-3. careersathi.in  — EdTech & Career Acceleration Portal
-4. edutechguide.in — Higher Education & Skill Technology Hub
+Integrates with the owned AskforWrite authority media platforms:
+1. askforwrite.in     — Main AI & Company OS Authority Platform
+2. askforwrite.com    — Global Enterprise & Cloud OS Hub
+3. ask4write.com      — Brand & Commercial Solutions Hub
+4. askforwrite.info   — Technical Documentation & Knowledge Base
+5. shop.ask4write.com — E-commerce & Digital Storefront
+6. node.askforwrite.in — Node & Edge Infrastructure
 """
 
 from __future__ import annotations
@@ -33,23 +35,35 @@ SUPPORTED_NETWORKS: dict[str, dict[str, str]] = {
         "category": "ai-technology",
         "description": "Enterprise autonomous agents and AI Company OS publications.",
     },
-    "theaiscene.in": {
-        "name": "The AI Scene India",
-        "base_url": "https://theaiscene.in",
-        "category": "generative-ai",
-        "description": "Generative AI, multimodal automation, and deep tech reviews.",
+    "askforwrite.com": {
+        "name": "AskforWrite Global Enterprise Hub",
+        "base_url": "https://askforwrite.com",
+        "category": "enterprise-ai",
+        "description": "Global enterprise solutions, multi-tenant AI operations, and cloud gateway.",
     },
-    "careersathi.in": {
-        "name": "Career Sathi EdTech & Career Hub",
-        "base_url": "https://careersathi.in",
-        "category": "career-skills",
-        "description": "Skills, tech careers, and modern workforce enablement.",
+    "ask4write.com": {
+        "name": "Ask4Write Brand & Commerce Hub",
+        "base_url": "https://ask4write.com",
+        "category": "ai-solutions",
+        "description": "Commercial AI products, automation packs, and brand portal.",
     },
-    "edutechguide.in": {
-        "name": "EduTech Guide Platform",
-        "base_url": "https://edutechguide.in",
-        "category": "education-technology",
-        "description": "Educational technology frameworks and institutional automation.",
+    "askforwrite.info": {
+        "name": "AskforWrite Knowledge Base & Tech Docs",
+        "base_url": "https://askforwrite.info",
+        "category": "tech-documentation",
+        "description": "Knowledge base, API reference, research insights, and technical documentation.",
+    },
+    "shop.ask4write.com": {
+        "name": "Ask4Write Digital Storefront",
+        "base_url": "https://shop.ask4write.com",
+        "category": "ecommerce",
+        "description": "Digital products, AI toolkits, instant templates, and service storefront.",
+    },
+    "node.askforwrite.in": {
+        "name": "AskforWrite Node Infrastructure",
+        "base_url": "https://node.askforwrite.in",
+        "category": "infrastructure",
+        "description": "Distributed node infrastructure, real-time endpoints, and edge services.",
     },
 }
 

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AskforWrite AI Company OS — Hostinger Bridge
  * Plugin URI: https://os.askforwrite.com
- * Description: Connects Hostinger WordPress sites (askforwrite.in, theaiscene.in, careersathi.in, edutechguide.in) to AskforWrite AI Company OS (os.askforwrite.com). Features 24/7 AI Sales Closer widget, AFW DirectPay zero-fee checkout shortcode, and automated 2026 GEO/AIO /llms.txt indexing.
+ * Description: Connects Hostinger WordPress sites (askforwrite.in, askforwrite.com, ask4write.com, askforwrite.info, shop.ask4write.com, node.askforwrite.in) to AskforWrite AI Company OS (os.askforwrite.com). Features 24/7 AI Sales Closer widget, AFW DirectPay zero-fee checkout shortcode, and automated 2026 GEO/AIO /llms.txt indexing.
  * Version: 1.0.0
  * Author: Vipul Chobisa & AskforWrite AI
  * Author URI: https://askforwrite.in

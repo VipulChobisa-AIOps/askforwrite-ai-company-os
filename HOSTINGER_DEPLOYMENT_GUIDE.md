@@ -1,6 +1,6 @@
 # Hostinger Business Web Hosting & Cloud OS Deployment Guide
 
-Comprehensive step-by-step operational manual for connecting your 4 Hostinger WordPress properties (`askforwrite.in`, `theaiscene.in`, `careersathi.in`, `edutechguide.in`) to the autonomous **AskforWrite AI Company OS** backend and PWA Portal.
+Comprehensive step-by-step operational manual for connecting your Hostinger WordPress properties (`askforwrite.in`, `askforwrite.com`, `ask4write.com`, `askforwrite.info`, `shop.ask4write.com`, `node.askforwrite.in`) to the autonomous **AskforWrite AI Company OS** backend and PWA Portal.
 
 ---
 
@@ -23,9 +23,9 @@ Comprehensive step-by-step operational manual for connecting your 4 Hostinger Wo
                         │                                 │                            │
                         ▼                                 ▼                            ▼
   ┌──────────────────────────────────────────────────────────────┐          ┌──────────────────────┐
-  │         4x Hostinger WordPress Sites (Bridge Plugin)          │          │ 1-Click Installation │
-  │    • askforwrite.in (or subdomain)   • careersathi.in        │          │ • Android (Chrome)   │
-  │    • theaiscene.in                   • edutechguide.in       │          │ • Windows / macOS    │
+  │         Hostinger WordPress Sites & Storefronts              │          │ 1-Click Installation │
+  │    • askforwrite.in / .com / .info   • shop.ask4write.com    │          │ • Android (Chrome)   │
+  │    • ask4write.com                   • node.askforwrite.in   │          │ • Windows / macOS    │
   │  Features: Auto Widget Injection | [afw_directpay] | /llms.txt │          │   Desktop Standalone │
   └──────────────────────────────────────────────────────────────┘          └──────────────────────┘
 ```
@@ -66,10 +66,11 @@ Upload `askforwrite-ai-os-bridge.php` to all 4 WordPress properties.
    - Click **Upload Plugin** at the top of the page.
    - Click **Choose File**, select `askforwrite-ai-os-bridge.zip`, and click **Install Now**.
    - Click **Activate Plugin**.
-3. Repeat for:
-   - `https://theaiscene.in/wp-admin`
-   - `https://careersathi.in/wp-admin`
-   - `https://edutechguide.in/wp-admin`
+3. Repeat for your other connected WordPress sites and storefronts as needed:
+   - `https://askforwrite.com/wp-admin`
+   - `https://ask4write.com/wp-admin`
+   - `https://askforwrite.info/wp-admin`
+   - `https://shop.ask4write.com/wp-admin`
 
 ### Option B: Hostinger hPanel File Manager
 1. In Hostinger hPanel, go to **Files -> File Manager**.
