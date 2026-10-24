@@ -22,9 +22,6 @@ services:
     plan: free
     region: singapore
     healthCheckPath: /health
-    domains:
-      - os.askforwrite.com
-      - os.askforwrite.in
     envVars:
       - key: APP_ENV
         value: production
