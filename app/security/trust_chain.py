@@ -181,7 +181,6 @@ def verify_chain_integrity(db: Session) -> dict[str, Any]:
       6. Asymmetric ECDSA NIST P-256 signature validity.
     """
     ensure_genesis_block(db)
-    task_id = str(task_id)[:36]
     blocks = db.query(TrustBlock).order_by(TrustBlock.index.asc()).all()
 
     errors = []
