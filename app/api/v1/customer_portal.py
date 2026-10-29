@@ -511,15 +511,21 @@ def use_tenant_service(
         )
 
     elif service_key in ("ask4_academic_order", "ask4", "academic_research"):
+        from app.agents.llm_client import generate
         from app.security.trust_chain import seal_task_to_block
         task_id = str(uuid.uuid4())
         topic = input_payload.get("topic", "Autonomous Multi-Agent Enterprise Orchestration")
-        research_output = {
-            "title": f"Scholarly Synthesis: {topic}",
-            "abstract": (
+        synthesis_text = generate(
+            prompt=f"Write a structured scholarly synthesis abstract and key methodological findings on: {topic}",
+            system_instruction="You are the AskforWrite ASK4 Academic Research & Synthesis Specialist.",
+            fallback_text=(
                 f"An investigation into {topic} focusing on cryptographic Merkle trust verification, "
                 "algorithmic inventory rebalancing, and autonomous agent coordination."
             ),
+        )
+        research_output = {
+            "title": f"Scholarly Synthesis: {topic}",
+            "abstract": synthesis_text,
             "citations": [
                 {"title": "Decentralized Trust Ledgers in Multi-Agent Systems", "year": 2026, "authors": "Chobisa et al."},
                 {"title": "Pareto Inventory Optimization with Dynamic Safety Stocks", "year": 2025, "authors": "StockSense Labs"},
@@ -546,11 +552,58 @@ def use_tenant_service(
             aspect_ratios=input_payload.get("aspect_ratios", ["1:1", "9:16", "16:9"]),
         )
 
+    elif service_key in ("seo_blog_copilot", "seo_copilot"):
+        from app.services.growth_engine import generate_and_stage_blog
+        exec_result = generate_and_stage_blog(
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "B2B Decision Makers"),
+            keywords=input_payload.get("keywords", [org.name, "AI Automation", "Enterprise Growth"]),
+        )
+
+    elif service_key in ("marketing_suite", "omnichannel_social"):
+        from app.services.growth_engine import generate_omnichannel_social_campaign
+        exec_result = generate_omnichannel_social_campaign(
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "B2B Decision Makers"),
+            keywords=input_payload.get("keywords", [org.name, "Growth Automation"]),
+        )
+
+    elif service_key in ("growth_all_in_one", "growth_suite"):
+        from app.services.growth_engine import execute_unified_growth_run
+        exec_result = execute_unified_growth_run(
+            db=db,
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "B2B Enterprise Buyers"),
+            keywords=input_payload.get("keywords", [org.name, "AI Operations", "Growth"]),
+            brand_voice=input_payload.get("brand_voice", "authoritative, modern"),
+            target_network=input_payload.get("target_network", "askforwrite.com"),
+            org_id=org.id,
+        )
+
+    elif service_key in ("trust_engine", "trust_ledger"):
+        from app.security.trust_chain import seal_task_to_block, verify_chain_integrity
+        task_id = str(uuid.uuid4())
+        block = seal_task_to_block(
+            db=db,
+            task_id=task_id,
+            capability_name="afw_2030_trust_engine",
+            action="tenant_payload_attestation",
+            payload=input_payload or {"org_id": org.id, "attested_by": user.email},
+            sealed_by=user.email,
+        )
+        integrity = verify_chain_integrity(db)
+        exec_result = {
+            "block_index": block.index,
+            "block_hash": block.block_hash,
+            "signature": block.signature,
+            "chain_valid": integrity.get("chain_valid", True),
+        }
+
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Service '{service_key}' is not executable via /v1/me/use-service. "
-                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack.",
+                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack, seo_blog_copilot, marketing_suite, growth_all_in_one, trust_engine.",
         )
 
     if org.lead_credits_limit > 0:

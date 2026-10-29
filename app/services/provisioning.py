@@ -114,19 +114,80 @@ def auto_provision_tenant_on_payment(
         domain_part = email.split("@")[1].split(".")[0]
         company_name = f"{domain_part.capitalize()} Operations"
 
+    # Lookup catalog package for entitlements
+    pkg = get_package(package_key) or CATALOG["company_os_starter"]
+
     # Check if a user with this email already exists
     existing_user = db.query(UserRecord).filter_by(email=email).first()
     if existing_user:
-        logger.info("User %s already exists in org %s. Skipping duplicate provisioning.", email, existing_user.org_id)
+        logger.info("User %s already exists in org %s. Upgrading org entitlements & recording invoice.", email, existing_user.org_id)
+        existing_org = db.get(OrganizationRecord, existing_user.org_id)
+        if existing_org:
+            existing_org.tier = pkg.tier
+            existing_org.lead_credits_limit = max(existing_org.lead_credits_limit or 0, pkg.lead_credits_monthly)
+            existing_org.outreach_credits_limit = max(existing_org.outreach_credits_limit or 0, pkg.outreach_credits_monthly)
+            existing_org.is_active = True
+            meta = dict(existing_org.metadata_json or {})
+            meta.update({
+                "package_key": pkg.key,
+                "package_name": pkg.name,
+                "category": pkg.category,
+                "entitled_capabilities": list(pkg.entitled_capabilities),
+                "payment_provider": event.provider.value,
+            })
+            existing_org.metadata_json = meta
+
+            customer = db.query(CustomerRecord).filter_by(
+                provider=event.provider.value,
+                email=email,
+            ).first()
+            if not customer:
+                customer = CustomerRecord(
+                    id=str(uuid.uuid4()),
+                    org_id=existing_org.id,
+                    email=email,
+                    name=customer_name,
+                    provider=event.provider.value,
+                    provider_customer_id=f"cust_{uuid.uuid4().hex[:12]}",
+                )
+                db.add(customer)
+                db.flush()
+
+            amount_units = int(amount * 100) if amount > 0 else int((pkg.price_inr if currency == "INR" else pkg.price_usd) * 100)
+            existing_inv = None
+            if event.resource_id:
+                existing_inv = db.query(InvoiceRecord).filter_by(
+                    org_id=existing_org.id,
+                    provider_payment_id=event.resource_id,
+                ).first()
+            if not existing_inv:
+                db.add(
+                    InvoiceRecord(
+                        id=str(uuid.uuid4()),
+                        org_id=existing_org.id,
+                        customer_id=customer.id,
+                        provider=event.provider.value,
+                        provider_invoice_id=f"inv_{uuid.uuid4().hex[:12]}",
+                        provider_payment_id=event.resource_id,
+                        amount=amount_units,
+                        currency=currency,
+                        status="paid",
+                        metadata_json={
+                            "customer_email": email,
+                            "package_key": pkg.key,
+                            "event_id": event.id,
+                        },
+                    )
+                )
+            db.commit()
+
         return {
             "status": "already_provisioned",
             "org_id": existing_user.org_id,
             "user_id": existing_user.id,
             "email": email,
+            "package_key": pkg.key,
         }
-
-    # Lookup catalog package for entitlements
-    pkg = get_package(package_key) or CATALOG["company_os_starter"]
 
     # 1. Create Organization
     base_slug = _slugify(company_name)
@@ -168,7 +229,7 @@ def auto_provision_tenant_on_payment(
         role="admin",
         password_hash=hash_password(temp_password),
         is_active=True,
-        metadata_json={"temp_password": temp_password},
+        metadata_json={"provisioned_via": event.provider.value, "password_change_required": True},
     )
     db.add(user)
 
@@ -302,6 +363,5 @@ def auto_provision_tenant_on_payment(
         "user_id": user_id,
         "email": email,
         "package_key": pkg.key,
-        "temp_password": temp_password,
         "seeded_leads_count": seeded_leads_count,
     }

@@ -37,6 +37,10 @@ services:
         generateValue: true
       - key: SECRET_KEY
         generateValue: true
+      - key: ASK4_WEBHOOK_SECRET
+        generateValue: true
+      - key: RAZORPAY_WEBHOOK_SECRET
+        generateValue: true
       - key: ALLOWED_ORIGINS
         value: "https://os.askforwrite.com,https://os.askforwrite.in,https://askforwrite.in,https://askforwrite.com,https://askforwrite.info,https://ask4write.com,https://node.askforwrite.in,https://shop.ask4write.com,http://localhost:8000"
       - key: PAYMENT_PROVIDER
@@ -55,7 +59,7 @@ services:
       - key: AFW_BANK_NAME
         value: "ICICI Bank Ltd"
       - key: AFW_BANK_ACCOUNT_NUMBER
-        value: "694001501126"
+        value: "6940XXXXXX26"
       - key: AFW_BANK_ACCOUNT_TYPE
         value: "Saving Account"
       - key: AFW_BANK_IFSC

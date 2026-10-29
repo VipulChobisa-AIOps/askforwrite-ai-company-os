@@ -77,10 +77,11 @@ def public_opportunity_scan_endpoint(
     """Free 60-Second AI Opportunity Scan: public self-service lead magnet analyzing website and revealing leaks."""
     from urllib.parse import quote_plus
     from app.agents.smb_search_source import audit_live_website_seo_geo, normalize_domain
+    from app.agents.sources import is_safe_public_url
 
     clean_domain = normalize_domain(payload.url)
-    if not clean_domain:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid website domain or URL")
+    if not clean_domain or not is_safe_public_url(payload.url):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or unsafe website domain or URL")
 
     comp_name = (payload.company_name or clean_domain.split(".")[0].title()).strip()
     correlation_id = str(uuid.uuid4())

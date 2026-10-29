@@ -21,12 +21,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_owner
+from app.security.auth import APIPrincipal, require_manager, require_owner
 from app.services.catalog import CATALOG, get_package
 from app.services.sovereign_pay import (
     confirm_sovereign_payment_by_owner,
+    create_live_penny_test_session,
     create_sovereign_pay_session,
     get_sovereign_pay_session,
+    reconcile_invoice_with_bank_statement,
     verify_sovereign_payment,
 )
 
@@ -794,3 +796,101 @@ def direct_checkout_endpoint(
         db=db,
     )
     return HTMLResponse(content=_render_checkout_html(session))
+
+
+class PennyTestRequest(BaseModel):
+    rail: str = Field(
+        default="upi_direct",
+        pattern="^(razorpay|paypal|upi_direct|web3_usdc|bank_wire_direct)$",
+        description="Payment rail to test with a live ₹1 / $1 transaction",
+    )
+    owner_email: str = Field(default="info@askforwrite.in", max_length=200)
+
+
+class ReconcileSettlementRequest(BaseModel):
+    invoice_id: str = Field(min_length=1, max_length=100, description="InvoiceRecord ID to reconcile")
+    bank_statement_utr: str = Field(
+        min_length=6,
+        max_length=150,
+        description="Bank statement UTR, NEFT/IMPS ref, or Razorpay/PayPal payout settlement ID",
+    )
+    settled_amount: float = Field(gt=0, description="Net or gross settled amount in major currency units")
+    settlement_date: str | None = Field(default=None, max_length=32, description="YYYY-MM-DD settlement date")
+    bank_account_masked: str = Field(default="6940XXXXXX26", max_length=64)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/live-penny-test")
+def create_penny_test_endpoint(
+    payload: PennyTestRequest,
+    _principal: APIPrincipal = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Initiate a ₹1 / $1 live transaction session on any payment rail for bank statement reconciliation."""
+    try:
+        return create_live_penny_test_session(
+            rail=payload.rail,
+            db=db,
+            owner_email=payload.owner_email,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+
+@router.post("/reconcile-settlement")
+def reconcile_settlement_endpoint(
+    payload: ReconcileSettlementRequest,
+    principal: APIPrincipal = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Reconcile an InvoiceRecord against an actual bank payout/statement UTR and seal an ECDSA TrustBlock."""
+    try:
+        return reconcile_invoice_with_bank_statement(
+            db=db,
+            invoice_id=payload.invoice_id,
+            bank_statement_utr=payload.bank_statement_utr,
+            settled_amount=payload.settled_amount,
+            settlement_date=payload.settlement_date,
+            bank_account_masked=payload.bank_account_masked,
+            reconciled_by=principal.subject or "owner",
+            notes=payload.notes,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+
+@router.get("/reconciliation-ledger")
+def get_reconciliation_ledger_endpoint(
+    _principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Return financial reconciliation summary across all invoices."""
+    from app.db.models import InvoiceRecord
+
+    invoices = db.query(InvoiceRecord).order_by(InvoiceRecord.created_at.desc()).limit(100).all()
+    items = []
+    reconciled_count = 0
+    for inv in invoices:
+        meta = inv.metadata_json or {}
+        rec = meta.get("reconciliation")
+        if rec and rec.get("reconciled"):
+            reconciled_count += 1
+        items.append({
+            "invoice_id": inv.id,
+            "org_id": inv.org_id,
+            "provider": inv.provider,
+            "provider_invoice_id": inv.provider_invoice_id,
+            "provider_payment_id": inv.provider_payment_id,
+            "amount_minor": inv.amount,
+            "amount_major": round(float(inv.amount) / 100.0, 2),
+            "currency": inv.currency,
+            "status": inv.status,
+            "reconciled": bool(rec and rec.get("reconciled")),
+            "reconciliation": rec,
+        })
+    return {
+        "total_invoices": len(items),
+        "reconciled_count": reconciled_count,
+        "unreconciled_count": len(items) - reconciled_count,
+        "invoices": items,
+    }

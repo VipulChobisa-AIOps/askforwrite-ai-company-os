@@ -27,7 +27,7 @@ from app.schemas.catalog import (
     PitchLeadRequest,
     PitchLeadResponse,
 )
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager
 from app.services.catalog import (
     CATALOG,
     build_payment_link,
@@ -97,6 +97,10 @@ def pitch_lead_endpoint(
     lead = db.get(LeadRecordRow, payload.lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    if principal.org_id:
+        if payload.org_id:
+            enforce_tenant_access(principal, payload.org_id)
+        enforce_tenant_access(principal, lead.org_id or "__platform__")
 
     correlation_id = x_correlation_id or str(uuid.uuid4())
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.security.auth import APIPrincipal, require_manager
 from app.services.watchdog import (
     WatchdogAlertNotFound,
     get_system_control_telemetry,
@@ -41,6 +42,7 @@ class ResolveAlertRequest(BaseModel):
 def trigger_system_watchdog_scan(
     payload: WatchdogScanRequest | None = None,
     x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+    _principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute real-time supervisory scan across tasks, approvals, field presence, and ledger integrity."""
@@ -57,6 +59,7 @@ def get_watchdog_alerts(
     status_filter: str | None = Query(default=None, alias="status", description="Filter by status (OPEN, RESOLVED)"),
     severity: str | None = Query(default=None, description="Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)"),
     limit: int = Query(default=100, ge=1, le=500),
+    _principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Retrieve operational alerts flagged by the Watchdog and Supervisor Co-Pilot."""
@@ -72,6 +75,7 @@ def resolve_alert(
     alert_id: str,
     payload: ResolveAlertRequest | None = None,
     x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+    _principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Resolve an operational alert and cryptographically seal the resolution action."""
@@ -99,6 +103,7 @@ def resolve_alert(
 
 @router.get("/telemetry")
 def get_watchdog_telemetry(
+    _principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Compile real-time operational control telemetry for L0 Owner cockpit."""

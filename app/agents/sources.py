@@ -246,6 +246,43 @@ def extract_page_metadata(html: str) -> dict[str, object]:
     }
 
 
+def is_safe_public_url(url: str) -> bool:
+    """Validate URL to block SSRF against localhost, loopback, link-local (169.254.0.0/16), and RFC1918 private IPs."""
+    import ipaddress
+    from urllib.parse import urlparse
+
+    cand = (url or "").strip()
+    if not cand.startswith(("http://", "https://")):
+        cand = f"https://{cand}"
+    try:
+        parsed = urlparse(cand)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False
+        if host in ("localhost", "0.0.0.0", "metadata.google.internal") or host.endswith(
+            (".local", ".internal", ".localhost")
+        ):
+            return False
+        try:
+            ip = ipaddress.ip_address(host)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                return False
+        except ValueError:
+            pass
+        return True
+    except Exception:
+        return False
+
+
 def fetch_and_enrich_website(
     url: str,
     timeout: float = 6.0,
@@ -255,6 +292,18 @@ def fetch_and_enrich_website(
     normalized_url = url.strip()
     if not normalized_url.startswith(("http://", "https://")):
         normalized_url = f"https://{normalized_url}"
+
+    if not is_safe_public_url(normalized_url):
+        return {
+            "error": "Blocked unsafe or internal URL (SSRF protection)",
+            "blocked_ssrf": True,
+            "status_code": 0,
+            "title": "",
+            "description": "",
+            "headings": [],
+            "emails": [],
+            "social_links": {},
+        }
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AskforWrite-ResearchEngine/1.0",
@@ -298,7 +347,7 @@ def fetch_and_enrich_website(
 INDIA_B2B_DIRECTORY: tuple[dict[str, object], ...] = (
     {
         "company": "Maharashtra Fresh Produce Exports",
-        "website": "https://mhproduce.example.com",
+        "website": "https://sahyadrifarms.com",
         "industry": "Fresh Produce & AgriTech Export",
         "geography": "Nashik, Maharashtra, India",
         "tags": (
@@ -309,7 +358,7 @@ INDIA_B2B_DIRECTORY: tuple[dict[str, object], ...] = (
     },
     {
         "company": "MetroMobility Fleet Labs",
-        "website": "https://metromobility.example.com",
+        "website": "https://yulu.bike",
         "industry": "Urban Micro-Mobility & EV Fleet",
         "geography": "Bengaluru, Karnataka, India",
         "tags": (
@@ -320,7 +369,7 @@ INDIA_B2B_DIRECTORY: tuple[dict[str, object], ...] = (
     },
     {
         "company": "Gujarat Warehousing Co",
-        "website": "https://gjwarehousing.example.com",
+        "website": "https://emiza.in",
         "industry": "Warehousing & Supply Chain Fulfillment",
         "geography": "Ahmedabad, Gujarat, India",
         "tags": (

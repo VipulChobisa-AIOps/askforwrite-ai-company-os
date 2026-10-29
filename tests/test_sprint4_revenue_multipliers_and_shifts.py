@@ -300,7 +300,8 @@ class Sprint4RevenueMultipliersAndShiftsTests(unittest.TestCase):
 
     def test_dashboard_ui_elements_for_autonomous_shift_and_briefing(self):
         """index.html and dashboard.js must contain required Shift and CEO Briefing wiring."""
-        html_path = Path("app/dashboard/index.html")
+        base_dir = Path(__file__).resolve().parent.parent
+        html_path = base_dir / "app" / "dashboard" / "index.html"
         self.assertTrue(html_path.exists())
         html_content = html_path.read_text(encoding="utf-8")
 
@@ -309,7 +310,7 @@ class Sprint4RevenueMultipliersAndShiftsTests(unittest.TestCase):
         self.assertIn("shift-status-badge", html_content)
         self.assertIn("btn-refresh-ceo-briefing", html_content)
 
-        js_path = Path("app/dashboard/dashboard.js")
+        js_path = base_dir / "app" / "dashboard" / "dashboard.js"
         self.assertTrue(js_path.exists())
         js_content = js_path.read_text(encoding="utf-8")
 

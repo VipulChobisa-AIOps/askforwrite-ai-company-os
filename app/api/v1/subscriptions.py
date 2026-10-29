@@ -31,7 +31,7 @@ from app.db.models import (
     CustomerRecord,
     SubscriptionRecord,
 )
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
 from app.services.payment import (
     PaymentError,
     PaymentProvider,
@@ -305,6 +305,8 @@ async def get_subscription_endpoint(
     record = db.query(SubscriptionRecord).filter_by(id=subscription_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Subscription not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, record.org_id or "__platform__")
 
     provider_enum = _resolve_provider(record.provider)
     provider = get_payment_provider(provider_enum)
@@ -404,7 +406,14 @@ async def list_customer_subscriptions(
     db: Session = Depends(get_db),
 ) -> dict:
     """List all subscriptions for a customer."""
-    records = db.query(SubscriptionRecord).filter_by(customer_id=customer_id).all()
+    if principal.org_id:
+        customer = db.query(CustomerRecord).filter_by(id=customer_id).first()
+        if customer:
+            enforce_tenant_access(principal, customer.org_id or "__platform__")
+    query = db.query(SubscriptionRecord).filter_by(customer_id=customer_id)
+    if principal.org_id:
+        query = query.filter_by(org_id=principal.org_id)
+    records = query.all()
     return {
         "customer_id": customer_id,
         "count": len(records),

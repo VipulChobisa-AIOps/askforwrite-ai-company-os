@@ -22,6 +22,7 @@ from app.agents.sources import (
     LiveEnrichmentLeadSource,
     OfflineSignalProvider,
     fetch_and_enrich_website,
+    is_safe_public_url,
 )
 from app.db.database import get_db
 from app.db.models import AuditLog, LeadRecordRow, OrganizationRecord, TaskRecord
@@ -137,6 +138,7 @@ def discover_smb_leads_endpoint(
             existing = (
                 db.query(LeadRecordRow)
                 .filter(
+                    LeadRecordRow.org_id.is_(None),
                     LeadRecordRow.domain == domain,
                 )
                 .first()
@@ -306,8 +308,8 @@ def get_lead(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
-    if lead.org_id:
-        enforce_tenant_access(principal, lead.org_id)
+    if principal.org_id:
+        enforce_tenant_access(principal, lead.org_id or "__platform__")
     return LeadResponse.model_validate(lead)
 
 
@@ -322,8 +324,8 @@ def update_lead(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
-    if lead.org_id:
-        enforce_tenant_access(principal, lead.org_id)
+    if principal.org_id:
+        enforce_tenant_access(principal, lead.org_id or "__platform__")
 
 
     if payload.status is not None:
@@ -365,19 +367,21 @@ def enrich_lead(
 ) -> dict[str, object]:
     """Perform real-time web scraping and signal enrichment on a company domain or URL."""
     domain = normalize_domain(payload.website)
-    if not domain:
+    if not domain or not is_safe_public_url(payload.website):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Invalid website or domain URL",
+            detail="Invalid or unsafe website/domain URL",
         )
 
     org: OrganizationRecord | None = None
-    if payload.org_id:
-        org = db.get(OrganizationRecord, payload.org_id)
+    target_org_id = payload.org_id or principal.org_id
+    if target_org_id:
+        enforce_tenant_access(principal, target_org_id)
+        org = db.get(OrganizationRecord, target_org_id)
         if not org:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Organization '{payload.org_id}' not found",
+                detail=f"Organization '{target_org_id}' not found",
             )
         if org.lead_credits_used >= org.lead_credits_limit:
             raise HTTPException(
@@ -471,6 +475,8 @@ def delete_lead(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, lead.org_id or "__platform__")
     db.delete(lead)
     db.commit()
     return {"deleted": True, "lead_id": lead_id}

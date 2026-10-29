@@ -531,6 +531,8 @@ def is_valid_commercial_domain(domain: str) -> bool:
         return False
     if d.endswith((".example", ".test", ".invalid", ".local")):
         return False
+    if d in ("localhost", "0.0.0.0", "127.0.0.1", "::1", "169.254.169.254"):
+        return False
     return True
 
 
@@ -696,37 +698,42 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
     extracted_emails: list[str] = []
     audit_status = "ESTIMATED_OFFLINE"
 
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; AskforWriteSEOGeoAuditor/2.0; +https://askforwrite.com)"}
-        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            resp = client.get(target_url, headers=headers)
-            if resp.status_code < 400:
-                html = resp.text
-                audit_status = "LIVE_VERIFIED"
-                if "application/ld+json" in html.lower():
-                    has_json_ld = True
-                if "faqpage" in html.lower() or '"@type":"faq"' in html.lower():
-                    has_faq = True
-                if re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'][^"\']+["\']', html, re.I):
-                    has_meta_desc = True
-                elif re.search(r'<meta[^>]+content=["\'][^"\']+["\'][^>]+name=["\']description["\']', html, re.I):
-                    has_meta_desc = True
-                if "og:title" in html.lower() or "og:description" in html.lower() or "og:image" in html.lower():
-                    has_og = True
-                if "llms.txt" in html.lower():
-                    has_llms_txt = True
+    from app.agents.sources import is_safe_public_url
 
-                # Extract emails from HTML
-                raw_emails = re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", html)
-                cleaned = []
-                for e in raw_emails:
-                    e_clean = e.strip().lower()
-                    if not any(e_clean.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js"]):
-                        if e_clean not in cleaned and is_valid_commercial_domain(e_clean.split("@")[-1]):
-                            cleaned.append(e_clean)
-                extracted_emails = cleaned[:5]
-    except Exception as exc:
-        logger.debug(f"Live web audit fallback for {domain}: {exc}")
+    if not is_safe_public_url(target_url):
+        audit_status = "BLOCKED_SSRF"
+    else:
+        try:
+            headers = {"User-Agent": "Mozilla/5.0 (compatible; AskforWriteSEOGeoAuditor/2.0; +https://askforwrite.com)"}
+            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                resp = client.get(target_url, headers=headers)
+                if resp.status_code < 400:
+                    html = resp.text
+                    audit_status = "LIVE_VERIFIED"
+                    if "application/ld+json" in html.lower():
+                        has_json_ld = True
+                    if "faqpage" in html.lower() or '"@type":"faq"' in html.lower():
+                        has_faq = True
+                    if re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\'][^"\']+["\']', html, re.I):
+                        has_meta_desc = True
+                    elif re.search(r'<meta[^>]+content=["\'][^"\']+["\'][^>]+name=["\']description["\']', html, re.I):
+                        has_meta_desc = True
+                    if "og:title" in html.lower() or "og:description" in html.lower() or "og:image" in html.lower():
+                        has_og = True
+                    if "llms.txt" in html.lower():
+                        has_llms_txt = True
+
+                    # Extract emails from HTML
+                    raw_emails = re.findall(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", html)
+                    cleaned = []
+                    for e in raw_emails:
+                        e_clean = e.strip().lower()
+                        if not any(e_clean.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js"]):
+                            if e_clean not in cleaned and is_valid_commercial_domain(e_clean.split("@")[-1]):
+                                cleaned.append(e_clean)
+                    extracted_emails = cleaned[:5]
+        except Exception as exc:
+            logger.debug(f"Live web audit fallback for {domain}: {exc}")
 
     # Fallback default email if none extracted
     if not extracted_emails and domain:

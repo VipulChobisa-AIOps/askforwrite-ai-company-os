@@ -119,8 +119,11 @@ def list_organizations(
     principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ):
-    """List all registered organizations."""
-    return db.query(OrganizationRecord).offset(skip).limit(limit).all()
+    """List registered organizations (scoped to tenant if principal is org-bound)."""
+    query = db.query(OrganizationRecord)
+    if principal.org_id:
+        query = query.filter(OrganizationRecord.id == principal.org_id)
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/orgs/{org_id}", response_model=OrgSummaryResponse)
@@ -221,6 +224,13 @@ def add_user_to_org(
     """Add a new member to an organization."""
     enforce_tenant_access(principal, org_id)
 
+    role_clean = payload.role.lower().strip()
+    if role_clean in {"owner", "manager"} and principal.role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform owners can assign owner or manager roles",
+        )
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -233,7 +243,7 @@ def add_user_to_org(
         org_id=org_id,
         email=payload.email.lower().strip(),
         full_name=payload.full_name.strip(),
-        role=payload.role.lower(),
+        role=role_clean,
         is_active=True,
         metadata_json=payload.metadata,
     )
@@ -289,6 +299,8 @@ def record_invoice(
     db: Session = Depends(get_db),
 ):
     """Record an invoice or payment receipt for an organization."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -322,6 +334,8 @@ def list_org_invoices(
     db: Session = Depends(get_db),
 ):
     """List billing invoices for an organization."""
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -361,6 +375,8 @@ def consume_org_credits(
 
     Enforces plan limits on discovery and outreach.
     """
+    enforce_tenant_access(principal, org_id)
+
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
@@ -400,3 +416,166 @@ def consume_org_credits(
         credits_remaining=remaining,
         allowed=True,
     )
+
+
+# ── Payment Authorization vs. Bank Settlement Reconciliation ─────────
+
+
+class ReconcileSettlementRequest(BaseModel):
+    settlement_reference: str = Field(..., min_length=4, max_length=120, description="Bank UTR / NEFT / Razorpay / PayPal settlement payout ID")
+    settlement_status: str = Field(
+        default="SETTLED",
+        description="ELIGIBLE_FOR_SETTLEMENT, SETTLEMENT_INITIATED, SETTLED, REFUND_INITIATED, REFUND_COMPLETED",
+    )
+    bank_account_masked: str = Field(default="6940XXXXXX26", max_length=64)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+@router.get("/reconciliation")
+def get_payment_settlement_reconciliation(
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return separated payment lifecycle states: checkout created, payment captured, eligible for settlement, settled to bank, and refunded."""
+    import os
+    from app.db.models import SovereignPaymentSessionRecord
+
+    inv_query = db.query(InvoiceRecord)
+    if principal.org_id:
+        inv_query = inv_query.filter(InvoiceRecord.org_id == principal.org_id)
+    invoices = inv_query.order_by(InvoiceRecord.created_at.desc()).all()
+
+    sess_query = db.query(SovereignPaymentSessionRecord)
+    sessions = sess_query.all() if not principal.org_id else []
+
+    checkout_created_count = sum(1 for s in sessions if s.status == "PENDING")
+    awaiting_owner_confirmation_count = sum(1 for s in sessions if s.status == "AWAITING_OWNER_CONFIRMATION")
+
+    captured_paid_count = 0
+    settled_to_bank_count = 0
+    unsettled_captured_count = 0
+    refunded_count = 0
+    failed_count = 0
+
+    total_captured_inr_paise = 0
+    total_settled_inr_paise = 0
+    total_unsettled_inr_paise = 0
+    total_captured_usd_cents = 0
+    total_settled_usd_cents = 0
+
+    for inv in invoices:
+        meta = inv.metadata_json or {}
+        s_status = meta.get("settlement_status", "ELIGIBLE_FOR_SETTLEMENT")
+        if inv.status == "paid":
+            captured_paid_count += 1
+            if inv.currency == "INR":
+                total_captured_inr_paise += inv.amount
+            elif inv.currency == "USD":
+                total_captured_usd_cents += inv.amount
+
+            if s_status == "SETTLED":
+                settled_to_bank_count += 1
+                if inv.currency == "INR":
+                    total_settled_inr_paise += inv.amount
+                elif inv.currency == "USD":
+                    total_settled_usd_cents += inv.amount
+            else:
+                unsettled_captured_count += 1
+                if inv.currency == "INR":
+                    total_unsettled_inr_paise += inv.amount
+        elif inv.status == "refunded":
+            refunded_count += 1
+        elif inv.status == "failed":
+            failed_count += 1
+
+    raw_bank = os.getenv("AFW_BANK_ACCOUNT_NUMBER", "6940XXXXXX26")
+    masked_bank = f"{raw_bank[:4]}XXXXXX{raw_bank[-2:]}" if len(raw_bank) >= 8 and "X" not in raw_bank else raw_bank
+
+    return {
+        "merchant_destination": {
+            "beneficiary_entity": os.getenv("AFW_BANK_BENEFICIARY", "ASKFORWRITE / Vipul Kumar Chobisa"),
+            "bank_name": os.getenv("AFW_BANK_NAME", "ICICI Bank Ltd"),
+            "bank_account_masked": masked_bank,
+            "ifsc_code": os.getenv("AFW_BANK_IFSC", "ICIC0006940"),
+            "upi_vpa": os.getenv("AFW_MERCHANT_UPI_VPA", "ask4write@icici"),
+            "evm_wallet": os.getenv("AFW_MERCHANT_EVM_WALLET", "0x811db32e3802eD9a75F7bbd24f6C3C03216346a2"),
+        },
+        "lifecycle_counts": {
+            "checkout_created_pending": checkout_created_count,
+            "payment_initiated_awaiting_verification": awaiting_owner_confirmation_count,
+            "payment_captured_confirmed": captured_paid_count,
+            "payment_eligible_for_settlement_unsettled": unsettled_captured_count,
+            "funds_settled_to_merchant_bank": settled_to_bank_count,
+            "refunded": refunded_count,
+            "failed": failed_count,
+        },
+        "financial_totals": {
+            "captured_inr": round(total_captured_inr_paise / 100.0, 2),
+            "settled_to_bank_inr": round(total_settled_inr_paise / 100.0, 2),
+            "unsettled_captured_inr": round(total_unsettled_inr_paise / 100.0, 2),
+            "captured_usd": round(total_captured_usd_cents / 100.0, 2),
+            "settled_to_bank_usd": round(total_settled_usd_cents / 100.0, 2),
+        },
+    }
+
+
+@router.post("/invoices/{invoice_id}/reconcile-settlement")
+def reconcile_invoice_settlement(
+    invoice_id: str,
+    payload: ReconcileSettlementRequest,
+    principal: APIPrincipal = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Owner-only endpoint to record verified bank statement / payout settlement against a captured InvoiceRecord."""
+    import uuid
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.security.trust_chain import seal_task_to_block
+
+    inv = db.get(InvoiceRecord, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Invoice '{invoice_id}' not found")
+
+    meta = dict(inv.metadata_json or {})
+    meta["settlement_status"] = payload.settlement_status.upper()
+    meta["settlement_reference"] = payload.settlement_reference.strip()
+    meta["bank_account_masked"] = payload.bank_account_masked
+    meta["reconciled_by"] = principal.subject
+    meta["reconciled_at"] = datetime.now(UTC).isoformat()
+    if payload.notes:
+        meta["settlement_notes"] = payload.notes
+
+    if payload.settlement_status.upper() in ("REFUND_INITIATED", "REFUND_COMPLETED"):
+        inv.status = "refunded"
+
+    inv.metadata_json = meta
+    flag_modified(inv, "metadata_json")
+    db.flush()
+
+    task_id = str(uuid.uuid4())
+    block = seal_task_to_block(
+        db=db,
+        task_id=task_id,
+        capability_name="payment_settlement_reconciliation",
+        action="reconcile_bank_settlement",
+        payload={
+            "invoice_id": inv.id,
+            "org_id": inv.org_id,
+            "amount": inv.amount,
+            "currency": inv.currency,
+            "settlement_status": meta["settlement_status"],
+            "settlement_reference": meta["settlement_reference"],
+            "bank_account_masked": payload.bank_account_masked,
+        },
+        sealed_by=principal.subject,
+        commit=True,
+    )
+
+    return {
+        "status": "RECONCILED",
+        "invoice_id": inv.id,
+        "invoice_status": inv.status,
+        "settlement_status": meta["settlement_status"],
+        "settlement_reference": meta["settlement_reference"],
+        "bank_account_masked": payload.bank_account_masked,
+        "trust_block_hash": block.block_hash,
+    }

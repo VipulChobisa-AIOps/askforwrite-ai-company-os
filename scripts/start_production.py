@@ -68,6 +68,10 @@ def validate_environment() -> list[str]:
     if not os.environ.get("OWNER_API_KEY") or len(os.environ.get("OWNER_API_KEY", "")) < 32:
         os.environ["OWNER_API_KEY"] = secrets.token_urlsafe(32)
         print("  [INFO] Auto-generated 256-bit OWNER_API_KEY")
+    for sec_var in ("JWT_SECRET_KEY", "ASK4_WEBHOOK_SECRET", "RAZORPAY_WEBHOOK_SECRET"):
+        if not os.environ.get(sec_var) or len(os.environ.get(sec_var, "")) < 32:
+            os.environ[sec_var] = secrets.token_urlsafe(32)
+            print(f"  [INFO] Auto-generated 256-bit {sec_var}")
 
     errors: list[str] = []
 
@@ -133,10 +137,11 @@ def seed_genesis_block() -> None:
     """Ensure the trust chain genesis block exists."""
     print("\n-- Seeding genesis block --")
     try:
-        from app.db.database import SessionLocal
+        from app.db.database import Base, SessionLocal, engine
         from app.db.models import TrustBlock  # noqa: F401 — ensure model is registered
         from app.security.trust_chain import ensure_genesis_block
 
+        Base.metadata.create_all(bind=engine)
         session = SessionLocal()
         try:
             ensure_genesis_block(session)

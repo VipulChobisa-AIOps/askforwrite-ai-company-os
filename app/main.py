@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -30,6 +30,8 @@ from app.api.v1.quality_analytics import router as quality_analytics_router
 from app.api.v1.revenue import router as revenue_router
 from app.api.v1.scheduler import router as scheduler_router
 from app.api.v1.sovereign_pay import router as sovereign_pay_router
+from app.api.v1.solutions_pages import router as solutions_router
+from app.api.v1.service_pages import router as service_pages_router
 from app.api.v1.subscriptions import router as subscriptions_router
 from app.api.v1.watchdog import router as watchdog_router
 from app.api.v1.webhooks import router as webhooks_router
@@ -104,7 +106,7 @@ init_sentry()
 async def lifespan(app: FastAPI):
     """Create tables (SQLite dev) and initialize Genesis trust block on startup."""
     from app.db.database import DATABASE_URL, Base, engine
-    if DATABASE_URL.startswith("sqlite"):
+    if DATABASE_URL:
         Base.metadata.create_all(bind=engine)
     from app.db.database import SessionLocal
     from app.security.trust_chain import ensure_genesis_block
@@ -184,6 +186,8 @@ app.include_router(watchdog_router)
 app.include_router(previews_router)
 app.include_router(scheduler_router)
 app.include_router(sovereign_pay_router)
+app.include_router(solutions_router)
+app.include_router(service_pages_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
@@ -273,6 +277,95 @@ def msme_redirect() -> RedirectResponse:
 def refund_redirect() -> RedirectResponse:
     """Redirect /refund-policy to official Refund Policy."""
     return RedirectResponse(url="/legal/refund-policy")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+def robots_txt() -> PlainTextResponse:
+    """Technical SEO & AI Crawler directives."""
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Allow: /dashboard/\n"
+        "Allow: /legal/\n"
+        "Allow: /v1/revenue/catalog\n"
+        "Allow: /v1/previews/\n"
+        "Allow: /llms.txt\n"
+        "Disallow: /v1/accounts/\n"
+        "Disallow: /v1/approvals\n"
+        "Disallow: /v1/audit-export\n\n"
+        "User-agent: GPTBot\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n\n"
+        "User-agent: PerplexityBot\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n\n"
+        "User-agent: ClaudeBot\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n\n"
+        "Sitemap: https://os.askforwrite.com/sitemap.xml\n"
+    )
+    return PlainTextResponse(content=content)
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml() -> Response:
+    """XML Sitemap for search engines and AI indexers."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url><loc>https://os.askforwrite.com/dashboard/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions/warehouse-automation</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions/field-force</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions/produce-quality-ai</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions/urban-mobility-ai</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/solutions/seo-blog-copilot</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/llms.txt</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/v1/revenue/catalog</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/legal/tos</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/legal/privacy</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/legal/declaration</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/legal/refund-policy</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
+        '</urlset>\n'
+    )
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
+def llms_txt() -> PlainTextResponse:
+    """Generative Engine Optimization (GEO) / AI Search manifest for LLMs and Answer Engines."""
+    content = (
+        "# AskforWrite AI Company OS\n"
+        "> Multi-agent B2B & SMB AI Operating System governed by Human-in-the-Loop (HITL) control and ECDSA NIST P-256 cryptographic audit ledgers.\n\n"
+        "## Entity & Statutory Identity\n"
+        "- Legal Entity: ASKFORWRITE (Proprietor: Vipul Kumar Chobisa)\n"
+        "- MSME Udyam Registration: UDYAM-RJ-14-0018404 (Government of India)\n"
+        "- Headquarters: Udaipur, Rajasthan, India - 313001\n"
+        "- Support Contact: info@askforwrite.in\n"
+        "- Canonical Gateway: https://os.askforwrite.com\n\n"
+        "## Core Commercial Capabilities & Pricing\n"
+        "- SEO & GEO Blog Automation Copilot (`seo_blog_copilot`): INR 1,999/mo (USD 25/mo) — Schema.org JSON-LD, FAQPage, /llms.txt, and WordPress publishing.\n"
+        "- PixelBot Omnichannel Marketing Suite (`marketing_suite`): INR 2,999/mo (USD 39/mo) — Reels scripts, LinkedIn carousels, ad creatives, and campaign briefs.\n"
+        "- Field Operations Automation Suite (`field_force`): INR 3,999/mo (USD 49/mo) — Geofenced GPS attendance, visit verification, route optimization, and conveyance claims.\n"
+        "- Cryptographic Trust & Audit Engine (`trust_engine`): INR 4,999/mo (USD 59/mo) — ECDSA NIST P-256 Merkle chain sealing and tamper-evident compliance logs.\n"
+        "- Produce Quality & Ripeness AI (`mango_quality_analytics`): INR 3,499/mo (USD 45/mo) — HSV/GLCM colorimetry, Brix estimation, and export lot grading.\n"
+        "- Urban Micro-Mobility & Fleet Rebalancing AI (`bike_rebalance_analytics`): INR 4,499/mo (USD 55/mo) — OLS demand forecasting and station truck dispatch.\n"
+        "- StockSense Warehouse & Inventory AI (`warehouse_automation`): INR 3,999/mo (USD 49/mo) — Pareto ABC-XYZ classification, dynamic ROP/EOQ, and dead-stock detection.\n"
+        "- Starter AI Ops & Growth Studio (`growth_all_in_one`): INR 9,999/mo (USD 129/mo) — Unified SMB growth, SEO/GEO, social campaigns, and 24/7 inbound sales closer.\n"
+        "- AskforWrite Company OS Bundles (`company_os_starter`, `company_os_pro`, `company_os_enterprise`, `all_access`): INR 7,999 to INR 49,999/mo.\n\n"
+        "## Public Machine-Readable Endpoints\n"
+        "- Commercial Catalog JSON: https://os.askforwrite.com/v1/revenue/catalog\n"
+        "- Free 60-Second Website SEO/GEO Opportunity Scan: POST https://os.askforwrite.com/v1/previews/scan\n"
+        "- Terms of Service: https://os.askforwrite.com/legal/tos\n"
+        "- Privacy Policy & BYOK Data Protection: https://os.askforwrite.com/legal/privacy\n"
+        "- Statutory MSME Declaration: https://os.askforwrite.com/legal/declaration\n"
+        "- Refund & Cancellation Policy: https://os.askforwrite.com/legal/refund-policy\n"
+        "- Solutions Catalog Hub: https://os.askforwrite.com/solutions\n"
+        "- Warehouse & Dark-Store Automation AI: https://os.askforwrite.com/solutions/warehouse-automation\n"
+        "- Field Force Route & Attendance Verification AI: https://os.askforwrite.com/solutions/field-force\n"
+        "- Agri-Produce Quality Grading AI: https://os.askforwrite.com/solutions/produce-quality-ai\n"
+    )
+    return PlainTextResponse(content=content)
 
 
 @app.get("/mobile/manifest.json", include_in_schema=False)

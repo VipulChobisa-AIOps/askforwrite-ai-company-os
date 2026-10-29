@@ -5,11 +5,15 @@ from __future__ import annotations
 import logging
 import uuid
 
+from datetime import UTC, datetime
+from typing import Any, Literal
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.db.models import OutreachRecord
+from app.db.models import AuditLog, LeadRecordRow, OutreachRecord
 from app.schemas.outreach import (
     OutreachDispatchResponse,
     OutreachDraftRequest,
@@ -112,8 +116,8 @@ def get_outreach_record(
     record = db.get(OutreachRecord, outreach_id)
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outreach record not found")
-    if record.org_id:
-        enforce_tenant_access(principal, record.org_id)
+    if principal.org_id:
+        enforce_tenant_access(principal, record.org_id or "__platform__")
     return OutreachResponse.model_validate(record)
 
 
@@ -150,3 +154,158 @@ def dispatch_outreach_endpoint(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=msg) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+
+class OutreachUnsubscribeRequest(BaseModel):
+    email: str | None = Field(default=None, max_length=250)
+    domain: str | None = Field(default=None, max_length=250)
+    lead_id: str | None = Field(default=None, max_length=36)
+    reason: str | None = Field(default="Recipient requested opt-out", max_length=500)
+
+
+class OutreachReplyRequest(BaseModel):
+    reply_text: str = Field(min_length=2, max_length=5000, description="Prospect reply message or sales notes")
+    intent: Literal["interested", "objection", "question", "unsubscribe"] = "interested"
+    channel: Literal["email_notes", "call_notes", "meeting_notes", "internal_notes"] = "email_notes"
+
+
+@router.post("/unsubscribe", status_code=status.HTTP_200_OK)
+def unsubscribe_prospect_endpoint(
+    payload: OutreachUnsubscribeRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Public/self-serve and operator opt-out endpoint setting do_not_contact=True and suppressing outreach."""
+    if not (payload.email or payload.domain or payload.lead_id):
+        raise HTTPException(status_code=400, detail="Provide at least one of email, domain, or lead_id to unsubscribe")
+
+    suppressed_leads: list[str] = []
+    cancelled_outreach: list[str] = []
+
+    if payload.lead_id:
+        lead = db.get(LeadRecordRow, payload.lead_id)
+        if lead:
+            lead.do_not_contact = True
+            lead.status = "DO_NOT_CONTACT"
+            suppressed_leads.append(lead.id)
+
+    if payload.domain:
+        clean_dom = payload.domain.strip().lower()
+        for lead in db.query(LeadRecordRow).filter(LeadRecordRow.domain == clean_dom).all():
+            lead.do_not_contact = True
+            lead.status = "DO_NOT_CONTACT"
+            if lead.id not in suppressed_leads:
+                suppressed_leads.append(lead.id)
+
+    if payload.email:
+        clean_email = payload.email.strip().lower()
+        for lead in db.query(LeadRecordRow).filter(LeadRecordRow.public_contact_channel == clean_email).all():
+            lead.do_not_contact = True
+            lead.status = "DO_NOT_CONTACT"
+            if lead.id not in suppressed_leads:
+                suppressed_leads.append(lead.id)
+        for out in db.query(OutreachRecord).filter(OutreachRecord.recipient_email == clean_email).all():
+            if out.status in ("DRAFT", "PENDING_APPROVAL"):
+                out.status = "SUPPRESSED_OPT_OUT"
+                cancelled_outreach.append(out.id)
+
+    for lid in suppressed_leads:
+        for out in db.query(OutreachRecord).filter(OutreachRecord.lead_id == lid).all():
+            if out.status in ("DRAFT", "PENDING_APPROVAL") and out.id not in cancelled_outreach:
+                out.status = "SUPPRESSED_OPT_OUT"
+                cancelled_outreach.append(out.id)
+
+    task_id = str(uuid.uuid4())
+    db.add(
+        AuditLog(
+            task_id=task_id,
+            correlation_id=task_id,
+            agent_id="outreach_opt_out",
+            capability_name="outreach_dispatch",
+            action="prospect_unsubscribed",
+            input_payload=payload.model_dump(),
+            output_payload={
+                "suppressed_leads": suppressed_leads,
+                "cancelled_outreach": cancelled_outreach,
+            },
+            status="COMPLETED",
+        )
+    )
+    db.commit()
+
+    return {
+        "status": "UNSUBSCRIBED",
+        "suppressed_leads_count": len(suppressed_leads),
+        "suppressed_leads": suppressed_leads,
+        "cancelled_outreach_count": len(cancelled_outreach),
+    }
+
+
+@router.post("/{outreach_id}/record-reply", status_code=status.HTTP_200_OK)
+def record_outreach_reply_endpoint(
+    outreach_id: str,
+    payload: OutreachReplyRequest,
+    x_correlation_id: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Record a prospect's reply to an outreach message, advance sales stage, and generate a qualified proposal."""
+    record = db.get(OutreachRecord, outreach_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Outreach record not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, record.org_id or "__platform__")
+
+    lead = db.get(LeadRecordRow, record.lead_id)
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated lead not found")
+
+    correlation_id = x_correlation_id or str(uuid.uuid4())
+
+    if payload.intent == "unsubscribe":
+        lead.do_not_contact = True
+        lead.status = "DO_NOT_CONTACT"
+        record.status = "UNSUBSCRIBED"
+        db.commit()
+        return {
+            "status": "DO_NOT_CONTACT",
+            "outreach_id": record.id,
+            "lead_id": lead.id,
+            "lead_status": lead.status,
+        }
+
+    record.status = "REPLIED"
+    lead.status = "QUALIFIED"
+    lead.last_checked = datetime.now(UTC)
+    db.flush()
+
+    from app.services.catalog import build_payment_link
+    from app.services.sales import execute_sales_capture
+
+    sales_result = execute_sales_capture(
+        db=db,
+        lead_id=lead.id,
+        conversation_notes=payload.reply_text,
+        channel=payload.channel,
+        idempotency_key=f"reply-sales-{outreach_id}-{hash(payload.reply_text) & 0xFFFFFFFF:x}",
+        correlation_id=correlation_id,
+        agent_id=principal.subject,
+    )
+
+    pkg_key = record.package_key or lead.product_match or "company_os_starter"
+    checkout_url = build_payment_link(
+        package_key=pkg_key,
+        customer_email=record.recipient_email,
+        company=lead.company,
+        provider="afw_directpay",
+    )
+
+    return {
+        "status": "QUALIFIED_AND_PROPOSAL_DRAFTED",
+        "outreach_id": record.id,
+        "lead_id": lead.id,
+        "lead_status": lead.status,
+        "intent": payload.intent,
+        "package_key": pkg_key,
+        "checkout_url": checkout_url,
+        "sales_capture": sales_result,
+    }

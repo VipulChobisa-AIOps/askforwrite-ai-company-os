@@ -382,10 +382,124 @@ def get_web3_stablecoin_payload(amount_usd: float, session_id: str) -> dict[str,
     }
 
 
-def verify_onchain_tx(tx_hash: str) -> dict[str, Any]:
+# Standard ERC-20 Transfer(address indexed from, address indexed to, uint256 value) Keccak-256 topic0
+ERC20_TRANSFER_TOPIC0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+# Official USDC & USDT token contract addresses across Polygon, Base, and Ethereum Mainnet (6 decimals)
+SUPPORTED_EVM_STABLECOIN_CONTRACTS: dict[str, dict[str, Any]] = {
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": {"symbol": "USDC", "network": "Polygon", "decimals": 6},
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": {"symbol": "USDC.e", "network": "Polygon", "decimals": 6},
+    "0xc2132d05d31c914a87c6611c10748aeb04b58e8f": {"symbol": "USDT", "network": "Polygon", "decimals": 6},
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": {"symbol": "USDC", "network": "Base", "decimals": 6},
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {"symbol": "USDC", "network": "Ethereum", "decimals": 6},
+    "0xdac17f958d2ee523a2206206994597c13d831ec7": {"symbol": "USDT", "network": "Ethereum", "decimals": 6},
+}
+
+
+def decode_erc20_transfer_logs(
+    logs: list[dict[str, Any]],
+    expected_recipient: str | None = None,
+    expected_amount_usd: float | None = None,
+) -> dict[str, Any]:
+    """Decode ERC-20 Transfer(from, to, value) event logs and verify token contract, recipient, and amount."""
+    target_wallet = (
+        expected_recipient
+        or os.getenv(
+            "AFW_MERCHANT_EVM_WALLET",
+            os.getenv("SOVEREIGN_USDC_ETH_WALLET", "0x811db32e3802eD9a75F7bbd24f6C3C03216346a2"),
+        )
+    ).strip().lower()
+
+    decoded_transfers: list[dict[str, Any]] = []
+    for log in logs:
+        topics = log.get("topics") or []
+        if len(topics) < 3:
+            continue
+        topic0 = str(topics[0]).strip().lower()
+        if topic0 != ERC20_TRANSFER_TOPIC0:
+            continue
+
+        contract_addr = str(log.get("address") or "").strip().lower()
+        from_topic = str(topics[1]).strip().lower()
+        to_topic = str(topics[2]).strip().lower()
+        from_addr = "0x" + from_topic[-40:] if len(from_topic) >= 40 else from_topic
+        to_addr = "0x" + to_topic[-40:] if len(to_topic) >= 40 else to_topic
+
+        raw_data = str(log.get("data") or "0x0").strip()
+        try:
+            raw_units = int(raw_data, 16) if raw_data.startswith(("0x", "0X")) else int(raw_data)
+        except ValueError:
+            raw_units = 0
+
+        token_meta = SUPPORTED_EVM_STABLECOIN_CONTRACTS.get(contract_addr)
+        decimals = token_meta["decimals"] if token_meta else 6
+        token_amount = round(raw_units / float(10**decimals), 6)
+
+        decoded_transfers.append({
+            "token_contract": contract_addr,
+            "token_symbol": token_meta["symbol"] if token_meta else "UNKNOWN_ERC20",
+            "network": token_meta["network"] if token_meta else "EVM",
+            "is_supported_stablecoin": token_meta is not None,
+            "from": from_addr,
+            "to": to_addr,
+            "raw_value": raw_units,
+            "amount_usd": token_amount,
+        })
+
+    if not decoded_transfers:
+        raise ValueError(
+            "No ERC-20 Transfer(address,address,uint256) event logs found in transaction receipt."
+        )
+
+    # Filter by supported USDC/USDT token contract
+    supported = [t for t in decoded_transfers if t["is_supported_stablecoin"]]
+    if not supported:
+        seen_contracts = ", ".join(sorted({t["token_contract"] for t in decoded_transfers}))
+        raise ValueError(
+            f"Transaction ERC-20 Transfer uses unsupported token contract(s): {seen_contracts}. "
+            "Must use official USDC or USDT contract on Polygon, Base, or Ethereum."
+        )
+
+    # Filter by recipient wallet address
+    to_merchant = [t for t in supported if t["to"] == target_wallet]
+    if not to_merchant:
+        seen_recipients = ", ".join(sorted({t["to"] for t in supported}))
+        raise ValueError(
+            f"ERC-20 Transfer recipient mismatch: funds sent to {seen_recipients}, "
+            f"expected merchant wallet {target_wallet}."
+        )
+
+    # Sum total stablecoin transferred to merchant in this transaction
+    total_received = round(sum(t["amount_usd"] for t in to_merchant), 6)
+    if expected_amount_usd is not None and expected_amount_usd > 0:
+        if total_received + 0.01 < float(expected_amount_usd):
+            raise ValueError(
+                f"Insufficient on-chain USDC/USDT transfer amount: received ${total_received:.2f}, "
+                f"expected at least ${float(expected_amount_usd):.2f}."
+            )
+
+    primary = to_merchant[0]
+    return {
+        "token_contract": primary["token_contract"],
+        "token_symbol": primary["token_symbol"],
+        "network": primary["network"],
+        "from": primary["from"],
+        "to": primary["to"],
+        "amount_usd": total_received,
+        "transfers_count": len(to_merchant),
+    }
+
+
+def verify_onchain_tx(
+    tx_hash: str,
+    expected_recipient: str | None = None,
+    expected_amount_usd: float | None = None,
+) -> dict[str, Any]:
     """Verify an on-chain stablecoin settlement transaction.
 
-    If WEB3_RPC_URL is configured, queries eth_getTransactionReceipt.
+    If WEB3_RPC_URL is configured, queries eth_getTransactionReceipt, validates status == 0x1,
+    and decodes ERC-20 Transfer(from, to, value) event logs to verify exact token contract,
+    merchant recipient address, and transferred USD amount.
     Otherwise cryptographically validates transaction hash format (0x + 64 hex chars or Solana base58).
     """
     clean_hash = tx_hash.strip()
@@ -415,15 +529,26 @@ def verify_onchain_tx(tx_hash: str) -> dict[str, Any]:
                     if receipt:
                         status = receipt.get("status")
                         if status in ("0x1", 1, "1"):
-                            return {
+                            result_meta: dict[str, Any] = {
                                 "verified": True,
                                 "mode": "RPC_RECEIPT_CONFIRMED",
                                 "tx_hash": clean_hash,
                                 "block_number": receipt.get("blockNumber"),
                                 "gas_used": receipt.get("gasUsed"),
                             }
+                            if "logs" in receipt and receipt["logs"] is not None:
+                                erc20_info = decode_erc20_transfer_logs(
+                                    logs=receipt["logs"],
+                                    expected_recipient=expected_recipient,
+                                    expected_amount_usd=expected_amount_usd,
+                                )
+                                result_meta["erc20_transfer"] = erc20_info
+                                result_meta["mode"] = "RPC_ERC20_TRANSFER_VERIFIED"
+                            return result_meta
                         else:
                             raise ValueError(f"On-chain transaction {clean_hash} has failed or reverted.")
+        except ValueError:
+            raise
         except Exception as exc:
             logger.warning(f"Web3 RPC receipt query failed: {exc}. Proceeding with cryptographic format validation.")
 
@@ -469,7 +594,7 @@ def generate_bank_wire_proforma_invoice(
         "beneficiary": {
             "entity_name": os.getenv("AFW_BANK_BENEFICIARY", "ASKFORWRITE / Vipul Kumar Chobisa"),
             "bank_name": os.getenv("AFW_BANK_NAME", "ICICI Bank Ltd"),
-            "account_number": os.getenv("AFW_BANK_ACCOUNT_NUMBER", "694001501126"),
+            "account_number": os.getenv("AFW_BANK_ACCOUNT_NUMBER", "6940XXXXXX26"),
             "account_type": os.getenv("AFW_BANK_ACCOUNT_TYPE", "Saving Account"),
             "ifsc_code": os.getenv("AFW_BANK_IFSC", "ICIC0006940"),
             "swift_code": os.getenv("AFW_BANK_SWIFT", "ICICINBBXXX"),
@@ -726,6 +851,20 @@ def verify_sovereign_payment(
     if clean_rail not in ("upi_direct", "web3_usdc", "bank_wire_direct"):
         raise ValueError(f"Unsupported settlement rail: '{rail}'. Must be upi_direct, web3_usdc, or bank_wire_direct.")
 
+    # Replay protection: reject proof_reference if already used by another session
+    replayed_session = (
+        db.query(SovereignPaymentSessionRecord)
+        .filter(
+            SovereignPaymentSessionRecord.verification_proof == clean_proof,
+            SovereignPaymentSessionRecord.session_id != session_id,
+        )
+        .first()
+    )
+    if replayed_session:
+        raise ValueError(
+            f"Duplicate payment proof reference '{clean_proof}' has already been submitted for another session."
+        )
+
     # 1. Rail-specific proof validation
     if clean_rail == "upi_direct":
         # 12-digit UPI UTR number or alphanumeric transaction reference
@@ -737,7 +876,13 @@ def verify_sovereign_payment(
         verification_mode = "NPCI_UPI_UTR_VALIDATED"
 
     elif clean_rail == "web3_usdc":
-        tx_result = verify_onchain_tx(clean_proof)
+        expected_wallet = (session.usdc_payload or {}).get("evm_deposit_address")
+        expected_usd = float((session.usdc_payload or {}).get("amount_usd") or session.amount)
+        tx_result = verify_onchain_tx(
+            clean_proof,
+            expected_recipient=expected_wallet,
+            expected_amount_usd=expected_usd,
+        )
         verification_mode = tx_result.get("mode", "WEB3_ONCHAIN_VALIDATED")
 
     elif clean_rail == "bank_wire_direct":
@@ -748,8 +893,14 @@ def verify_sovereign_payment(
             )
         verification_mode = "BANK_WIRE_REFERENCE_VALIDATED"
 
-    # 2. Fraud-Proof Human-in-the-Loop Gating for UPI & Bank Wire
-    if clean_rail in ("upi_direct", "bank_wire_direct"):
+    # 2. Fraud-Proof Human-in-the-Loop Gating for UPI, Bank Wire, and unconfirmed production Web3 hashes
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    requires_owner_gate = clean_rail in ("upi_direct", "bank_wire_direct") or (
+        clean_rail == "web3_usdc"
+        and app_env == "production"
+        and verification_mode not in ("RPC_RECEIPT_CONFIRMED", "RPC_ERC20_TRANSFER_VERIFIED")
+    )
+    if requires_owner_gate:
         session.status = "AWAITING_OWNER_CONFIRMATION"
         session.verification_proof = clean_proof
         session.verified_rail = clean_rail
@@ -1084,4 +1235,219 @@ def confirm_sovereign_payment_by_owner(
             f"Sovereign payment for {session.company_name} confirmed by owner on rail '{session.verified_rail}'. "
             "ECDSA NIST P-256 block sealed, invoice generated, and multi-tenant workspace provisioned."
         ),
+    }
+
+
+def create_live_penny_test_session(
+    rail: str,
+    db: Session,
+    owner_email: str = "info@askforwrite.in",
+) -> dict[str, Any]:
+    """Create a ₹1.00 INR or $1.00 USD live verification transaction session and pending InvoiceRecord
+    across any active payment rail (razorpay, paypal, upi_direct, web3_usdc, bank_wire_direct)."""
+    from app.db.models import CustomerRecord, InvoiceRecord, OrganizationRecord
+
+    clean_rail = rail.strip().lower()
+    valid_rails = ("razorpay", "paypal", "upi_direct", "web3_usdc", "bank_wire_direct")
+    if clean_rail not in valid_rails:
+        raise ValueError(f"Unsupported rail '{rail}'. Must be one of: {', '.join(valid_rails)}")
+
+    currency = "INR" if clean_rail in ("razorpay", "upi_direct", "bank_wire_direct") else "USD"
+    amount = 1.0
+    amount_minor = 100  # 100 paise (₹1.00) or 100 cents ($1.00)
+    session_id = str(uuid.uuid4())
+
+    # Ensure an ops reconciliation org & customer exist
+    ops_org = db.query(OrganizationRecord).filter_by(slug="askforwrite-ops-reconciliation").first()
+    if not ops_org:
+        ops_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="AskforWrite Financial Reconciliation Ops",
+            slug="askforwrite-ops-reconciliation",
+            tier="enterprise",
+            lead_credits_limit=5000,
+            outreach_credits_limit=2500,
+            is_active=True,
+        )
+        db.add(ops_org)
+        db.flush()
+
+    customer = db.query(CustomerRecord).filter_by(org_id=ops_org.id, provider=clean_rail).first()
+    if not customer:
+        customer = CustomerRecord(
+            id=str(uuid.uuid4()),
+            org_id=ops_org.id,
+            email=owner_email,
+            name="Vipul Kumar Chobisa (Penny Test)",
+            provider=clean_rail,
+            provider_customer_id=f"cust_penny_{uuid.uuid4().hex[:8]}",
+        )
+        db.add(customer)
+        db.flush()
+
+    invoice_id = str(uuid.uuid4())
+    provider_inv_id = f"inv_penny_{clean_rail}_{session_id[:8]}"
+
+    merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
+    upi_uri = f"upi://pay?pa={merchant_vpa}&pn=AskforWrite&am=1.00&cu=INR&tn=AFW+Penny+Test&tr={session_id}"
+    checkout_instructions: dict[str, Any] = {}
+
+    if clean_rail == "upi_direct":
+        checkout_instructions = {
+            "upi_uri": upi_uri,
+            "upi_qr_svg": generate_inline_qr_svg(upi_uri),
+            "merchant_vpa": merchant_vpa,
+        }
+    elif clean_rail == "web3_usdc":
+        checkout_instructions = get_web3_stablecoin_payload(amount_usd=1.0, session_id=session_id)
+    elif clean_rail == "razorpay":
+        base_link = os.getenv("RAZORPAY_PAYMENT_LINK", "https://razorpay.me/@askforwrite")
+        checkout_instructions = {
+            "payment_url": f"{base_link}?amount=100&currency=INR&notes_package=penny_test&notes_session={session_id}",
+        }
+    elif clean_rail == "paypal":
+        base_link = os.getenv("PAYPAL_PAYMENT_LINK", "https://paypal.me/ask4write")
+        checkout_instructions = {
+            "payment_url": f"{base_link}/1USD?memo=penny_test_{session_id[:8]}",
+        }
+    else:
+        checkout_instructions = generate_bank_wire_proforma_invoice(
+            session_id=session_id,
+            company_name="AskforWrite Penny Test",
+            customer_email=owner_email,
+            package_key="company_os_starter",
+            package_name="Live ₹1 Settlement Verification",
+            amount=1.0,
+            currency="INR",
+        )
+
+    invoice = InvoiceRecord(
+        id=invoice_id,
+        org_id=ops_org.id,
+        customer_id=customer.id,
+        provider=clean_rail,
+        provider_invoice_id=provider_inv_id,
+        provider_payment_id=f"pending_{session_id[:12]}",
+        amount=amount_minor,
+        currency=currency,
+        status="issued",
+        metadata_json={
+            "is_penny_test": True,
+            "rail": clean_rail,
+            "session_id": session_id,
+            "expected_amount_major": amount,
+            "reconciliation_status": "AWAITING_BANK_STATEMENT_MATCH",
+        },
+    )
+    db.add(invoice)
+    db.commit()
+
+    return {
+        "status": "PENNY_TEST_READY",
+        "invoice_id": invoice_id,
+        "provider_invoice_id": provider_inv_id,
+        "session_id": session_id,
+        "rail": clean_rail,
+        "amount": amount,
+        "amount_minor": amount_minor,
+        "currency": currency,
+        "checkout_instructions": checkout_instructions,
+    }
+
+
+def reconcile_invoice_with_bank_statement(
+    db: Session,
+    invoice_id: str,
+    bank_statement_utr: str,
+    settled_amount: float,
+    settlement_date: str | None = None,
+    bank_account_masked: str = "6940XXXXXX26",
+    reconciled_by: str = "owner",
+    notes: str | None = None,
+) -> dict[str, Any]:
+    """Reconcile an InvoiceRecord against an actual bank settlement payout statement and seal a TrustBlock."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.db.models import AuditLog, InvoiceRecord
+
+    inv = db.get(InvoiceRecord, invoice_id)
+    if not inv:
+        raise ValueError(f"Invoice '{invoice_id}' not found")
+
+    clean_utr = bank_statement_utr.strip()
+    if len(clean_utr) < 6:
+        raise ValueError("bank_statement_utr must be at least 6 characters")
+
+    expected_major = round(float(inv.amount) / 100.0, 2)
+    if settled_amount <= 0 or abs(settled_amount - expected_major) > max(1.0, expected_major * 0.05):
+        raise ValueError(
+            f"Settled amount mismatch: bank statement shows {settled_amount:.2f} {inv.currency}, "
+            f"invoice expects {expected_major:.2f} {inv.currency} (max 5% gateway fee variance allowed)."
+        )
+
+    reconciled_at = datetime.now(UTC).isoformat()
+    reconciliation_record = {
+        "reconciled": True,
+        "bank_statement_utr": clean_utr,
+        "settled_amount": round(float(settled_amount), 2),
+        "invoice_amount": expected_major,
+        "gateway_fee_deducted": round(expected_major - float(settled_amount), 2),
+        "currency": inv.currency,
+        "settlement_date": settlement_date or datetime.now(UTC).strftime("%Y-%m-%d"),
+        "bank_account_masked": bank_account_masked,
+        "reconciled_by": reconciled_by,
+        "reconciled_at": reconciled_at,
+        "notes": notes or "Verified against bank settlement statement.",
+    }
+
+    meta = dict(inv.metadata_json or {})
+    meta["reconciliation"] = reconciliation_record
+    meta["reconciliation_status"] = "RECONCILED_WITH_BANK_STATEMENT"
+    inv.metadata_json = meta
+    inv.status = "paid"
+    if not inv.provider_payment_id or inv.provider_payment_id.startswith("pending_"):
+        inv.provider_payment_id = clean_utr
+    flag_modified(inv, "metadata_json")
+
+    trust_block = seal_task_to_block(
+        db=db,
+        task_id=f"reconcile_{inv.id}",
+        capability_name="afw_financial_reconciliation",
+        action="financial_settlement_reconciled",
+        payload={
+            "invoice_id": inv.id,
+            "org_id": inv.org_id,
+            "provider": inv.provider,
+            **reconciliation_record,
+        },
+        sealed_by=f"OWNER-RECONCILIATION:{reconciled_by}",
+        commit=False,
+    )
+
+    db.add(
+        AuditLog(
+            task_id=f"reconcile_{inv.id}",
+            correlation_id=str(uuid.uuid4()),
+            agent_id=reconciled_by,
+            capability_name="afw_financial_reconciliation",
+            action="financial_settlement_reconciled",
+            input_payload={"invoice_id": inv.id, "bank_statement_utr": clean_utr},
+            output_payload={"status": "RECONCILED", "trust_block_hash": trust_block.block_hash},
+            status="COMPLETED",
+        )
+    )
+    db.commit()
+    db.refresh(inv)
+
+    return {
+        "status": "RECONCILED",
+        "invoice_id": inv.id,
+        "org_id": inv.org_id,
+        "provider": inv.provider,
+        "invoice_status": inv.status,
+        "reconciliation": reconciliation_record,
+        "trust_block": {
+            "index": trust_block.index,
+            "block_hash": trust_block.block_hash,
+            "signature": trust_block.signature,
+        },
     }

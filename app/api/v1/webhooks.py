@@ -24,7 +24,8 @@ import app.services.payment_paypal
 # Ensure provider modules are imported so @register_provider decorators execute
 import app.services.payment_razorpay  # noqa: F401
 from app.db.database import get_db
-from app.db.models import AuditLog, SubscriptionRecord, WebhookEventRecord
+from app.db.models import AuditLog, InvoiceRecord, SubscriptionRecord, WebhookEventRecord
+from app.security.auth import APIPrincipal, require_manager
 from app.services.payment import (
     PaymentProvider,
     PaymentValidationError,
@@ -182,6 +183,39 @@ async def payment_webhook_endpoint(
     # Auto-provision tenant if confirmed payment or activated subscription
     provision_result = auto_provision_tenant_on_payment(db=db, event=event)
 
+    # Step 6b: Handle refund, dispute, settlement, and failed payment lifecycle transitions
+    raw_ev = (event.raw_event_type or event.event_type or "").lower()
+    if any(k in raw_ev for k in ("refund", "dispute", "settlement", "failed", "denied")):
+        from sqlalchemy.orm.attributes import flag_modified
+
+        inv = None
+        if event.resource_id:
+            inv = (
+                db.query(InvoiceRecord)
+                .filter(
+                    (InvoiceRecord.provider_payment_id == event.resource_id)
+                    | (InvoiceRecord.provider_invoice_id == event.resource_id)
+                )
+                .first()
+            )
+        if inv:
+            meta = dict(inv.metadata_json or {})
+            if "refund" in raw_ev:
+                inv.status = "refunded"
+                meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
+                meta["refund_event_id"] = event.id
+            elif "dispute" in raw_ev:
+                inv.status = "disputed"
+                meta["settlement_status"] = "DISPUTED"
+            elif "settlement" in raw_ev:
+                meta["settlement_status"] = "SETTLED"
+                meta["settled_event_id"] = event.id
+            elif "failed" in raw_ev or "denied" in raw_ev:
+                inv.status = "failed"
+                meta["settlement_status"] = "PAYMENT_FAILED"
+            inv.metadata_json = meta
+            flag_modified(inv, "metadata_json")
+
     # Mark event as processed
     event_record.processed = True
     db.commit()
@@ -203,6 +237,7 @@ async def list_webhook_events(
     provider: str | None = None,
     event_type: str | None = None,
     limit: int = 50,
+    _principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """List recent webhook events (for debugging/audit)."""

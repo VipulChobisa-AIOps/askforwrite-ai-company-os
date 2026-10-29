@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 import uuid
 
 from sqlalchemy.exc import IntegrityError
@@ -42,8 +43,14 @@ def ingest_order(
     raw_payload: str | None = None,
 ) -> dict:
     corr_id = correlation_id or str(uuid.uuid4())
-    if secret and signature and raw_payload:
-        if not verify_order_signature(raw_payload, signature, secret):
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+    if app_env == "production":
+        if not secret:
+            raise OrderValidationFailed("ASK4_WEBHOOK_SECRET must be configured in production")
+        if not signature or not raw_payload or not verify_order_signature(raw_payload, signature, secret):
+            raise OrderValidationFailed("Invalid or missing webhook signature")
+    elif secret and signature is not None:
+        if not raw_payload or not verify_order_signature(raw_payload, signature, secret):
             raise OrderValidationFailed("Invalid signature")
 
     request_hash = hashlib.sha256(json.dumps({"transaction_id": transaction_id}, sort_keys=True).encode()).hexdigest()
