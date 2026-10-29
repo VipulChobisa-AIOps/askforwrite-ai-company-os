@@ -936,7 +936,7 @@ def verify_sovereign_payment(
         else:
             approval = ApprovalRequest(
                 id=str(uuid.uuid4()),
-                task_id=f"sovereign_pay_{session.session_id}",
+                task_id=session.session_id[:36],
                 lead_id=None,
                 proposal_id=None,
                 action="sovereign_payment_verification",
@@ -1031,7 +1031,7 @@ def verify_sovereign_payment(
 
     trust_block = seal_task_to_block(
         db=db,
-        task_id=f"sovereign_pay_{session.session_id}",
+        task_id=session.session_id[:36],
         capability_name="afw_sovereign_pay",
         action="sovereign_payment_verified",
         payload=trust_payload,
@@ -1153,7 +1153,7 @@ def confirm_sovereign_payment_by_owner(
 
     trust_block = seal_task_to_block(
         db=db,
-        task_id=f"sovereign_pay_{session.session_id}",
+        task_id=session.session_id[:36],
         capability_name="afw_sovereign_pay",
         action="sovereign_payment_verified_by_owner",
         payload=trust_payload,
@@ -1186,7 +1186,7 @@ def confirm_sovereign_payment_by_owner(
     # 3. Update ApprovalRequest record
     approval = (
         db.query(ApprovalRequest)
-        .filter_by(task_id=f"sovereign_pay_{session.session_id}")
+        .filter_by(task_id=session.session_id[:36])
         .first()
     )
     if approval:
@@ -1410,7 +1410,7 @@ def reconcile_invoice_with_bank_statement(
 
     trust_block = seal_task_to_block(
         db=db,
-        task_id=f"reconcile_{inv.id}",
+        task_id=inv.id[:36],
         capability_name="afw_financial_reconciliation",
         action="financial_settlement_reconciled",
         payload={
@@ -1425,7 +1425,7 @@ def reconcile_invoice_with_bank_statement(
 
     db.add(
         AuditLog(
-            task_id=f"reconcile_{inv.id}",
+            task_id=inv.id[:36],
             correlation_id=str(uuid.uuid4()),
             agent_id=reconciled_by,
             capability_name="afw_financial_reconciliation",

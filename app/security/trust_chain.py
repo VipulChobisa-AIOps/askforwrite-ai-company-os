@@ -118,6 +118,7 @@ def seal_task_to_block(
     into an immutable TrustBlock appended to the local SHA-256 hash-chain.
     """
     ensure_genesis_block(db)
+    task_id = str(task_id)[:36]
 
     tip = db.query(TrustBlock).order_by(TrustBlock.index.desc()).first()
     new_index = tip.index + 1
@@ -180,6 +181,7 @@ def verify_chain_integrity(db: Session) -> dict[str, Any]:
       6. Asymmetric ECDSA NIST P-256 signature validity.
     """
     ensure_genesis_block(db)
+    task_id = str(task_id)[:36]
     blocks = db.query(TrustBlock).order_by(TrustBlock.index.asc()).all()
 
     errors = []
