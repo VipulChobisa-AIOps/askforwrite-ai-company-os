@@ -14,7 +14,7 @@ import json
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
 
-from app.services.catalog import CATALOG, get_all_packages, get_package
+from app.services.catalog import get_all_packages, get_package
 
 router = APIRouter(tags=["seo-service-pages"])
 
