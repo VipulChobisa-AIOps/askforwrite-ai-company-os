@@ -73,7 +73,7 @@ def discover_leads(
             idempotency_key=payload.idempotency_key,
             correlation_id=correlation_id,
             agent_id=principal.subject,
-            org_id=payload.org_id,
+            org_id=target_org_id,
             provider=provider,
         )
     except IdempotencyConflict as exc:
@@ -365,16 +365,35 @@ def enrich_lead(
     principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    """Perform real-time web scraping and signal enrichment on a company domain or URL."""
-    domain = normalize_domain(payload.website)
-    if not domain or not is_safe_public_url(payload.website):
+    """Perform real-time web scraping and signal enrichment on a company domain, URL, or lead record."""
+    target_lead: LeadRecordRow | None = None
+    target_website: str | None = payload.website
+
+    if not target_website:
+        candidate_id = payload.lead_id or (payload.lead_ids[0] if payload.lead_ids else None)
+        if candidate_id:
+            target_lead = db.get(LeadRecordRow, candidate_id)
+            if not target_lead:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lead '{candidate_id}' not found")
+            if principal.org_id:
+                enforce_tenant_access(principal, target_lead.org_id or "__platform__")
+            target_website = target_lead.website
+
+    if not target_website:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Must provide website, lead_id, or lead_ids to enrich",
+        )
+
+    domain = normalize_domain(target_website)
+    if not domain or not is_safe_public_url(target_website):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid or unsafe website/domain URL",
         )
 
     org: OrganizationRecord | None = None
-    target_org_id = payload.org_id or principal.org_id
+    target_org_id = payload.org_id or principal.org_id or (target_lead.org_id if target_lead else None)
     if target_org_id:
         enforce_tenant_access(principal, target_org_id)
         org = db.get(OrganizationRecord, target_org_id)
@@ -390,7 +409,7 @@ def enrich_lead(
             )
 
     # Scrape website metadata
-    metadata = fetch_and_enrich_website(payload.website)
+    metadata = fetch_and_enrich_website(target_website)
     title = str(metadata.get("title") or domain)
     company_name = title.split(" - ")[0].split(" | ")[0].strip() or domain
     emails = metadata.get("emails", [])
@@ -405,19 +424,22 @@ def enrich_lead(
         signals.append(f"live website verified: {domain}")
 
     # Check if lead already exists in DB for this org
-    existing: LeadRecordRow | None = None
-    if payload.org_id:
+    existing: LeadRecordRow | None = target_lead
+    if not existing and target_org_id:
         existing = db.query(LeadRecordRow).filter(
-            LeadRecordRow.org_id == payload.org_id,
+            LeadRecordRow.org_id == target_org_id,
             LeadRecordRow.domain == domain,
         ).first()
 
     if existing:
         existing.observed_signals = signals
-        if contact:
+        if contact and not existing.public_contact_channel:
             existing.public_contact_channel = contact
         existing.last_checked = datetime.now(UTC)
         db.add(existing)
+        if org:
+            org.lead_credits_used += 1
+            db.add(org)
         db.commit()
         db.refresh(existing)
         lead_data = LeadResponse.model_validate(existing)
@@ -428,15 +450,15 @@ def enrich_lead(
         task_id = str(uuid.uuid4())
         new_lead = LeadRecordRow(
             id=lead_id,
-            org_id=payload.org_id,
+            org_id=target_org_id,
             domain=domain,
             task_id=task_id,
             company=company_name,
-            website=payload.website,
+            website=target_website,
             industry="Technology & Services",
             geography="Global",
             observed_signals=signals,
-            sources=[{"url": payload.website, "metadata": metadata, "data_mode": "live_enrichment"}],
+            sources=[{"url": target_website, "metadata": metadata, "data_mode": "live_enrichment"}],
             product_match=None,
             fit_score=0.75,
             confidence=0.8,

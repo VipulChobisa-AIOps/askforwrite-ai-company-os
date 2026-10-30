@@ -9,12 +9,14 @@ is not provided or the Gemini service is unreachable.
 
 import logging
 import os
+import sys
 from contextvars import ContextVar
 from functools import lru_cache
 
 from dotenv import load_dotenv
 
-load_dotenv()
+if "pytest" not in sys.modules and "unittest" not in sys.modules:
+    load_dotenv()
 
 logger = logging.getLogger("afw.company_os.llm_client")
 

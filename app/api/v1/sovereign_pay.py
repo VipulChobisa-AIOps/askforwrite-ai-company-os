@@ -861,13 +861,16 @@ def reconcile_settlement_endpoint(
 
 @router.get("/reconciliation-ledger")
 def get_reconciliation_ledger_endpoint(
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return financial reconciliation summary across all invoices."""
     from app.db.models import InvoiceRecord
 
-    invoices = db.query(InvoiceRecord).order_by(InvoiceRecord.created_at.desc()).limit(100).all()
+    query = db.query(InvoiceRecord)
+    if principal.org_id:
+        query = query.filter(InvoiceRecord.org_id == principal.org_id)
+    invoices = query.order_by(InvoiceRecord.created_at.desc()).limit(100).all()
     items = []
     reconciled_count = 0
     for inv in invoices:

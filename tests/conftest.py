@@ -1,7 +1,16 @@
+import os
 import pathlib
 import sys
 
 import pytest
+
+# Isolate test suite from live production credentials in .env
+os.environ.setdefault("APP_ENV", "development")
+os.environ.setdefault("GEMINI_API_KEY", "mock-gemini-key")
+os.environ.setdefault("GOOGLE_API_KEY", "mock-gemini-key")
+os.environ.setdefault("OUTREACH_DISPATCH_PROVIDER", "mock")
+os.environ.setdefault("WEB3_RPC_URL", "")
+os.environ.setdefault("RAZORPAY_WEBHOOK_SECRET", "")
 
 # Ensure the os_gateway package root is on sys.path for both `app` and `tests` imports
 _project_root = pathlib.Path(__file__).resolve().parents[1]

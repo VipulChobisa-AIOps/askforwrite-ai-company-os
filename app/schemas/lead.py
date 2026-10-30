@@ -15,7 +15,9 @@ class LeadDiscoverRequest(BaseModel):
 
 
 class LeadEnrichRequest(BaseModel):
-    website: str = Field(min_length=3, max_length=2048, description="Target website URL or domain name to scrape and enrich")
+    website: str | None = Field(default=None, max_length=2048, description="Target website URL or domain name to scrape and enrich")
+    lead_id: str | None = Field(default=None, max_length=36, description="Target lead ID to resolve website from")
+    lead_ids: list[str] | None = Field(default=None, description="Batch list of lead IDs to resolve and enrich")
     org_id: str | None = Field(default=None, max_length=36, description="Organization ID to associate enriched lead with")
 
 

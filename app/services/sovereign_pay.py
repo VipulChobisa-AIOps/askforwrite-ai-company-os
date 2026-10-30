@@ -852,14 +852,18 @@ def verify_sovereign_payment(
         raise ValueError(f"Unsupported settlement rail: '{rail}'. Must be upi_direct, web3_usdc, or bank_wire_direct.")
 
     # Replay protection: reject proof_reference if already used by another session
-    replayed_session = (
-        db.query(SovereignPaymentSessionRecord)
-        .filter(
-            SovereignPaymentSessionRecord.verification_proof == clean_proof,
-            SovereignPaymentSessionRecord.session_id != session_id,
-        )
-        .first()
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    replay_query = db.query(SovereignPaymentSessionRecord).filter(
+        SovereignPaymentSessionRecord.verification_proof == clean_proof,
+        SovereignPaymentSessionRecord.session_id != session_id,
     )
+    if app_env != "production":
+        with _SESSION_LOCK:
+            active_session_ids = list(SOVEREIGN_PAY_SESSIONS.keys())
+        replay_query = replay_query.filter(
+            SovereignPaymentSessionRecord.session_id.in_(active_session_ids)
+        )
+    replayed_session = replay_query.first()
     if replayed_session:
         raise ValueError(
             f"Duplicate payment proof reference '{clean_proof}' has already been submitted for another session."
@@ -894,7 +898,6 @@ def verify_sovereign_payment(
         verification_mode = "BANK_WIRE_REFERENCE_VALIDATED"
 
     # 2. Fraud-Proof Human-in-the-Loop Gating for UPI, Bank Wire, and unconfirmed production Web3 hashes
-    app_env = os.getenv("APP_ENV", "development").strip().lower()
     requires_owner_gate = clean_rail in ("upi_direct", "bank_wire_direct") or (
         clean_rail == "web3_usdc"
         and app_env == "production"
@@ -936,7 +939,7 @@ def verify_sovereign_payment(
         else:
             approval = ApprovalRequest(
                 id=str(uuid.uuid4()),
-                task_id=session.session_id[:36],
+                task_id=f"sovereign_pay_{session.session_id}",
                 lead_id=None,
                 proposal_id=None,
                 action="sovereign_payment_verification",
@@ -1186,7 +1189,11 @@ def confirm_sovereign_payment_by_owner(
     # 3. Update ApprovalRequest record
     approval = (
         db.query(ApprovalRequest)
-        .filter_by(task_id=session.session_id[:36])
+        .filter(
+            ApprovalRequest.task_id.in_(
+                [f"sovereign_pay_{session.session_id}", session.session_id[:36]]
+            )
+        )
         .first()
     )
     if approval:

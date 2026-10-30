@@ -273,25 +273,45 @@ def record_outreach_reply_endpoint(
             "lead_status": lead.status,
         }
 
+    if record.status not in ("SENT", "REPLIED"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot record prospect reply for outreach in status '{record.status}'; outreach must be SENT first.",
+        )
+
     record.status = "REPLIED"
     lead.status = "QUALIFIED"
     lead.last_checked = datetime.now(UTC)
     db.flush()
 
     from app.services.catalog import build_payment_link
-    from app.services.sales import execute_sales_capture
+    from app.services.sales import SalesConflict, execute_sales_capture
 
-    sales_result = execute_sales_capture(
-        db=db,
-        lead_id=lead.id,
-        conversation_notes=payload.reply_text,
-        channel=payload.channel,
-        idempotency_key=f"reply-sales-{outreach_id}-{hash(payload.reply_text) & 0xFFFFFFFF:x}",
-        correlation_id=correlation_id,
-        agent_id=principal.subject,
+    try:
+        sales_result = execute_sales_capture(
+            db=db,
+            lead_id=lead.id,
+            conversation_notes=payload.reply_text,
+            channel=payload.channel,
+            idempotency_key=f"reply-sales-{outreach_id}-{hash(payload.reply_text) & 0xFFFFFFFF:x}",
+            correlation_id=correlation_id,
+            agent_id=principal.subject,
+        )
+    except SalesConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        sales_result = {
+            "status": "QUALIFIED",
+            "conversation_notes": payload.reply_text,
+            "note": str(exc),
+        }
+
+    pkg_key = (
+        getattr(record, "package_key", None)
+        or (record.metadata_json or {}).get("package_key")
+        or lead.product_match
+        or "company_os_starter"
     )
-
-    pkg_key = record.package_key or lead.product_match or "company_os_starter"
     checkout_url = build_payment_link(
         package_key=pkg_key,
         customer_email=record.recipient_email,

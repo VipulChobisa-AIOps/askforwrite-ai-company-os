@@ -188,7 +188,20 @@ def audit_domain_endpoint(
     audience = payload.target_audience or f"Customers and partners of {comp_name}"
     kws = payload.target_keywords or payload.keywords or [f"{comp_name} services", "commercial growth automation"]
 
+    from app.agents.sources import is_safe_public_url
+
+    if not is_safe_public_url(audit_url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsafe or private/internal URL blocked by SSRF security policy.",
+        )
+
     audit_result = audit_live_website_seo_geo(website_url=audit_url)
+    if audit_result.get("audit_status") == "BLOCKED_SSRF":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsafe or private/internal URL blocked by SSRF security policy.",
+        )
 
     blog_prescription = generate_and_stage_blog(
         product_name=comp_name,

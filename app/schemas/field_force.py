@@ -219,6 +219,17 @@ class ConveyanceClaimSubmitRequest(BaseModel):
     notes: str | None = Field(default=None)
 
 
+class ConveyanceClaimCreate(BaseModel):
+    user_id: str = Field(min_length=1, max_length=36)
+    date: str = Field(description="YYYY-MM-DD")
+    distance_km: float = Field(gt=0.0)
+    vehicle_type: str = Field(default="bike")
+    purpose: str = Field(min_length=3)
+    start_odometer_reading: float | None = Field(default=None)
+    end_odometer_reading: float | None = Field(default=None)
+    receipt_photo_url: str | None = Field(default=None)
+
+
 class ConveyanceClaimResponse(BaseModel):
     id: str
     org_id: str | None
@@ -237,5 +248,6 @@ class ConveyanceClaimResponse(BaseModel):
     discrepancy_flags: list[str]
     trust_block_hash: str | None
     created_at: datetime
+
 
 

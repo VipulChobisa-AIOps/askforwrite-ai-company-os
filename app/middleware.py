@@ -252,7 +252,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         is_approval_decision = (
             "/v1/approvals/" in path
-            and path.endswith("/decision")
+            and path.endswith(("/decision", "/decide"))
             and request.method == "POST"
         )
         is_auth_endpoint = (

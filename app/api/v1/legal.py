@@ -411,7 +411,11 @@ def get_msme_declaration(
             f"Effective: {MSME_DECLARATION['effective_date']}",
             "",
             "Statutory Protections:",
-            *(f"- {item}" for item in MSME_DECLARATION["statutory_protections"]),
+            *(
+                [f"- {MSME_DECLARATION['statutory_protections']}"]
+                if isinstance(MSME_DECLARATION["statutory_protections"], str)
+                else [f"- {item}" for item in MSME_DECLARATION["statutory_protections"]]
+            ),
             "",
             MSME_DECLARATION["copyright"],
         ]

@@ -173,24 +173,44 @@ def mobile_check_in(
     user: UserRecord = Depends(get_mobile_user),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Records real-time GPS attendance directly from the mobile app."""
-    from app.schemas.field_force import AttendanceCheckInRequest
-    from app.services.field_presence import record_attendance_checkin
+    """Records real-time GPS attendance (check-in or check-out) directly from the mobile app."""
+    from app.schemas.field_force import AttendanceCheckInRequest, AttendanceCheckOutRequest
+    from app.services.field_presence import record_attendance_checkin, record_attendance_checkout
 
-    check_req = AttendanceCheckInRequest(
-        user_id=user.id,
-        latitude=req.latitude,
-        longitude=req.longitude,
-        accuracy_meters=req.accuracy_meters,
-        device_fingerprint=f"mobile-{user.id[:8]}-device",
-        is_mock_provider=req.mock_provider_detected,
-        geofence_id=req.geofence_id,
-        idempotency_key=str(uuid.uuid4()),
-    )
+    clean_type = (req.check_type or "check_in").strip().lower()
+    if clean_type not in ("check_in", "check_out"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid check_type. Must be 'check_in' or 'check_out'.",
+        )
 
-    rec = record_attendance_checkin(db, org_id=user.org_id, req=check_req)
+    if clean_type == "check_out":
+        checkout_req = AttendanceCheckOutRequest(
+            user_id=user.id,
+            latitude=req.latitude,
+            longitude=req.longitude,
+            accuracy_meters=req.accuracy_meters,
+            device_fingerprint=f"mobile-{user.id[:8]}-device",
+            is_mock_provider=req.mock_provider_detected,
+            idempotency_key=str(uuid.uuid4()),
+        )
+        rec = record_attendance_checkout(db, org_id=user.org_id, req=checkout_req)
+    else:
+        checkin_req = AttendanceCheckInRequest(
+            user_id=user.id,
+            latitude=req.latitude,
+            longitude=req.longitude,
+            accuracy_meters=req.accuracy_meters,
+            device_fingerprint=f"mobile-{user.id[:8]}-device",
+            is_mock_provider=req.mock_provider_detected,
+            geofence_id=req.geofence_id,
+            idempotency_key=str(uuid.uuid4()),
+        )
+        rec = record_attendance_checkin(db, org_id=user.org_id, req=checkin_req)
+
     return {
         "status": rec.status,
+        "check_type": clean_type,
         "attendance_id": rec.id,
         "event_type": rec.event_type,
         "timestamp": rec.timestamp.isoformat() if rec.timestamp else None,
@@ -283,10 +303,12 @@ def mobile_submit_conveyance(
     return {
         "status": "submitted",
         "claim_id": claim.id,
-        "amount": claim.amount,
-        "currency": claim.currency,
-        "approval_status": claim.approval_status,
-        "fraud_flag": claim.fraud_flag,
+        "agent_id": claim.user_id,
+        "distance_km": claim.verified_road_distance_km,
+        "amount": claim.grand_total_amount,
+        "currency": "INR",
+        "approval_status": claim.status,
+        "fraud_flag": bool(claim.discrepancy_flags),
         "trust_block_hash": claim.trust_block_hash,
     }
 

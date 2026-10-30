@@ -82,10 +82,7 @@ class RazorpayProvider(PaymentProviderInterface):
     def __init__(self) -> None:
         self._key_id = os.environ.get("RAZORPAY_KEY_ID", "")
         self._key_secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
-        self._webhook_secret = os.environ.get(
-            "RAZORPAY_WEBHOOK_SECRET",
-            self._key_secret,  # Fallback to key secret for webhook verification
-        )
+        self._webhook_secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or self._key_secret
         if not self._key_id:
             logger.warning("RAZORPAY_KEY_ID is not configured")
 
@@ -307,15 +304,28 @@ class RazorpayProvider(PaymentProviderInterface):
         headers: dict[str, str],
     ) -> bool:
         signature = headers.get("x-razorpay-signature", "")
-        if not signature or not self._webhook_secret:
+        candidate_secrets = [
+            s
+            for s in (
+                os.environ.get("RAZORPAY_WEBHOOK_SECRET", ""),
+                self._webhook_secret,
+                os.environ.get("RAZORPAY_KEY_SECRET", ""),
+                self._key_secret,
+            )
+            if s
+        ]
+        if not signature or not candidate_secrets:
             return False
 
-        expected = hmac.new(
-            self._webhook_secret.encode("utf-8"),
-            payload,
-            hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        for secret in dict.fromkeys(candidate_secrets):
+            expected = hmac.new(
+                secret.encode("utf-8"),
+                payload,
+                hashlib.sha256,
+            ).hexdigest()
+            if hmac.compare_digest(expected, signature):
+                return True
+        return False
 
     async def parse_webhook_event(
         self,

@@ -201,6 +201,86 @@ def submit_conveyance_and_expense_claim(
     return claim
 
 
+def submit_conveyance_claim(
+    db: Session,
+    req: Any,
+    org_id: str | None = None,
+) -> ConveyanceClaimRecord:
+    """Submits a direct mobile conveyance claim with odometer and rate policy checks."""
+    vtype_raw = getattr(req, "vehicle_type", "bike").strip().lower()
+    if vtype_raw in ("car", "four_wheeler", "4w"):
+        transport_mode = "FOUR_WHEELER"
+    elif vtype_raw in ("public_transit", "bus", "metro", "train"):
+        transport_mode = "PUBLIC_TRANSIT"
+    else:
+        transport_mode = "TWO_WHEELER"
+
+    rate = RATE_PER_KM.get(transport_mode, 4.50)
+    raw_km = round(float(req.distance_km), 2)
+    discrepancy_flags: list[str] = []
+
+    start_odo = getattr(req, "start_odometer_reading", None)
+    end_odo = getattr(req, "end_odometer_reading", None)
+    if start_odo is not None and end_odo is not None:
+        odo_diff = round(float(end_odo) - float(start_odo), 2)
+        if odo_diff < 0 or abs(odo_diff - raw_km) > max(5.0, raw_km * 0.25):
+            discrepancy_flags.append(f"ODOMETER_MISMATCH: claimed {raw_km}km vs odometer {odo_diff}km")
+
+    if raw_km > 250.0:
+        discrepancy_flags.append(f"EXCESSIVE_DAILY_DISTANCE: {raw_km}km")
+
+    conveyance_amt = round(raw_km * rate, 2)
+    claim_id = str(uuid.uuid4())
+    status = "AUTO_APPROVED" if (not discrepancy_flags and conveyance_amt <= DAILY_AUTO_APPROVE_LIMIT) else "FLAGGED_FOR_REVIEW"
+
+    trust_block_hash = None
+    if status == "AUTO_APPROVED":
+        try:
+            sealed_block = seal_task_to_block(
+                db=db,
+                task_id=claim_id,
+                capability_name="conveyance_settlement",
+                action="mobile_conveyance_claim_settled",
+                payload={
+                    "claim_id": claim_id,
+                    "user_id": req.user_id,
+                    "claim_date": req.date,
+                    "road_distance_km": raw_km,
+                    "grand_total": conveyance_amt,
+                    "status": status,
+                },
+                sealed_by="AFW-EXPENSE-SETTLEMENT-ENGINE",
+                commit=False,
+            )
+            trust_block_hash = sealed_block.block_hash
+        except Exception:
+            pass
+
+    claim = ConveyanceClaimRecord(
+        id=claim_id,
+        org_id=org_id,
+        user_id=req.user_id,
+        claim_date=req.date,
+        transport_mode=transport_mode,
+        raw_gps_distance_km=raw_km,
+        verified_road_distance_km=raw_km,
+        jitter_filtered_km=0.0,
+        rate_per_km=rate,
+        total_conveyance_amount=conveyance_amt,
+        total_expenses_amount=0.0,
+        grand_total_amount=conveyance_amt,
+        receipt_count=1 if getattr(req, "receipt_photo_url", None) else 0,
+        status=status,
+        discrepancy_flags=discrepancy_flags,
+        trust_block_hash=trust_block_hash,
+        metadata_json={"purpose": getattr(req, "purpose", "")},
+    )
+    db.add(claim)
+    db.commit()
+    db.refresh(claim)
+    return claim
+
+
 def list_conveyance_claims(
     db: Session,
     org_id: str | None,
@@ -215,3 +295,4 @@ def list_conveyance_claims(
         query = query.filter(ConveyanceClaimRecord.user_id == user_id)
 
     return query.order_by(ConveyanceClaimRecord.created_at.desc()).limit(limit).all()
+

@@ -570,14 +570,16 @@ def use_tenant_service(
 
     elif service_key in ("growth_all_in_one", "growth_suite"):
         from app.services.growth_engine import execute_unified_growth_run
+        prod_name = input_payload.get("product_name") or input_payload.get("product_or_service") or org.name
         exec_result = execute_unified_growth_run(
             db=db,
-            product_name=input_payload.get("product_name", org.name),
+            client_name=input_payload.get("client_name", org.name),
+            product_or_service=prod_name,
             target_audience=input_payload.get("target_audience", "B2B Enterprise Buyers"),
             keywords=input_payload.get("keywords", [org.name, "AI Operations", "Growth"]),
-            brand_voice=input_payload.get("brand_voice", "authoritative, modern"),
-            target_network=input_payload.get("target_network", "askforwrite.com"),
-            org_id=org.id,
+            correlation_id=str(uuid.uuid4()),
+            agent_id=user.email,
+            idempotency_key=f"portal-growth-{uuid.uuid4()}",
         )
 
     elif service_key in ("trust_engine", "trust_ledger"):

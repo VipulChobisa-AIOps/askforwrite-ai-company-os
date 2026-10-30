@@ -18,7 +18,7 @@ from app.agents.revenue_agent import (
     diagnose_lead_opportunity,
 )
 from app.db.database import get_db
-from app.db.models import LeadRecordRow
+from app.db.models import LeadRecordRow, OrganizationRecord
 from app.schemas.catalog import (
     CatalogListResponse,
     DiagnoseRequest,
@@ -108,7 +108,7 @@ def pitch_lead_endpoint(
         draft = draft_outreach(
             db=db,
             lead_id=payload.lead_id,
-            org_id=payload.org_id,
+            org_id=payload.org_id or principal.org_id or lead.org_id,
             recipient_email=payload.recipient_email,
             recipient_name=payload.recipient_name,
             custom_notes=None,
@@ -117,6 +117,13 @@ def pitch_lead_endpoint(
             correlation_id=correlation_id,
             requested_by=principal.subject,
         )
+
+        target_org_id = payload.org_id or principal.org_id or lead.org_id
+        if target_org_id:
+            target_org = db.get(OrganizationRecord, target_org_id)
+            if target_org:
+                target_org.outreach_credits_used += 1
+                db.commit()
 
         pkg_key = draft.get("package_key") or "company_os_starter"
         pkg = get_package(pkg_key) or CATALOG["company_os_starter"]

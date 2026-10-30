@@ -314,6 +314,12 @@ def sitemap_xml() -> Response:
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         '  <url><loc>https://os.askforwrite.com/dashboard/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services/warehouse-automation</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services/field-force</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services/produce-quality-ai</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services/urban-mobility-ai</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
+        '  <url><loc>https://os.askforwrite.com/services/seo-blog-copilot</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
         '  <url><loc>https://os.askforwrite.com/solutions</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
         '  <url><loc>https://os.askforwrite.com/solutions/warehouse-automation</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
         '  <url><loc>https://os.askforwrite.com/solutions/field-force</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
@@ -355,6 +361,7 @@ def llms_txt() -> PlainTextResponse:
         "- AskforWrite Company OS Bundles (`company_os_starter`, `company_os_pro`, `company_os_enterprise`, `all_access`): INR 7,999 to INR 49,999/mo.\n\n"
         "## Public Machine-Readable Endpoints\n"
         "- Commercial Catalog JSON: https://os.askforwrite.com/v1/revenue/catalog\n"
+        "- Interactive Service Pages Hub: https://os.askforwrite.com/services\n"
         "- Free 60-Second Website SEO/GEO Opportunity Scan: POST https://os.askforwrite.com/v1/previews/scan\n"
         "- Terms of Service: https://os.askforwrite.com/legal/tos\n"
         "- Privacy Policy & BYOK Data Protection: https://os.askforwrite.com/legal/privacy\n"

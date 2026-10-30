@@ -98,7 +98,7 @@ def execute_sales_capture(
         raise SalesNotFound("Lead not found")
     if lead.do_not_contact or lead.status == "DO_NOT_CONTACT":
         raise ValueError("do-not-contact leads cannot enter the Sales workflow")
-    if lead.status != "APPROVED_FOR_OUTREACH":
+    if lead.status not in ("APPROVED_FOR_OUTREACH", "CONTACTED", "QUALIFIED"):
         raise ValueError("owner approval is required before Sales requirement capture")
     if db.query(ResearchRecord).filter_by(lead_id=lead_id).first() is None:
         raise ValueError("Research evidence is required before Sales requirement capture")

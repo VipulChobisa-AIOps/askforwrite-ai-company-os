@@ -490,15 +490,24 @@ def generate_omnichannel_social_campaign(
 
 def execute_unified_growth_run(
     db: Session,
-    client_name: str,
-    product_or_service: str,
-    target_audience: str,
-    keywords: list[str],
-    correlation_id: str,
-    agent_id: str,
-    idempotency_key: str,
+    client_name: str = "Enterprise Client",
+    product_or_service: str | None = None,
+    target_audience: str = "B2B Enterprise Buyers",
+    keywords: list[str] | None = None,
+    correlation_id: str | None = None,
+    agent_id: str = "growth_engine",
+    idempotency_key: str | None = None,
+    *,
+    product_name: str | None = None,
+    brand_voice: str | None = None,
+    target_network: str | None = None,
+    org_id: str | None = None,
 ) -> dict[str, Any]:
     """Execute unified Growth Suite generation: Creative Visuals + SEO Blog + Omnichannel Ads + Closer setup."""
+    product_or_service = product_or_service or product_name or client_name
+    keywords = keywords or [product_or_service, "AI Operations", "Growth"]
+    correlation_id = correlation_id or str(uuid.uuid4())
+    idempotency_key = idempotency_key or f"growth-run-{uuid.uuid4()}"
     req_hash = hashlib.sha256(
         json.dumps(
             {

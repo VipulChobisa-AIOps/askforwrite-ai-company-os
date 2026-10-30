@@ -180,6 +180,7 @@ def _verification_meta_tags() -> str:
 
 
 @router.get("/solutions", response_class=HTMLResponse)
+@router.get("/services", response_class=HTMLResponse)
 def solutions_hub_page() -> HTMLResponse:
     """Indexable SSR hub page for all AskforWrite AI Company OS vertical solutions."""
     base_url = "https://os.askforwrite.com"
@@ -280,6 +281,7 @@ def solutions_hub_page() -> HTMLResponse:
 
 
 @router.get("/solutions/{slug}", response_class=HTMLResponse)
+@router.get("/services/{slug}", response_class=HTMLResponse)
 def solution_detail_page(slug: str) -> HTMLResponse:
     """Dedicated SSR indexable landing page for a specific vertical SKU."""
     data = _resolve_sku_data(slug)
