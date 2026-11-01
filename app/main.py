@@ -1,5 +1,6 @@
 """FastAPI development surface for the first offline MVP capability."""
 
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ from app.api.v1.scheduler import router as scheduler_router
 from app.api.v1.sovereign_pay import router as sovereign_pay_router
 from app.api.v1.solutions_pages import router as solutions_router
 from app.api.v1.service_pages import router as service_pages_router
+from app.api.v1.neon_api import router as neon_router
 from app.api.v1.subscriptions import router as subscriptions_router
 from app.api.v1.watchdog import router as watchdog_router
 from app.api.v1.webhooks import router as webhooks_router
@@ -188,6 +190,7 @@ app.include_router(scheduler_router)
 app.include_router(sovereign_pay_router)
 app.include_router(solutions_router)
 app.include_router(service_pages_router)
+app.include_router(neon_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
@@ -206,13 +209,16 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     except Exception:
         db_status = "degraded"
 
-    return {
+    data: dict[str, str] = {
         "status": "healthy",
         "service": "AskforWrite AI Company OS",
         "version": "0.2.0",
         "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if os.environ.get("NEON_BRANCH"):
+        data["neon_branch"] = os.environ.get("NEON_BRANCH", "")
+    return data
 
 
 @app.get("/", include_in_schema=False)

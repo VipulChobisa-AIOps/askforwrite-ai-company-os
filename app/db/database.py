@@ -44,7 +44,8 @@ else:
     _connect_args = {}
     # Enforce SSL in production
     if APP_ENV != "development":
-        _connect_args["options"] = "-c statement_timeout=30000"  # 30s query timeout
+        if "-pooler" not in DATABASE_URL:
+            _connect_args["options"] = "-c statement_timeout=30000"  # 30s query timeout
     _engine_kwargs = {
         "connect_args": _connect_args,
         "pool_pre_ping": True,
@@ -68,4 +69,4 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield session
     finally:
-        session.close()
+        session.close()

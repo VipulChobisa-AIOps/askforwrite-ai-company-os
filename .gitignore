@@ -48,3 +48,9 @@ logs/
 .DS_Store
 Thumbs.db
 scratch/
+.neon
+node_modules/
+
+# Neon CLI state and Node modules
+.neon/
+node_modules/
