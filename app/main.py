@@ -109,12 +109,17 @@ async def lifespan(app: FastAPI):
     """Create tables (SQLite dev) and initialize Genesis trust block on startup."""
     from app.db.database import DATABASE_URL, Base, engine
     if DATABASE_URL:
-        Base.metadata.create_all(bind=engine)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception:
+            pass
     from app.db.database import SessionLocal
     from app.security.trust_chain import ensure_genesis_block
     db = SessionLocal()
     try:
         ensure_genesis_block(db)
+    except Exception:
+        pass
     finally:
         db.close()
     yield

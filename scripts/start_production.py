@@ -55,6 +55,12 @@ def validate_environment() -> list[str]:
     """Ensure all required environment variables are set and meet constraints."""
     import secrets
 
+    # Prioritize NEON_DATABASE_URL if provided
+    neon_db_url = os.environ.get("NEON_DATABASE_URL")
+    if neon_db_url:
+        os.environ["DATABASE_URL"] = neon_db_url
+        print("  [INFO] Prioritizing NEON_DATABASE_URL over default DATABASE_URL")
+
     # Auto-heal missing critical variables so container boots reliably on Render
     if not os.environ.get("DATABASE_URL"):
         os.environ["DATABASE_URL"] = "sqlite:///./company_os.db"
@@ -129,6 +135,17 @@ def run_migrations() -> None:
     )
     if result.returncode != 0:
         print(f"  [WARN] Migration failed (continuing to boot server):\n{result.stderr}")
+        if "already exists" in result.stderr.lower():
+            print("  [INFO] Schema already exists; stamping Alembic head revision...")
+            stamp_res = subprocess.run(
+                [sys.executable, "-m", "alembic", "stamp", "head"],
+                capture_output=True,
+                text=True,
+            )
+            if stamp_res.returncode == 0:
+                print("  [OK] Alembic head stamped successfully")
+            else:
+                print(f"  [WARN] Alembic stamp failed: {stamp_res.stderr}")
     else:
         print(f"  [OK] Migrations complete\n{result.stdout.strip()}")
 

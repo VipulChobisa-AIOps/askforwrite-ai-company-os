@@ -11,6 +11,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.models import TrustBlock
@@ -95,13 +96,21 @@ def ensure_genesis_block(db: Session) -> TrustBlock:
         sealed_by="AFW-COMPANY-OS-GENESIS",
     )
 
-    db.add(genesis_block)
-    db.commit()
-    db.refresh(genesis_block)
-    logger.info(
-        f"Genesis Block sealed: index=0 hash={block_hash[:16]}...{block_hash[-8:]}"
-    )
-    return genesis_block
+    try:
+        db.add(genesis_block)
+        db.commit()
+        db.refresh(genesis_block)
+        logger.info(
+            f"Genesis Block sealed: index=0 hash={block_hash[:16]}...{block_hash[-8:]}"
+        )
+        return genesis_block
+    except IntegrityError:
+        db.rollback()
+        existing = db.query(TrustBlock).filter(TrustBlock.index == 0).first()
+        if existing:
+            logger.info("Genesis block was sealed by concurrent worker process.")
+            return existing
+        raise
 
 
 def seal_task_to_block(
