@@ -6,14 +6,6 @@
 
 version: "1"
 
-databases:
-  - name: askforwrite-db
-    databaseName: company_os
-    user: afw_admin
-    plan: free
-    region: singapore
-    ipAllowList: [] # Allow internal connections from services in the same region
-
 services:
   - type: web
     name: askforwrite-ai-company-os
@@ -26,9 +18,9 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: askforwrite-db
-          property: connectionString
+        sync: false
+      - key: NEON_DATABASE_URL
+        sync: false
       - key: MANAGER_API_KEY
         generateValue: true
       - key: OWNER_API_KEY

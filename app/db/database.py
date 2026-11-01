@@ -12,7 +12,10 @@ if "pytest" not in sys.modules and "unittest" not in sys.modules:
     load_dotenv()
 
 APP_ENV = os.environ.get("APP_ENV", "development").casefold()
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./company_os.db")
+DATABASE_URL = (
+    os.environ.get("NEON_DATABASE_URL")
+    or os.environ.get("DATABASE_URL", "sqlite:///./company_os.db")
+)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg://"):
