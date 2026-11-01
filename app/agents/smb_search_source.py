@@ -531,7 +531,7 @@ def is_valid_commercial_domain(domain: str) -> bool:
         return False
     if d.endswith((".example", ".test", ".invalid", ".local")):
         return False
-    if d in ("localhost", "0.0.0.0", "127.0.0.1", "::1", "169.254.169.254"):
+    if d in ("localhost", "0.0.0.0", "127.0.0.1", "::1", "169.254.169.254"):  # nosec B104
         return False
     return True
 

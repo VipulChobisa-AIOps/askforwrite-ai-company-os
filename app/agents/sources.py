@@ -261,7 +261,7 @@ def is_safe_public_url(url: str) -> bool:
         host = (parsed.hostname or "").strip().lower()
         if not host:
             return False
-        if host in ("localhost", "0.0.0.0", "metadata.google.internal") or host.endswith(
+        if host in ("localhost", "0.0.0.0", "metadata.google.internal") or host.endswith(  # nosec B104
             (".local", ".internal", ".localhost")
         ):
             return False

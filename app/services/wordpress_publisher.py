@@ -119,7 +119,7 @@ def publish_seo_draft_to_wordpress(
     wp_app_password = os.getenv("WP_APP_PASSWORD")
 
     mode = "WORDPRESS_SIMULATED_REST"
-    post_id = int(hashlib.md5(f"{draft.id}-{network}".encode()).hexdigest()[:6], 16)
+    post_id = int(hashlib.sha256(f"{draft.id}-{network}".encode()).hexdigest()[:6], 16)
 
     if wp_site_url and wp_username and wp_app_password:
         try:
