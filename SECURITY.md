@@ -7,7 +7,7 @@ ASKFORWRITE and the **AskforWrite AI Company OS** maintain a zero-tolerance poli
 If you discover a vulnerability or security flaw, **please DO NOT create a public issue, pull request, or discussion thread.**
 
 ### Responsible Disclosure Channel
-- **Email:** [security@askforwrite.in](mailto:security@askforwrite.in)
+- **Email:** [info@askforwrite.in](mailto:info@askforwrite.in)
 - **Subject Line:** `[VULNERABILITY REPORT] <Short Description>`
 - **Response SLA:** Acknowledgment within 24 hours; initial assessment and triage within 72 hours.
 - **Entity Identity:** Formally registered Indian Micro Enterprise under the MSMED Act, 2006 (Udyam Registration: `UDYAM-RJ-14-0018404`).
