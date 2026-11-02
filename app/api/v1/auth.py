@@ -9,6 +9,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import uuid
 from typing import Literal
@@ -277,9 +278,15 @@ def signup_customer(payload: SignupRequest, db: Session = Depends(get_db)) -> Si
         "category": pkg.category,
         "entitled_capabilities": list(pkg.entitled_capabilities),
         "payment_provider": payload.payment_provider,
+        "subscription_status": "ACTIVE" if (pkg.price_inr == 0) else "PENDING_PAYMENT",
     }
     if payload.gemini_api_key and payload.gemini_api_key.strip():
         meta["gemini_api_key"] = payload.gemini_api_key.strip()
+
+    # In production, organizations require verified payment before activation unless price is 0
+    app_env = os.environ.get("APP_ENV", "development").casefold()
+    is_active_initial = True if app_env != "production" else (pkg.price_inr == 0 and pkg.price_usd == 0)
+
     org = OrganizationRecord(
         name=payload.company_name.strip(),
         slug=slug,
@@ -288,7 +295,7 @@ def signup_customer(payload: SignupRequest, db: Session = Depends(get_db)) -> Si
         lead_credits_used=0,
         outreach_credits_limit=pkg.outreach_credits_monthly,
         outreach_credits_used=0,
-        is_active=True,
+        is_active=is_active_initial,
         metadata_json=meta,
     )
     db.add(org)

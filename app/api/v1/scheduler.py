@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, require_platform_manager
 from app.services.shift_scheduler import (
     get_ceo_daily_briefing,
     get_scheduler_status,
@@ -41,7 +41,7 @@ def run_shift_endpoint(
     payload: ShiftRunRequest | None = None,
     shift_type: str | None = Query(default=None),
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute an autonomous AI employee shift (SDR Discovery + Trojan-Horse Previews + SEO Staging + Fulfillment + Watchdog)."""
@@ -64,7 +64,7 @@ def run_shift_endpoint(
 
 @router.get("/briefing", status_code=status.HTTP_200_OK)
 def get_briefing_endpoint(
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Retrieve the unified CEO Daily Executive Briefing for Vipul (L0 Owner)."""
@@ -80,7 +80,7 @@ def get_briefing_endpoint(
 
 @router.get("/status", status_code=status.HTTP_200_OK)
 def get_scheduler_status_endpoint(
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Retrieve operational status, last shift execution, and AI employee roster."""

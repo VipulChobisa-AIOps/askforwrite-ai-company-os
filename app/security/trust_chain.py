@@ -1,7 +1,7 @@
-"""Cryptographic SHA-256 Merkle Ledger and Trust Chain.
+"""Cryptographic SHA-256 Linear Hash-Chain Ledger with NIST P-256 ECDSA Digital Signatures.
 
 Ported from AFW 2030 Autonomous Trust Engine for AskforWrite AI Company OS.
-Provides tamper-evident block sealing, SHA-256 hash chaining,
+Provides tamper-evident sequential block sealing, SHA-256 linear hash-chaining,
 and ECDSA NIST P-256 digital signature verification for completed TaskRecords.
 """
 
@@ -129,7 +129,13 @@ def seal_task_to_block(
     ensure_genesis_block(db)
     task_id = str(task_id)[:36]
 
-    tip = db.query(TrustBlock).order_by(TrustBlock.index.desc()).first()
+    # Acquire row lock on the chain tip where supported (PostgreSQL SELECT ... FOR UPDATE)
+    tip_query = db.query(TrustBlock).order_by(TrustBlock.index.desc())
+    try:
+        tip = tip_query.with_for_update().first()
+    except Exception:
+        tip = tip_query.first()
+
     new_index = tip.index + 1
     prev_hash = tip.block_hash
 
@@ -168,8 +174,24 @@ def seal_task_to_block(
 
     db.add(block)
     if commit:
-        db.commit()
-        db.refresh(block)
+        try:
+            db.commit()
+            db.refresh(block)
+        except IntegrityError:
+            db.rollback()
+            # If concurrent process committed a block, advance index to latest tip and re-seal
+            latest_tip = db.query(TrustBlock).order_by(TrustBlock.index.desc()).first()
+            new_index = latest_tip.index + 1
+            prev_hash = latest_tip.block_hash
+            block_hash = compute_block_hash(new_index, timestamp_str, prev_hash, payload_hash)
+            signature = sign_block(block_hash)
+            block.index = new_index
+            block.prev_hash = prev_hash
+            block.block_hash = block_hash
+            block.signature = signature
+            db.add(block)
+            db.commit()
+            db.refresh(block)
     else:
         db.flush()
     logger.info(

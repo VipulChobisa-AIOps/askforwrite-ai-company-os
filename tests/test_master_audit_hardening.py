@@ -476,7 +476,8 @@ class MasterAuditHardeningTests(unittest.TestCase):
         )
         cust_headers = {"Authorization": f"Bearer {customer_token}"}
 
-        for svc_key in ("warehouse_automation", "seo_blog_copilot", "trust_engine"):
+        # Entitled services under warehouse_automation package
+        for svc_key in ("warehouse_automation", "trust_engine"):
             svc_resp = self.client.post(
                 "/v1/me/use-service",
                 headers=cust_headers,
@@ -484,6 +485,14 @@ class MasterAuditHardeningTests(unittest.TestCase):
             )
             self.assertEqual(svc_resp.status_code, 200, f"Failed executing {svc_key}: {svc_resp.text}")
             self.assertEqual(svc_resp.json()["status"], "COMPLETED")
+
+        # Verify unentitled service is strictly rejected with 403 Forbidden
+        unentitled_resp = self.client.post(
+            "/v1/me/use-service",
+            headers=cust_headers,
+            json={"service_key": "seo_blog_copilot", "payload": {}},
+        )
+        self.assertEqual(unentitled_resp.status_code, 403)
 
         # 7. Verify Cryptographic Trust Chain Integrity
         chain = verify_chain_integrity(self.db)

@@ -413,6 +413,45 @@ def change_my_password(
     return {"status": "password_updated", "message": "Your password has been changed successfully."}
 
 
+def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str | None = None) -> bool:
+    """Validate whether the tenant's purchased plan includes the requested modular service."""
+    if pkg_key == "all_access" or "all_access" in entitled_caps:
+        return True
+    
+    capability_mapping = {
+        "mango_quality_analytics": {"produce_quality_cv", "quality_analytics", "all_access"},
+        "quality_analytics": {"produce_quality_cv", "quality_analytics", "all_access"},
+        "quality_grading": {"produce_quality_cv", "quality_analytics", "all_access"},
+        "bike_rebalance_analytics": {"bike_mobility_ai", "mobility_analytics", "all_access"},
+        "mobility_analytics": {"bike_mobility_ai", "mobility_analytics", "all_access"},
+        "bike_rebalance": {"bike_mobility_ai", "mobility_analytics", "all_access"},
+        "warehouse_automation": {"warehouse_stocksense", "inventory_analytics", "all_access"},
+        "inventory_analytics": {"warehouse_stocksense", "inventory_analytics", "all_access"},
+        "inventory": {"warehouse_stocksense", "inventory_analytics", "all_access"},
+        "ask4_academic_order": {"ask4_custom_development", "academic_research", "all_access"},
+        "ask4": {"ask4_custom_development", "academic_research", "all_access"},
+        "academic_research": {"ask4_custom_development", "academic_research", "all_access"},
+        "pixel_ai_pack": {"pixel_ai_creative_studio", "all_access"},
+        "pixel_ai": {"pixel_ai_creative_studio", "all_access"},
+        "creative_pack": {"pixel_ai_creative_studio", "all_access"},
+        "seo_blog_copilot": {"seo_content_automation", "all_access"},
+        "seo_copilot": {"seo_content_automation", "all_access"},
+        "marketing_suite": {"marketing_campaign_suite", "all_access"},
+        "omnichannel_social": {"marketing_campaign_suite", "all_access"},
+        "growth_all_in_one": {"growth_all_in_one", "seo_content_automation", "marketing_campaign_suite", "pixel_ai_creative_studio", "inbound_sales_closer", "all_access"},
+        "growth_suite": {"growth_all_in_one", "seo_content_automation", "marketing_campaign_suite", "pixel_ai_creative_studio", "inbound_sales_closer", "all_access"},
+        "trust_engine": {"trust_ledger_audit", "all_access"},
+        "trust_ledger": {"trust_ledger_audit", "all_access"},
+    }
+    
+    clean_key = service_key.strip().lower()
+    required = capability_mapping.get(clean_key, {clean_key})
+    # If the tenant holds growth_all_in_one or company_os master bundles, they get all core modular services
+    if pkg_key in ("growth_all_in_one", "company_os_starter", "company_os_pro", "company_os_enterprise", "starter", "pro", "enterprise"):
+        return True
+    return bool(required & entitled_caps) or clean_key in entitled_caps
+
+
 @router.post(
     "/use-service",
     status_code=status.HTTP_200_OK,
@@ -444,6 +483,28 @@ def use_tenant_service(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Monthly service credit quota exhausted. Please upgrade your plan.",
         )
+
+    # Entitlement enforcement
+    meta = org.metadata_json or {}
+    pkg_key = meta.get("package_key")
+    entitled_set = set(meta.get("entitled_capabilities") or ())
+    if not entitled_set and pkg_key:
+        pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
+        if pkg:
+            entitled_set = set(pkg.entitled_capabilities)
+
+    service_key = body.service_key.strip().lower()
+    if pkg_key or entitled_set:
+        if not is_service_entitled(service_key, entitled_set, pkg_key):
+            pkg_name = pkg_key
+            if pkg_key:
+                pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
+                if pkg:
+                    pkg_name = pkg.name
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Service '{service_key}' is not entitled under your current package ({pkg_name}). Please upgrade your subscription.",
+            )
 
     # Ensure tenant's stored BYOK Gemini key is used if no header key was provided
     meta = org.metadata_json or {}

@@ -61,11 +61,19 @@ def validate_environment() -> list[str]:
         os.environ["DATABASE_URL"] = neon_db_url
         print("  [INFO] Prioritizing NEON_DATABASE_URL over default DATABASE_URL")
 
-    # Auto-heal missing critical variables so container boots reliably on Render
-    if not os.environ.get("DATABASE_URL"):
-        os.environ["DATABASE_URL"] = "sqlite:///./company_os.db"
-        os.environ["ALLOW_SQLITE_PRODUCTION"] = "true"
-        print("  [INFO] Auto-configured DATABASE_URL to SQLite production storage")
+    app_env = os.environ.get("APP_ENV", "production").casefold()
+    db_url = os.environ.get("DATABASE_URL", "")
+
+    # Strict PostgreSQL requirement in production — NO silent SQLite downgrade
+    if app_env == "production":
+        if not db_url or not db_url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
+            print("  [CRITICAL] Production environment (APP_ENV=production) strictly requires persistent PostgreSQL. Silent SQLite fallback is forbidden.")
+        else:
+            os.environ["DATABASE_URL"] = db_url
+    else:
+        if not db_url:
+            os.environ["DATABASE_URL"] = "sqlite:///./company_os.db"
+            print("  [INFO] Development/test environment: default SQLite storage enabled")
 
     if not os.environ.get("MANAGER_API_KEY") or len(os.environ.get("MANAGER_API_KEY", "")) < 32:
         os.environ["MANAGER_API_KEY"] = secrets.token_urlsafe(32)
@@ -134,7 +142,7 @@ def run_migrations() -> None:
         text=True,
     )
     if result.returncode != 0:
-        print(f"  [WARN] Migration failed (continuing to boot server):\n{result.stderr}")
+        print(f"  [WARN] Migration failed:\n{result.stderr}")
         if "already exists" in result.stderr.lower():
             print("  [INFO] Schema already exists; stamping Alembic head revision...")
             stamp_res = subprocess.run(
@@ -145,7 +153,14 @@ def run_migrations() -> None:
             if stamp_res.returncode == 0:
                 print("  [OK] Alembic head stamped successfully")
             else:
-                print(f"  [WARN] Alembic stamp failed: {stamp_res.stderr}")
+                print(f"  [ERR] Alembic stamp failed: {stamp_res.stderr}")
+                if os.environ.get("APP_ENV", "").casefold() == "production":
+                    print("  [CRITICAL] Migration stamp failed in production. Halting startup.")
+                    sys.exit(1)
+        else:
+            if os.environ.get("APP_ENV", "").casefold() == "production":
+                print("  [CRITICAL] Migration failed in production. Halting startup to prevent data corruption.")
+                sys.exit(1)
     else:
         print(f"  [OK] Migrations complete\n{result.stdout.strip()}")
 

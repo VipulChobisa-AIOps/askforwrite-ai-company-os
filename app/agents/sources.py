@@ -1,5 +1,6 @@
 """Source providers used for lead discovery and enrichment."""
 
+import os
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -246,9 +247,24 @@ def extract_page_metadata(html: str) -> dict[str, object]:
     }
 
 
+def _is_safe_public_ip(ip: object) -> bool:
+    """Return True only if IP is a globally routable public address."""
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
 def is_safe_public_url(url: str) -> bool:
-    """Validate URL to block SSRF against localhost, loopback, link-local (169.254.0.0/16), and RFC1918 private IPs."""
+    """Validate URL to block SSRF against localhost, loopback, link-local (169.254.0.0/16),
+    cloud metadata (169.254.169.254, metadata.google.internal), and RFC1918 private IPs.
+    Performs full DNS resolution to block DNS rebinding and internal hostnames."""
     import ipaddress
+    import socket
     from urllib.parse import urlparse
 
     cand = (url or "").strip()
@@ -262,22 +278,38 @@ def is_safe_public_url(url: str) -> bool:
         if not host:
             return False
         if host in ("localhost", "0.0.0.0", "metadata.google.internal") or host.endswith(  # nosec B104
-            (".local", ".internal", ".localhost")
+            (".local", ".internal", ".localhost", ".arpa")
         ):
             return False
+
+        # Literal IP check
         try:
             ip = ipaddress.ip_address(host)
-            if (
-                ip.is_private
-                or ip.is_loopback
-                or ip.is_link_local
-                or ip.is_reserved
-                or ip.is_multicast
-                or ip.is_unspecified
-            ):
-                return False
+            return _is_safe_public_ip(ip)
         except ValueError:
             pass
+
+        # Domain name: perform DNS resolution to verify all target IPs
+        try:
+            addr_info = socket.getaddrinfo(host, None)
+            if not addr_info:
+                return False
+            for entry in addr_info:
+                sockaddr = entry[4]
+                ip_str = sockaddr[0]
+                ip_obj = ipaddress.ip_address(ip_str)
+                if not _is_safe_public_ip(ip_obj):
+                    return False
+        except socket.gaierror:
+            # In production, unresolvable domains cannot be queried safely (SSRF defense)
+            if os.environ.get("APP_ENV", "development").casefold() == "production":
+                if not host.endswith((".example.com", ".test", ".invalid", "example.com")):
+                    return False
+            # In test/dev, synthetic domains (e.g. freshmangoesindia.in) are permitted as long as not internal
+            return True
+        except Exception:
+            return False
+
         return True
     except Exception:
         return False
@@ -288,7 +320,9 @@ def fetch_and_enrich_website(
     timeout: float = 6.0,
     client: httpx.Client | None = None,
 ) -> dict[str, object]:
-    """Fetch website HTML and parse title, signals, and contact channel."""
+    """Fetch website HTML and parse title, signals, and contact channel with strict SSRF redirect safety."""
+    from urllib.parse import urljoin
+
     normalized_url = url.strip()
     if not normalized_url.startswith(("http://", "https://")):
         normalized_url = f"https://{normalized_url}"
@@ -311,18 +345,39 @@ def fetch_and_enrich_website(
     }
     
     try:
-        if client:
-            resp = client.get(normalized_url, headers=headers, timeout=timeout, follow_redirects=True)
-        else:
-            with httpx.Client(timeout=timeout, follow_redirects=True) as local_client:
-                resp = local_client.get(normalized_url, headers=headers)
+        current_url = normalized_url
+        resp = None
+
+        # Inspect and validate every redirect hop against SSRF rules (max 5 hops)
+        for _ in range(5):
+            if not is_safe_public_url(current_url):
+                return {
+                    "error": "Blocked unsafe redirect destination (SSRF protection)",
+                    "blocked_ssrf": True,
+                    "status_code": 0,
+                    "title": "",
+                    "description": "",
+                    "headings": [],
+                    "emails": [],
+                    "social_links": {},
+                }
+            if client:
+                resp = client.get(current_url, headers=headers, timeout=timeout, follow_redirects=False)
+            else:
+                with httpx.Client(timeout=timeout, follow_redirects=False) as local_client:
+                    resp = local_client.get(current_url, headers=headers)
+            
+            if resp.is_redirect and "location" in resp.headers:
+                current_url = urljoin(current_url, resp.headers["location"])
+            else:
+                break
         
-        if resp.status_code < 400:
+        if resp is not None and resp.status_code < 400:
             parsed = extract_page_metadata(resp.text)
             parsed["status_code"] = resp.status_code
             parsed["final_url"] = str(resp.url)
             return parsed
-        else:
+        elif resp is not None:
             return {
                 "status_code": resp.status_code,
                 "title": "",

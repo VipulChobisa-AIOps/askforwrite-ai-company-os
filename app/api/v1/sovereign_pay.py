@@ -137,11 +137,22 @@ def get_session_status_endpoint(
     session_id: str,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Check the real-time settlement and verification status of a sovereign payment session."""
+    """Check the real-time settlement and verification status of a sovereign payment session.
+    PII (customer email, phone) is masked to prevent leakage on unauthenticated status polling."""
     session = get_sovereign_pay_session(session_id, db=db)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found")
-    return session.to_dict()
+    data = session.to_dict()
+    # Mask customer email and phone
+    raw_email = data.get("customer_email") or ""
+    if "@" in raw_email:
+        u_part, d_part = raw_email.split("@", 1)
+        masked_u = u_part[:2] + "•••" if len(u_part) > 2 else "•••"
+        data["customer_email"] = f"{masked_u}@{d_part}"
+    raw_phone = data.get("customer_phone")
+    if raw_phone:
+        data["customer_phone"] = "••••••" + raw_phone[-4:] if len(raw_phone) >= 4 else "••••"
+    return data
 
 
 def _render_checkout_html(session: Any) -> str:

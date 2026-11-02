@@ -35,6 +35,6 @@ for d in domains:
         wp = httpx.get(f"https://{d}/wp-json/", headers=headers, timeout=6.0, follow_redirects=True, verify=False)
         status_str += f" | wp-json: {wp.status_code}"
     except Exception as e:
-        status_str += f" | wp-json: FAILED"
+        status_str += " | wp-json: FAILED"
 
     print(f"[{d}] -> {status_str}")

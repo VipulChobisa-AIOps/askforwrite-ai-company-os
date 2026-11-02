@@ -670,7 +670,10 @@ def create_sovereign_pay_session(
     db: Session | None = None,
 ) -> SovereignPaySession:
     """Create a new AFW DirectPay sovereign payment session with payloads for all 3 settlement rails."""
-    pkg = get_package(package_key) or CATALOG.get(package_key) or CATALOG["growth_all_in_one"]
+    pkg = get_package(package_key) or CATALOG.get(package_key)
+    if not pkg:
+        raise ValueError(f"Invalid package_key '{package_key}'. Package does not exist in commercial catalog.")
+
     clean_curr = currency.upper().strip()
     if clean_curr not in ("INR", "USD"):
         clean_curr = "INR"
@@ -681,17 +684,22 @@ def create_sovereign_pay_session(
     email_clean = customer_email.strip().lower()
     cust_name = (customer_name or comp_clean).strip()
 
-    # 1. Rail 1: UPI Direct payload
-    merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
-    merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
-    merchant_name_encoded = quote_plus(merchant_name)
-    note = f"AFW OS {pkg.key[:20]} {comp_clean[:20]}".strip()
-    note_encoded = quote_plus(note)
-    upi_uri = (
-        f"upi://pay?pa={merchant_vpa}&pn={merchant_name_encoded}&am={amount:.2f}"
-        f"&cu=INR&tn={note_encoded}&tr={session_id}"
-    )
-    upi_qr_svg = generate_inline_qr_svg(upi_uri)
+    # 1. Rail 1: UPI Direct payload (strictly INR only — never denominated from USD figures)
+    if clean_curr == "INR":
+        merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
+        merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
+        merchant_name_encoded = quote_plus(merchant_name)
+        note = f"AFW OS {pkg.key[:20]} {comp_clean[:20]}".strip()
+        note_encoded = quote_plus(note)
+        upi_uri = (
+            f"upi://pay?pa={merchant_vpa}&pn={merchant_name_encoded}&am={amount:.2f}"
+            f"&cu=INR&tn={note_encoded}&tr={session_id}"
+        )
+        upi_qr_svg = generate_inline_qr_svg(upi_uri)
+    else:
+        # USD transactions settle via Web3 USDC or SWIFT Wire; UPI is disabled
+        upi_uri = ""
+        upi_qr_svg = ""
 
     # 2. Rail 2: Web3 USDC payload
     amount_usd = float(pkg.price_usd)

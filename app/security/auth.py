@@ -164,25 +164,67 @@ def get_current_principal(
 def require_manager(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
-    if principal.role not in {"owner", "manager", "admin"}:
-        raise HTTPException(status_code=403, detail="Manager role required")
+    """Allow Platform Operator or Tenant Administrator.
+    Tenant operations are strictly scoped by org_id within route handlers."""
+    if principal.role not in {"owner", "manager", "admin", "tenant_admin"}:
+        raise HTTPException(status_code=403, detail="Manager or administrator role required")
+    return principal
+
+
+def require_platform_manager(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Strictly require platform operator (owner or manager API key).
+    Tenant administrators and customer users are strictly forbidden from platform operations."""
+    if principal.role not in {"owner", "manager"} or principal.org_id is not None:
+        raise HTTPException(status_code=403, detail="Platform operator credentials required")
     return principal
 
 
 def require_owner(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
-    if principal.role != "owner":
-        raise HTTPException(status_code=403, detail="Owner role required")
+    """Strictly require platform owner (OWNER_API_KEY). Tenant users forbidden."""
+    if principal.role != "owner" or principal.org_id is not None:
+        raise HTTPException(status_code=403, detail="Owner role required (platform owner only)")
+    return principal
+
+
+def require_platform_owner(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Strictly require platform owner (OWNER_API_KEY). Tenant users forbidden."""
+    if principal.role != "owner" or principal.org_id is not None:
+        raise HTTPException(status_code=403, detail="Platform owner credentials required")
     return principal
 
 
 def require_admin(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
-    """Require Owner or Admin role."""
-    if principal.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Admin role required")
+    """Require Platform Owner/Manager or Tenant Administrator."""
+    if principal.role in {"owner", "manager"} and not principal.org_id:
+        return principal
+    if principal.role not in {"admin", "tenant_admin"}:
+        raise HTTPException(status_code=403, detail="Administrator role required")
+    return principal
+
+
+def require_tenant_admin(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Require Tenant Administrator role (or platform operator oversight)."""
+    if principal.role in {"owner", "manager"} and not principal.org_id:
+        return principal
+    if principal.role not in {"admin", "tenant_admin"}:
+        raise HTTPException(status_code=403, detail="Tenant administrator role required")
+    return principal
+
+
+def require_tenant_member(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Any member belonging to a tenant organization (or platform operator oversight)."""
     return principal
 
 
