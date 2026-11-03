@@ -837,15 +837,23 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         self.assertFalse(lead_candidate.do_not_contact)
 
         # 3. Ingest candidate into database
+        domain_name = lead_candidate.website.replace("https://", "").replace("http://", "").split("/")[0]
         lead_row = LeadRecordRow(
             id=str(uuid.uuid4()),
-            name=lead_candidate.company,
+            task_id=str(uuid.uuid4()),
             company=lead_candidate.company,
             website=lead_candidate.website,
-            vertical="warehouse_automation",
-            email=lead_candidate.public_contact_channel or "operations@targetlead.in",
-            status="NEW",
-            qualification_score=0.92,
+            domain=domain_name,
+            industry="warehouse_automation",
+            geography="India",
+            public_contact_channel=lead_candidate.public_contact_channel or "operations@targetlead.in",
+            recommended_next_step="Draft commercial automation proposal",
+            status="QUALIFIED",
+            fit_score=0.92,
+            confidence=0.88,
+            product_match="warehouse_automation",
+            observed_signals=["manual sorting bottlenecks"],
+            sources=["duckduckgo_search"],
         )
         self.db.add(lead_row)
         self.db.commit()
@@ -856,7 +864,7 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
             headers=self.manager_headers,
             json={
                 "lead_id": lead_row.id,
-                "recipient_email": lead_row.email,
+                "recipient_email": lead_row.public_contact_channel or "operations@targetlead.in",
                 "recipient_name": "Operations Director",
                 "idempotency_key": f"pitch-{uuid.uuid4()}",
             },
