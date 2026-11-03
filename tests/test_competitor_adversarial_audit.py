@@ -1312,13 +1312,47 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         self.assertIn("delivery_verification", data)
         self.assertIn("is_simulated", data)
 
+        # 4. Failed live WordPress REST call must NOT leave draft marked PUBLISHED
+        draft_fail = SeoDraftRecord(
+            id=f"draft-fail-{uuid.uuid4().hex[:8]}",
+            task_id=task_id,
+            target_network="askforwrite.in",
+            keywords=["fail", "test"],
+            content="# Title\nBody",
+            status="DRAFT",
+        )
+        self.db.add(draft_fail)
+        self.db.commit()
+
+        with patch.dict(
+            os.environ,
+            {
+                "WP_SITE_URL": "https://example-wordpress.com",
+                "WP_USERNAME": "test_wp_user",
+                "WP_APP_PASSWORD": "test_wp_password",
+            },
+        ), patch("httpx.post") as mock_wp_post:
+            from unittest.mock import MagicMock
+            mock_wp_post.return_value = MagicMock(status_code=500, text="Internal Server Error")
+
+            resp_fail = self.client.post(
+                f"/v1/seo/drafts/{draft_fail.id}/publish",
+                headers=self.manager_headers,
+            )
+            self.assertEqual(resp_fail.status_code, 502)
+
+        self.db.expire_all()
+        refreshed_draft = self.db.query(SeoDraftRecord).filter_by(id=draft_fail.id).first()
+        self.assertEqual(refreshed_draft.status, "PUBLISH_FAILED")
+        self.assertNotEqual(refreshed_draft.status, "PUBLISHED")
+
     # ── 20. Payment Zero Amount and Partial Refund Handling ───────────────────
 
     def test_20_payment_zero_amount_and_partial_refund_handling(self):
         """Verify that:
         A. Zero or negative amounts fail underpayment check without provisioning.
-        B. Partial refunds mark invoice partially_refunded and maintain tenant tier.
-        C. Full refund revokes paid entitlements.
+        B. Missing or zero-dollar refund does NOT revoke tenant entitlements.
+        C. Cumulative partial refunds maintain tenant tier until 100% threshold reached.
         """
         import json
         key_secret = "rzp_test_secret_for_adv_test_32ch"
@@ -1349,7 +1383,7 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
             )
             self.assertEqual(resp_zero.status_code, 200)
 
-        # B & C: Tenant with invoice undergoing partial then full refund
+        # B & C: Tenant with invoice undergoing zero-dollar refund, then partial, then full cumulative refund
         org, user, user_token = self._create_tenant_org_and_token(tier="modular_marketing")
         inv_id = f"inv_{uuid.uuid4().hex[:8]}"
         pay_id = f"pay_{uuid.uuid4().hex[:8]}"
@@ -1368,7 +1402,34 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         self.db.add(invoice)
         self.db.commit()
 
-        # Partial refund webhook: 50000 paise out of 299900 paise
+        # B1. Zero-dollar or missing amount refund event must NOT strip entitlements
+        zero_rfnd_payload = json.dumps({
+            "event": "refund.processed",
+            "payload": {
+                "refund": {
+                    "entity": {
+                        "id": f"rfnd_zero_{uuid.uuid4().hex[:6]}",
+                        "payment_id": pay_id,
+                        "amount": 0,
+                    }
+                }
+            }
+        }).encode("utf-8")
+        zero_rfnd_sig = hmac.new(key_secret.encode("utf-8"), zero_rfnd_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            resp_zero_rfnd = self.client.post(
+                "/v1/webhooks/payment",
+                content=zero_rfnd_payload,
+                headers={"x-razorpay-signature": zero_rfnd_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(resp_zero_rfnd.status_code, 200)
+
+        self.db.expire_all()
+        refreshed_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
+        self.assertEqual(refreshed_org.tier, "modular_marketing")
+
+        # C1. First partial refund: 50000 paise out of 299900 paise
         partial_payload = json.dumps({
             "event": "refund.processed",
             "payload": {
@@ -1395,12 +1456,13 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         refreshed_inv = self.db.query(InvoiceRecord).filter_by(id=inv_id).first()
         self.assertEqual(refreshed_inv.status, "partially_refunded")
         self.assertEqual(refreshed_inv.metadata_json.get("settlement_status"), "PARTIALLY_REFUNDED")
+        self.assertEqual(refreshed_inv.metadata_json.get("refunded_amount"), 50000.0)
 
-        # Tenant tier must still be modular_marketing (NOT downgraded to free)
+        # Tenant tier must still be modular_marketing
         refreshed_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
         self.assertEqual(refreshed_org.tier, "modular_marketing")
 
-        # Full refund webhook: remaining 299900 paise
+        # C2. Second partial refund: remaining 249900 paise -> cumulative 299900 paise (100%)
         full_payload = json.dumps({
             "event": "refund.processed",
             "payload": {
@@ -1408,7 +1470,7 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
                     "entity": {
                         "id": f"rfnd_full_{uuid.uuid4().hex[:6]}",
                         "payment_id": pay_id,
-                        "amount": 299900,
+                        "amount": 249900,
                     }
                 }
             }
@@ -1424,6 +1486,11 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
             self.assertEqual(resp_full.status_code, 200)
 
         self.db.expire_all()
+        refreshed_inv_final = self.db.query(InvoiceRecord).filter_by(id=inv_id).first()
+        self.assertEqual(refreshed_inv_final.status, "refunded")
+        self.assertEqual(refreshed_inv_final.metadata_json.get("refunded_amount"), 299900.0)
+
+        # Full refund threshold reached -> org is now downgraded to free
         downgraded_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
         self.assertEqual(downgraded_org.tier, "free")
 

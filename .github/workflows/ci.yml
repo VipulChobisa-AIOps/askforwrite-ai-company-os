@@ -187,6 +187,19 @@ jobs:
             exit 1
           fi
 
+          # Extract and compare deployed commit SHA with pushed commit SHA
+          DEPLOYED_SHA=$(echo "$HEALTH_JSON" | grep -o '"commit_sha_full":"[^"]*"' | cut -d'"' -f4 || echo "")
+          if [ -n "$DEPLOYED_SHA" ] && [ "$DEPLOYED_SHA" != "unknown" ]; then
+            SHORT_EXPECTED="${GITHUB_SHA:0:8}"
+            SHORT_DEPLOYED="${DEPLOYED_SHA:0:8}"
+            echo "Expected Commit: $SHORT_EXPECTED | Live Deployment Commit: $SHORT_DEPLOYED"
+            if [ "$SHORT_DEPLOYED" != "$SHORT_EXPECTED" ]; then
+              echo "::warning::Live deployment is running revision $SHORT_DEPLOYED instead of target revision $SHORT_EXPECTED."
+            else
+              echo "✅ Verified: Live deployment revision strictly matches pushed commit $SHORT_EXPECTED."
+            fi
+          fi
+
           # Verify database connectivity
           DB_STATUS=$(curl -s https://os.askforwrite.com/v1/neon/status || true)
           echo "✅ Neon database cluster verified: $DB_STATUS"

@@ -21,7 +21,7 @@ router = APIRouter(tags=["seo-service-pages"])
 
 @router.get("/services", response_class=HTMLResponse, include_in_schema=False)
 def list_service_landing_pages() -> HTMLResponse:
-    """Render an indexable HTML5 directory of all 14 AskforWrite AI Company OS services."""
+    """Render an indexable HTML5 directory of all verified AskforWrite AI Company OS services."""
     packages = get_all_packages()
     item_list_elements = []
     cards_html = []

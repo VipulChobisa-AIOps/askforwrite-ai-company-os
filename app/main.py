@@ -1497,6 +1497,8 @@ def publish_seo_draft_endpoint(
         raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @app.get("/v1/orders")

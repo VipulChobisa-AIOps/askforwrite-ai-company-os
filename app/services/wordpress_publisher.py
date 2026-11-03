@@ -151,11 +151,23 @@ def publish_seo_draft_to_wordpress(
                 post_id = data.get("id", post_id)
                 canonical_url = data.get("link", canonical_url)
             else:
-                logger.warning(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
+                draft.status = "PUBLISH_FAILED"
+                draft.decided_at = datetime.now(UTC)
+                db.add(draft)
+                db.commit()
+                logger.error(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
+                raise RuntimeError(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
         except Exception as exc:
-            logger.warning(f"Live WordPress publish exception: {exc}")
+            if not isinstance(exc, RuntimeError):
+                draft.status = "PUBLISH_FAILED"
+                draft.decided_at = datetime.now(UTC)
+                db.add(draft)
+                db.commit()
+                logger.error(f"Live WordPress publish exception: {exc}")
+                raise RuntimeError(f"Live WordPress publish error: {exc}") from exc
+            raise
 
-    # Update draft record
+    # Update draft record on successful publish (live or simulated)
     now = datetime.now(UTC)
     draft.status = "PUBLISHED"
     draft.decided_at = now

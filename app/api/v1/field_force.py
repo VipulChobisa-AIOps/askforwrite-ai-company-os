@@ -67,6 +67,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/field-force", tags=["field-force"])
 
 
+def _is_matching_user(principal: APIPrincipal, candidate_id: str | None) -> bool:
+    """Check if candidate_id matches authenticated principal's user_id, subject, or email."""
+    if not candidate_id:
+        return False
+    allowed = {c for c in (principal.user_id, principal.subject, principal.email) if c}
+    return candidate_id in allowed
+
+
 # ── Geofence Management ────────────────────────────────────────────────
 
 
@@ -190,7 +198,7 @@ def attendance_history_endpoint(
     # Members can only view their own records; Managers can view all tenant records
     target_user_id = user_id
     if principal.role == "member":
-        target_user_id = principal.subject
+        target_user_id = principal.user_id or principal.subject
 
     return get_attendance_history(
         db=db,
@@ -229,7 +237,7 @@ def list_tasks_endpoint(
     """Lists field tasks. Members only see their own assigned tasks."""
     target_user_id = user_id
     if principal.role == "member":
-        target_user_id = principal.subject
+        target_user_id = principal.user_id or principal.subject
 
     return list_field_tasks(
         db=db,
@@ -279,7 +287,7 @@ def optimize_route_endpoint(
     """
     # Members can only optimize their own route; Managers can optimize any employee
     check_tenant_entitlement(principal, "delivery_field_force", db)
-    if principal.role == "member" and principal.subject != payload.user_id:
+    if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Members may only optimize their own assigned route",
@@ -352,7 +360,7 @@ def list_visits_endpoint(
     """Lists completed client visits and their cryptographic proofs."""
     target_user_id = user_id
     if principal.role == "member":
-        target_user_id = principal.subject
+        target_user_id = principal.user_id or principal.subject
 
     return list_client_visits(
         db=db,
@@ -392,7 +400,7 @@ def submit_conveyance_endpoint(
 ):
     """Submits a conveyance and expense claim for automated policy verification and settlement."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
-    if principal.role == "member" and principal.subject != payload.user_id:
+    if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Members may only submit conveyance claims for themselves",
@@ -416,7 +424,7 @@ def list_conveyance_endpoint(
     """Lists conveyance claims and audit records."""
     target_user_id = user_id
     if principal.role == "member":
-        target_user_id = principal.subject
+        target_user_id = principal.user_id or principal.subject
 
     return list_conveyance_claims(
         db=db,
