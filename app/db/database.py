@@ -26,7 +26,7 @@ def validate_database_configuration(environment: str, database_url: str) -> None
     env = environment.casefold()
     if env != "development" and not database_url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
 
-        if os.environ.get("ALLOW_SQLITE_PRODUCTION", "").lower() in ("true", "1", "yes"):
+        if os.environ.get("ALLOW_SQLITE_TEST", "").lower() in ("true", "1", "yes") and env != "production":
             return
         raise ValueError(f"Non-development environments ({environment}) require a PostgreSQL database URL.")
 

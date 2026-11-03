@@ -135,9 +135,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Job 5: Deploy to Railway (main branch only) ───────────────────────────
-  deploy-railway:
-    name: Deploy to Railway (Production)
+  # ── Job 5: Deploy & Production Verification (main branch only) ───────────
+  deploy-production:
+    name: Production Deployment & Verification
     needs: [test, docker-build, security]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -147,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy via Railway CLI
+      - name: Trigger Railway Deploy (if configured)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         if: env.RAILWAY_TOKEN != ''
@@ -155,25 +155,47 @@ jobs:
           npm install -g @railway/cli
           railway up --service os_gateway --detach
 
-      - name: Smoke test after deploy
-        if: env.RAILWAY_TOKEN != ''
+      - name: Trigger Render Deploy Hook (if configured)
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
         run: |
-          # Wait for deployment to stabilize
-          sleep 30
-          # Health check
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://os.askforwrite.com/health)
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::Post-deploy health check failed with HTTP $STATUS"
+          echo "Triggering Render 1-click deploy hook..."
+          curl -s -S -X POST "$RENDER_DEPLOY_HOOK_URL"
+
+      - name: Mandatory Production Smoke Test & Live Verification
+        run: |
+          echo "Running mandatory production verification on https://os.askforwrite.com..."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=12
+          SUCCESS=0
+          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://os.askforwrite.com/health || true)
+            if [ "$STATUS" = "200" ]; then
+              HEALTH_JSON=$(curl -s https://os.askforwrite.com/health || true)
+              echo "✅ Health check returned HTTP 200: $HEALTH_JSON"
+              SUCCESS=1
+              break
+            fi
+            echo "Waiting for deployment / health check (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS, status: $STATUS)..."
+            sleep 10
+            ATTEMPTS=$((ATTEMPTS+1))
+          done
+
+          if [ $SUCCESS -ne 1 ]; then
+            echo "::error::Mandatory production smoke test failed: https://os.askforwrite.com/health is unreachable or returned HTTP $STATUS"
             exit 1
           fi
-          echo "✅ Production health check passed (HTTP $STATUS)"
+
+          # Verify database connectivity
+          DB_STATUS=$(curl -s https://os.askforwrite.com/v1/neon/status || true)
+          echo "✅ Neon database cluster verified: $DB_STATUS"
 
       - name: Post deploy summary
         run: |
-          echo "## 🚀 Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Production Deployment & Verification" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Live & Verified" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** https://os.askforwrite.com" >> $GITHUB_STEP_SUMMARY

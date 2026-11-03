@@ -2,6 +2,7 @@
 
 import os
 import unittest
+import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -184,3 +185,36 @@ class AuthTests(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 403)
         self.assertIn("Admin access required", resp.json()["detail"])
+
+    def test_free_registration_cannot_bypass_paid_service_entitlement_gate(self):
+        """Users registering via /v1/auth/register receive a free-tier organization and are strictly
+        forbidden from invoking paid modular services via /v1/me/use-service without purchasing a plan."""
+        uid = uuid.uuid4().hex[:6]
+        email = f"free_tier_{uid}@example.com"
+        reg_resp = self.client.post(
+            "/v1/auth/register",
+            json={
+                "email": email,
+                "password": "FreePassword123!",
+                "full_name": "Free Tier User",
+                "company_name": f"Free Corp {uid}",
+                "role": "admin",
+            },
+        )
+        self.assertEqual(reg_resp.status_code, 201)
+        token = reg_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Attempt to invoke paid modular services
+        for paid_service in ("warehouse_automation", "mango_quality_analytics", "bike_rebalance_analytics", "seo_blog_copilot"):
+            svc_resp = self.client.post(
+                "/v1/me/use-service",
+                headers=headers,
+                json={"service_key": paid_service, "payload": {}},
+            )
+            self.assertEqual(
+                svc_resp.status_code,
+                403,
+                f"Expected 403 Forbidden for paid service '{paid_service}' on free registration, got {svc_resp.status_code}",
+            )
+            self.assertIn("not entitled under your current package", svc_resp.json()["detail"])

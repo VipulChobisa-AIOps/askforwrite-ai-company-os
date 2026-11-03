@@ -448,6 +448,8 @@ class Sprint5ZeroMockAndExpertMarketingTests(unittest.TestCase):
             is_active=True,
             lead_credits_limit=10,
             lead_credits_used=2,
+            tier="professional",
+            metadata_json={"package_key": "warehouse_automation"},
         )
         self.db.add(active_org)
 

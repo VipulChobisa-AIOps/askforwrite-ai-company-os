@@ -486,7 +486,7 @@ def use_tenant_service(
 
     # Entitlement enforcement
     meta = org.metadata_json or {}
-    pkg_key = meta.get("package_key")
+    pkg_key = meta.get("package_key") or org.tier or "free"
     entitled_set = set(meta.get("entitled_capabilities") or ())
     if not entitled_set and pkg_key:
         pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
@@ -494,17 +494,16 @@ def use_tenant_service(
             entitled_set = set(pkg.entitled_capabilities)
 
     service_key = body.service_key.strip().lower()
-    if pkg_key or entitled_set:
-        if not is_service_entitled(service_key, entitled_set, pkg_key):
-            pkg_name = pkg_key
-            if pkg_key:
-                pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
-                if pkg:
-                    pkg_name = pkg.name
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Service '{service_key}' is not entitled under your current package ({pkg_name}). Please upgrade your subscription.",
-            )
+    if not is_service_entitled(service_key, entitled_set, pkg_key):
+        pkg_name = pkg_key
+        if pkg_key:
+            pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
+            if pkg:
+                pkg_name = pkg.name
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Service '{service_key}' is not entitled under your current package ({pkg_name}). Please upgrade your subscription.",
+        )
 
     # Ensure tenant's stored BYOK Gemini key is used if no header key was provided
     meta = org.metadata_json or {}

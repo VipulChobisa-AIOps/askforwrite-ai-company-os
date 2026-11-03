@@ -200,7 +200,11 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)) -> Lo
     # Create Organization
     slug_base = _slugify(payload.company_name)
     slug = f"{slug_base}-{str(uuid.uuid4())[:6]}"
-    meta = {}
+    meta = {
+        "package_key": "free",
+        "entitled_capabilities": [],
+        "subscription_status": "FREE_TIER",
+    }
     if payload.gemini_api_key and payload.gemini_api_key.strip():
         meta["gemini_api_key"] = payload.gemini_api_key.strip()
     org = OrganizationRecord(
