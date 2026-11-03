@@ -2,7 +2,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/CI%2FCD-Passing-brightgreen?style=for-the-badge&logo=github-actions" alt="CI/CD Status" />
-  <img src="https://img.shields.io/badge/Tests-325%2F325%20Passing-success?style=for-the-badge&logo=pytest" alt="Test Status" />
+  <img src="https://img.shields.io/badge/Tests-396%2F396%20Passing-success?style=for-the-badge&logo=pytest" alt="Test Status" />
+  <img src="https://img.shields.io/badge/Coverage-82%25-informational?style=for-the-badge&logo=pytest" alt="Coverage" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Security-ECDSA%20NIST%20P--256%20Merkle-8A2BE2?style=for-the-badge" alt="Security" />
@@ -184,8 +185,11 @@ uvicorn app.main:app --reload --port 8000
 
 ### 2. Run Tests & Linting
 ```powershell
-# Full test discovery suite (325/325 passing)
-python -m unittest discover -s tests -v
+# Full test discovery suite (396/396 passing, 82% coverage)
+python -m pytest -v --cov=app
+
+# Adversarial competitor audit suite (18/18 passing)
+python -m pytest tests/test_competitor_adversarial_audit.py -v
 
 # Ruff linting & style enforcement
 python -m ruff check app tests scripts
