@@ -273,7 +273,7 @@ def solutions_hub_page() -> HTMLResponse:
         {cards_html}
     </main>
     <footer>
-        Proprietor: Vipul Chobisa (Indian Sovereign Entity) · <a href="/">OS Gateway Home</a> · <a href="/sitemap.xml">Sitemap</a> · <a href="/llms.txt">LLMs.txt</a> · <a href="/v1/legal/declaration?format=text">Legal Charter</a>
+        Proprietor: Vipul Chobisa (Indian Sovereign Entity) · <a href="/">OS Gateway Home</a> · <a href="/sitemap.xml">Sitemap</a> · <a href="/llms.txt">LLMs.txt</a> · <a href="/legal/declaration?format=text">Legal Charter</a>
     </footer>
 </body>
 </html>"""
