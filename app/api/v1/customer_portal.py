@@ -608,35 +608,38 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
         return True
     
     capability_mapping = {
-        "mango_quality_analytics": {"produce_quality_cv", "quality_analytics", "all_access"},
-        "quality_analytics": {"produce_quality_cv", "quality_analytics", "all_access"},
-        "quality_grading": {"produce_quality_cv", "quality_analytics", "all_access"},
-        "bike_rebalance_analytics": {"bike_mobility_ai", "mobility_analytics", "all_access"},
+        "mango_quality_analytics": {"computer_vision_quality_analytics", "produce_quality_cv", "quality_analytics", "mango_quality_analytics", "all_access"},
+        "quality_analytics": {"computer_vision_quality_analytics", "produce_quality_cv", "quality_analytics", "all_access"},
+        "quality_grading": {"computer_vision_quality_analytics", "produce_quality_cv", "quality_analytics", "all_access"},
+        "bike_rebalance_analytics": {"bike_mobility_ai", "mobility_analytics", "bike_rebalance_analytics", "all_access"},
         "mobility_analytics": {"bike_mobility_ai", "mobility_analytics", "all_access"},
         "bike_rebalance": {"bike_mobility_ai", "mobility_analytics", "all_access"},
-        "warehouse_automation": {"warehouse_stocksense", "inventory_analytics", "all_access"},
+        "warehouse_automation": {"warehouse_stocksense", "inventory_analytics", "warehouse_automation", "all_access"},
         "inventory_analytics": {"warehouse_stocksense", "inventory_analytics", "all_access"},
         "inventory": {"warehouse_stocksense", "inventory_analytics", "all_access"},
-        "ask4_academic_order": {"ask4_custom_development", "academic_research", "all_access"},
+        "ask4_academic_order": {"ask4_custom_development", "academic_research", "ask4_academic_order", "all_access"},
         "ask4": {"ask4_custom_development", "academic_research", "all_access"},
         "academic_research": {"ask4_custom_development", "academic_research", "all_access"},
-        "pixel_ai_pack": {"pixel_ai_creative_studio", "all_access"},
-        "pixel_ai": {"pixel_ai_creative_studio", "all_access"},
-        "creative_pack": {"pixel_ai_creative_studio", "all_access"},
-        "seo_blog_copilot": {"seo_content_automation", "all_access"},
-        "seo_copilot": {"seo_content_automation", "all_access"},
-        "marketing_suite": {"marketing_campaign_suite", "all_access"},
-        "omnichannel_social": {"marketing_campaign_suite", "all_access"},
+        "pixel_ai_pack": {"pixel_ai_creative_studio", "pixel_ai_pack", "all_access"},
+        "pixel_ai": {"pixel_ai_creative_studio", "pixel_ai_pack", "all_access"},
+        "creative_pack": {"pixel_ai_creative_studio", "pixel_ai_pack", "all_access"},
+        "seo_blog_copilot": {"seo_content_automation", "seo_blog_copilot", "all_access"},
+        "seo_copilot": {"seo_content_automation", "seo_blog_copilot", "all_access"},
+        "marketing_suite": {"marketing_campaign_suite", "marketing_suite", "all_access"},
+        "omnichannel_social": {"marketing_campaign_suite", "marketing_suite", "all_access"},
         "growth_all_in_one": {"growth_all_in_one", "seo_content_automation", "marketing_campaign_suite", "pixel_ai_creative_studio", "inbound_sales_closer", "all_access"},
         "growth_suite": {"growth_all_in_one", "seo_content_automation", "marketing_campaign_suite", "pixel_ai_creative_studio", "inbound_sales_closer", "all_access"},
-        "trust_engine": {"trust_ledger_audit", "all_access"},
-        "trust_ledger": {"trust_ledger_audit", "all_access"},
+        "trust_engine": {"trust_ledger_audit", "trust_engine", "all_access"},
+        "trust_ledger": {"trust_ledger_audit", "trust_engine", "all_access"},
     }
     
     clean_key = service_key.strip().lower()
     required = capability_mapping.get(clean_key, {clean_key})
-    # If the tenant holds growth_all_in_one or company_os master bundles, they get all core modular services
-    if pkg_key in ("growth_all_in_one", "company_os_starter", "company_os_pro", "company_os_enterprise", "starter", "pro", "enterprise"):
+    # If customer package directly matches the invoked service key
+    if pkg_key and pkg_key.strip().lower() == clean_key:
+        return True
+    # Full-spectrum unrestricted bypass applies strictly to All-Access and Enterprise master suites
+    if pkg_key in ("all_access", "company_os_enterprise", "enterprise"):
         return True
     return bool(required & entitled_caps) or clean_key in entitled_caps
 

@@ -105,11 +105,11 @@ jobs:
       - name: Install security tools
         run: pip install bandit safety
 
-      - name: Bandit SAST scan (high + medium severity)
+      - name: Bandit SAST scan (high + medium severity - release blocking)
         run: |
           bandit -r app/ -ll -ii --exclude app/dashboard \
             --skip B101,B311 \
-            -f txt || echo "::warning::Bandit found issues — review before production deploy"
+            -f txt
 
       - name: Safety dependency vulnerability scan
         run: |

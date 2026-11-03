@@ -712,8 +712,9 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
         audit_status = "BLOCKED_SSRF"
     elif timeout > 0:
         try:
+            from app.agents.sources import SSRFSafeTransport
             headers = {"User-Agent": "Mozilla/5.0 (compatible; AskforWriteSEOGeoAuditor/2.0; +https://askforwrite.com)"}
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            with httpx.Client(transport=SSRFSafeTransport(), timeout=timeout, follow_redirects=True) as client:
                 resp = client.get(target_url, headers=headers)
                 if resp.status_code < 400:
                     html = resp.text

@@ -63,6 +63,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
         Base.metadata.drop_all(bind=test_engine)
 
     def setUp(self):
+        os.environ["APP_ENV"] = "development"
         app.dependency_overrides[get_db] = override_get_db
         self.client = TestClient(app)
         self.db = TestingSessionLocal()
@@ -161,7 +162,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
                 "password": "CustomerSecurePass123!",
                 "full_name": "Customer Lead",
                 "company_name": "Innovate Co",
-                "package_key": "growth_all_in_one",
+                "package_key": "mango_quality_analytics",
                 "gemini_api_key": "AIzaSySignupKey987654321",
             },
         )
@@ -250,7 +251,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
                 "password": "Password123!",
                 "full_name": "Mango Trader",
                 "company_name": "Fruit Ops",
-                "package_key": "growth_all_in_one",
+                "package_key": "mango_quality_analytics",
                 "gemini_api_key": "AIzaSyCustomFruitOpsKey9999",
             },
         )
@@ -373,7 +374,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
         session_resp = self.client.post(
             "/v1/pay/create-session",
             json={
-                "package_key": "growth_all_in_one",
+                "package_key": "mango_quality_analytics",
                 "company_name": "Rajasthan Enterprise Corp",
                 "customer_email": "billing@rajasthanent.in",
                 "currency": "INR",

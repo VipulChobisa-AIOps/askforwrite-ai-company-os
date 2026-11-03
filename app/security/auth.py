@@ -237,14 +237,13 @@ def require_authenticated_user(
 
 def enforce_tenant_access(principal: APIPrincipal, target_org_id: str | None) -> None:
     """Ensure that non-owner principals cannot access or mutate resources outside their organization."""
-    if not target_org_id:
-        return
     # System owners and platform managers have global administrative oversight
     if principal.role in {"owner", "manager"} and not principal.org_id:
         return
-    # If the principal is tied to a specific organization, access across org boundaries is strictly forbidden
-    if principal.org_id and principal.org_id != target_org_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied: principal belongs to organization '{principal.org_id}', not '{target_org_id}'",
-        )
+    # If the principal is tied to a specific organization, access across org boundaries or unassigned resources is strictly forbidden
+    if principal.org_id:
+        if not target_org_id or principal.org_id != target_org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: principal belongs to organization '{principal.org_id}', not '{target_org_id}'",
+            )

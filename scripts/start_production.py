@@ -64,30 +64,31 @@ def validate_environment() -> list[str]:
     app_env = os.environ.get("APP_ENV", "production").casefold()
     db_url = os.environ.get("DATABASE_URL", "")
 
+    errors: list[str] = []
+
     # Strict PostgreSQL requirement in production — NO silent SQLite downgrade
     if app_env == "production":
         if not db_url or not db_url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://")):
-            print("  [CRITICAL] Production environment (APP_ENV=production) strictly requires persistent PostgreSQL. Silent SQLite fallback is forbidden.")
-        else:
-            os.environ["DATABASE_URL"] = db_url
+            errors.append("  [CRITICAL] Production environment (APP_ENV=production) strictly requires persistent PostgreSQL (DATABASE_URL or NEON_DATABASE_URL).")
+        # In production, require persistent secrets — do NOT silently generate new ephemeral keys on every restart
+        for sec_var in ("MANAGER_API_KEY", "OWNER_API_KEY", "JWT_SECRET_KEY"):
+            val = os.environ.get(sec_var, "")
+            if not val or len(val) < 32:
+                errors.append(f"  [CRITICAL] {sec_var} must be configured in environment with >= 32 chars in production. Ephemeral regeneration is forbidden.")
     else:
         if not db_url:
             os.environ["DATABASE_URL"] = "sqlite:///./company_os.db"
             print("  [INFO] Development/test environment: default SQLite storage enabled")
-
-    if not os.environ.get("MANAGER_API_KEY") or len(os.environ.get("MANAGER_API_KEY", "")) < 32:
-        os.environ["MANAGER_API_KEY"] = secrets.token_urlsafe(32)
-        print("  [INFO] Auto-generated 256-bit MANAGER_API_KEY")
-
-    if not os.environ.get("OWNER_API_KEY") or len(os.environ.get("OWNER_API_KEY", "")) < 32:
-        os.environ["OWNER_API_KEY"] = secrets.token_urlsafe(32)
-        print("  [INFO] Auto-generated 256-bit OWNER_API_KEY")
-    for sec_var in ("JWT_SECRET_KEY", "ASK4_WEBHOOK_SECRET", "RAZORPAY_WEBHOOK_SECRET"):
-        if not os.environ.get(sec_var) or len(os.environ.get(sec_var, "")) < 32:
-            os.environ[sec_var] = secrets.token_urlsafe(32)
-            print(f"  [INFO] Auto-generated 256-bit {sec_var}")
-
-    errors: list[str] = []
+        if not os.environ.get("MANAGER_API_KEY") or len(os.environ.get("MANAGER_API_KEY", "")) < 32:
+            os.environ["MANAGER_API_KEY"] = secrets.token_urlsafe(32)
+            print("  [INFO] Auto-generated 256-bit MANAGER_API_KEY")
+        if not os.environ.get("OWNER_API_KEY") or len(os.environ.get("OWNER_API_KEY", "")) < 32:
+            os.environ["OWNER_API_KEY"] = secrets.token_urlsafe(32)
+            print("  [INFO] Auto-generated 256-bit OWNER_API_KEY")
+        for sec_var in ("JWT_SECRET_KEY", "ASK4_WEBHOOK_SECRET", "RAZORPAY_WEBHOOK_SECRET"):
+            if not os.environ.get(sec_var) or len(os.environ.get(sec_var, "")) < 32:
+                os.environ[sec_var] = secrets.token_urlsafe(32)
+                print(f"  [INFO] Auto-generated 256-bit {sec_var}")
 
     for var in REQUIRED_VARS:
         value = os.environ.get(var, "")

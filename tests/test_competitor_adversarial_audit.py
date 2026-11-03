@@ -437,6 +437,217 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         self.assertIn("https://os.askforwrite.com/services", sitemap.text)
         self.assertIn("https://os.askforwrite.com/services/warehouse-automation", sitemap.text)
 
+    # ── 11. User State Matrix & Tenant vs Platform RBAC Isolation ─────────────
+
+    def test_11_user_state_matrix_and_tenant_platform_rbac_isolation(self):
+        """Verify:
+        1. Free user registration sets free package and blocks paid service invocation (403).
+        2. Inactive/unpaid org users are blocked from service execution (403).
+        3. Modular paid tier (Starter) gets entitled services (200) but is blocked from unentitled modules (403).
+        4. Enterprise tier gets full-spectrum access (200).
+        5. Tenant admin is strictly isolated from platform operations (scheduler, watchdog) and other tenants.
+        """
+        # 1. Register a new user via public /v1/auth/register
+        reg_email = f"freeuser-{uuid.uuid4().hex[:6]}@example.com"
+        reg_resp = self.client.post(
+            "/v1/auth/register",
+            json={
+                "email": reg_email,
+                "password": "SecurePassword123!",
+                "full_name": "Free Tier User",
+                "company_name": "FreeCorp India",
+            },
+        )
+        self.assertEqual(reg_resp.status_code, 201, reg_resp.text)
+        free_token = reg_resp.json()["access_token"]
+        free_headers = {"Authorization": f"Bearer {free_token}"}
+
+        # Verify free profile
+        me_resp = self.client.get("/v1/me", headers=free_headers)
+        self.assertEqual(me_resp.status_code, 200)
+        self.assertEqual(me_resp.json()["tier"], "free")
+
+        # Verify capabilities is empty for free user
+        caps_resp = self.client.get("/v1/me/capabilities", headers=free_headers)
+        self.assertEqual(caps_resp.status_code, 200)
+        self.assertEqual(caps_resp.json(), [])
+
+        # Free user calling paid service must fail with 403 Forbidden
+        free_use = self.client.post(
+            "/v1/me/use-service",
+            headers=free_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(free_use.status_code, 403)
+        self.assertIn("not entitled", free_use.json()["detail"].lower())
+
+        # 2. Inactive / Unpaid Organization User
+        inactive_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Unpaid Corp",
+            slug=f"unpaid-{uuid.uuid4().hex[:6]}",
+            tier="company_os_starter",
+            is_active=False,
+            lead_credits_limit=100,
+            metadata_json={"package_key": "company_os_starter"},
+        )
+        inactive_user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=inactive_org.id,
+            email=f"unpaid-{uuid.uuid4().hex[:6]}@unpaid.in",
+            full_name="Unpaid User",
+            password_hash=hash_password("UnpaidPass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([inactive_org, inactive_user])
+        self.db.commit()
+
+        inactive_token = create_access_token(
+            user_id=inactive_user.id, email=inactive_user.email, role="admin", org_id=inactive_org.id
+        )
+        inactive_headers = {"Authorization": f"Bearer {inactive_token}"}
+
+        inactive_use = self.client.post(
+            "/v1/me/use-service",
+            headers=inactive_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(inactive_use.status_code, 403)
+        self.assertIn("inactive", inactive_use.json()["detail"].lower())
+
+        # 3. Starter Tier (Modular Entitlements)
+        starter_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Starter Co",
+            slug=f"starter-{uuid.uuid4().hex[:6]}",
+            tier="company_os_starter",
+            is_active=True,
+            lead_credits_limit=500,
+            metadata_json={
+                "package_key": "company_os_starter",
+                "entitled_capabilities": ["seo_content_automation", "marketing_campaign_suite"],
+            },
+        )
+        starter_user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=starter_org.id,
+            email=f"starter-{uuid.uuid4().hex[:6]}@starter.in",
+            full_name="Starter User",
+            password_hash=hash_password("StarterPass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([starter_org, starter_user])
+        self.db.commit()
+
+        starter_token = create_access_token(
+            user_id=starter_user.id, email=starter_user.email, role="admin", org_id=starter_org.id
+        )
+        starter_headers = {"Authorization": f"Bearer {starter_token}"}
+
+        # Starter calling entitled modular service -> 200 OK
+        starter_entitled = self.client.post(
+            "/v1/me/use-service",
+            headers=starter_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(starter_entitled.status_code, 200, starter_entitled.text)
+
+        # Starter calling unentitled modular service -> 403 Forbidden
+        starter_unentitled = self.client.post(
+            "/v1/me/use-service",
+            headers=starter_headers,
+            json={"service_key": "warehouse_automation", "parameters": {}},
+        )
+        self.assertEqual(starter_unentitled.status_code, 403)
+        self.assertIn("not entitled", starter_unentitled.json()["detail"].lower())
+
+        # 4. Enterprise Tier (Full Spectrum)
+        ent_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Enterprise Global",
+            slug=f"ent-{uuid.uuid4().hex[:6]}",
+            tier="company_os_enterprise",
+            is_active=True,
+            lead_credits_limit=5000,
+            metadata_json={"package_key": "company_os_enterprise"},
+        )
+        ent_user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=ent_org.id,
+            email=f"enterprise-{uuid.uuid4().hex[:6]}@enterprise.in",
+            full_name="Enterprise User",
+            password_hash=hash_password("EnterprisePass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([ent_org, ent_user])
+        self.db.commit()
+
+        ent_token = create_access_token(
+            user_id=ent_user.id, email=ent_user.email, role="admin", org_id=ent_org.id
+        )
+        ent_headers = {"Authorization": f"Bearer {ent_token}"}
+
+        ent_use = self.client.post(
+            "/v1/me/use-service",
+            headers=ent_headers,
+            json={"service_key": "warehouse_automation", "parameters": {}},
+        )
+        self.assertEqual(ent_use.status_code, 200, ent_use.text)
+
+        # 5. Tenant Admin vs Platform RBAC Controls
+        # Tenant admin cannot invoke platform scheduler
+        sched_resp = self.client.post(
+            "/v1/scheduler/run-shift",
+            headers=starter_headers,
+            json={"mode": "full"},
+        )
+        self.assertEqual(sched_resp.status_code, 403)
+
+        # Tenant admin cannot access watchdog telemetry
+        watch_resp = self.client.get(
+            "/v1/watchdog/telemetry",
+            headers=starter_headers,
+        )
+        self.assertEqual(watch_resp.status_code, 403)
+
+        # Tenant admin cannot access another tenant's invoices or consume credits
+        other_invoices = self.client.get(
+            f"/v1/accounts/orgs/{ent_org.id}/invoices",
+            headers=starter_headers,
+        )
+        self.assertEqual(other_invoices.status_code, 403)
+
+    # ── 12. DNS-Pinned SSRF Protection Verification ───────────────────────────
+
+    def test_12_dns_pinned_ssrf_protection_verification(self):
+        """Verify DNS-pinned network backend rejects private IPs, loopback, link-local,
+        and IPv4-mapped addresses at the TCP connection boundary."""
+        import httpcore
+        from app.agents.sources import DNSRebindingSafeNetworkBackend, SSRFSafeTransport
+
+        backend = DNSRebindingSafeNetworkBackend()
+
+        # Direct connection attempts to prohibited hosts/IPs must raise ConnectError
+        prohibited_targets = [
+            ("127.0.0.1", 80),
+            ("localhost", 8080),
+            ("169.254.169.254", 80),
+            ("10.0.0.1", 443),
+            ("192.168.1.1", 80),
+            ("172.16.0.1", 80),
+            ("::ffff:127.0.0.1", 80),
+        ]
+        for host, port in prohibited_targets:
+            with self.assertRaises(httpcore.ConnectError):
+                backend.connect_tcp(host, port, timeout=1.0)
+
+        # Verify transport instance initializes cleanly
+        transport = SSRFSafeTransport()
+        self.assertIsInstance(transport._pool._network_backend, DNSRebindingSafeNetworkBackend)
+
 
 if __name__ == "__main__":
     unittest.main()
