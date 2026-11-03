@@ -125,6 +125,10 @@ async def create_customer_endpoint(
     """Create a customer on the payment provider and persist locally."""
     correlation_id = x_correlation_id or str(uuid.uuid4())
 
+    target_org_id = payload.org_id or principal.org_id
+    if principal.org_id:
+        enforce_tenant_access(principal, target_org_id)
+
     provider_enum = _resolve_provider(payload.provider)
     provider = get_payment_provider(provider_enum)
 
@@ -142,7 +146,7 @@ async def create_customer_endpoint(
     # Persist locally
     record = CustomerRecord(
         id=customer_info.id,
-        org_id=payload.org_id,
+        org_id=target_org_id,
         email=customer_info.email,
         name=customer_info.name,
         provider=customer_info.provider.value,
@@ -235,10 +239,12 @@ async def create_subscription_endpoint(
     """Create a new subscription for a customer."""
     correlation_id = x_correlation_id or str(uuid.uuid4())
 
-    # Verify customer exists locally
+    # Verify customer exists locally and belongs to tenant
     customer = db.query(CustomerRecord).filter_by(id=payload.customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail=f"Customer {payload.customer_id} not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, customer.org_id or "__platform__")
 
     provider_enum = _resolve_provider(payload.provider)
     provider = get_payment_provider(provider_enum)
@@ -360,6 +366,8 @@ async def cancel_subscription_endpoint(
     record = db.query(SubscriptionRecord).filter_by(id=subscription_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="Subscription not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, record.org_id or "__platform__")
 
     provider_enum = _resolve_provider(record.provider)
     provider = get_payment_provider(provider_enum)

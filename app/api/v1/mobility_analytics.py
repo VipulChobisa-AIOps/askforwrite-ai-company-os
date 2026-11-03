@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
 from app.services.mobility_analytics import (
     CAPABILITY_NAME,
     MobilityAnalyticsConflict,
@@ -89,8 +89,10 @@ def get_mobility_engine_status() -> dict[str, Any]:
 def get_demand_forecast(
     payload: DemandForecastRequest,
     principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Calculate hourly rental demand with 95% confidence interval and econometric diagnostics."""
+    check_tenant_entitlement(principal, "mobility_analytics", db)
     return forecast_hourly_demand(
         hour_of_day=payload.hour_of_day,
         temperature_f=payload.temperature_f,
@@ -113,6 +115,7 @@ def execute_fleet_optimization(
     db: Session = Depends(get_db),
 ) -> MobilityOptimizationResponse:
     """Execute end-to-end demand forecasting, station churn rebalancing, and seal to TrustBlock."""
+    check_tenant_entitlement(principal, "mobility_analytics", db)
     try:
         res = execute_mobility_optimization(
             db=db,
@@ -151,6 +154,7 @@ def execute_rebalance_plan(
     db: Session = Depends(get_db),
 ) -> MobilityRebalanceResponse:
     """Compute dedicated station churn segmentation and truck rebalance routes with TrustBlock sealing."""
+    check_tenant_entitlement(principal, "mobility_analytics", db)
     try:
         res = execute_station_rebalancing(
             db=db,

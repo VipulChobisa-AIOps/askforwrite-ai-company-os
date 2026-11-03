@@ -34,7 +34,7 @@ from app.schemas.lead import (
     LeadUpdateRequest,
     SmbLeadDiscoverRequest,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, enforce_tenant_access, require_manager
 from app.security.trust_chain import seal_task_to_block
 from app.services.discovery import IdempotencyConflict, execute_discovery
 
@@ -51,10 +51,14 @@ def discover_leads(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Execute customer discovery with organizational quota checking and domain deduplication."""
-    # Enforce tenant boundary
+    # Enforce tenant boundary & entitlements
     target_org_id = payload.org_id or principal.org_id
     if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
         enforce_tenant_access(principal, payload.org_id)
+    if principal.org_id:
+        check_tenant_entitlement(principal, "lead_generation", db)
+    if principal.org_id:
+        check_tenant_entitlement(principal, "lead_generation", db)
 
     correlation_id = x_correlation_id or str(uuid.uuid4())
     if len(correlation_id) > 128:
@@ -106,6 +110,8 @@ def discover_smb_leads_endpoint(
     target_org_id = payload.org_id or principal.org_id
     if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
         enforce_tenant_access(principal, payload.org_id)
+    if principal.org_id:
+        check_tenant_entitlement(principal, "lead_generation", db)
 
     correlation_id = x_correlation_id or str(uuid.uuid4())
     if len(correlation_id) > 128:
@@ -366,6 +372,8 @@ def enrich_lead(
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Perform real-time web scraping and signal enrichment on a company domain, URL, or lead record."""
+    if principal.org_id:
+        check_tenant_entitlement(principal, "lead_generation", db)
     target_lead: LeadRecordRow | None = None
     target_website: str | None = payload.website
 

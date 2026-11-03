@@ -20,10 +20,12 @@ from app.agents.smb_search_source import CURATED_SMB_DIRECTORY, discover_smb_lea
 from app.db.database import Base, SessionLocal, engine, get_db
 from app.db.models import (
     ApprovalRequest,
+    CustomerRecord,
     InvoiceRecord,
     LeadRecordRow,
     OrganizationRecord,
     OutreachRecord,
+    SubscriptionRecord,
     UserRecord,
 )
 from app.main import app
@@ -888,6 +890,375 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         approval_rec = self.db.query(ApprovalRequest).filter_by(id=approval_id).first()
         self.assertEqual(approval_rec.status, "APPROVED")
         self.assertEqual(approval_rec.decided_by, "owner")
+
+    # ── 15. Direct Domain Router Entitlement Bypass Prevention ────────────────
+
+    def test_15_direct_domain_router_entitlement_bypass_blocked(self):
+        """Verify that tenants cannot bypass /v1/me/use-service by directly calling domain routers
+        (/v1/growth/creative, /v1/growth/campaign/unified, /v1/inventory/analyze,
+        /v1/mobility/forecast, /v1/quality/inspect, /v1/leads/discover).
+        """
+        # Create unentitled (Starter without quality/mobility) tenant
+        starter_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Starter Direct Test Co",
+            slug=f"starter-direct-{uuid.uuid4().hex[:6]}",
+            tier="company_os_starter",
+            is_active=True,
+            lead_credits_limit=500,
+            metadata_json={
+                "package_key": "company_os_starter",
+                "entitled_capabilities": ["seo_content_automation"],
+            },
+        )
+        starter_user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=starter_org.id,
+            email=f"starter-direct-{uuid.uuid4().hex[:6]}@starter.in",
+            full_name="Starter Direct User",
+            password_hash=hash_password("Pass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([starter_org, starter_user])
+        self.db.commit()
+
+        token = create_access_token(
+            user_id=starter_user.id, email=starter_user.email, role="admin", org_id=starter_org.id
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 1. Direct call to unentitled Growth Suite creative -> 403 Forbidden
+        creative_resp = self.client.post(
+            "/v1/growth/creative",
+            headers=headers,
+            json={
+                "product_name": "Test Product",
+                "target_audience": "B2B SaaS",
+            },
+        )
+        self.assertEqual(creative_resp.status_code, 403)
+        self.assertIn("not entitled", creative_resp.json()["detail"].lower())
+
+        # 2. Direct call to unentitled Unified Campaign -> 403 Forbidden
+        camp_resp = self.client.post(
+            "/v1/growth/campaign/unified",
+            headers=headers,
+            json={
+                "client_name": "Client Co",
+                "product_or_service": "Automation",
+                "target_audience": "Warehouse Managers",
+                "idempotency_key": f"camp-{uuid.uuid4()}",
+            },
+        )
+        self.assertEqual(camp_resp.status_code, 403)
+        self.assertIn("not entitled", camp_resp.json()["detail"].lower())
+
+        # 3. Direct call to unentitled Quality Analytics -> 403 Forbidden
+        quality_resp = self.client.post(
+            "/v1/quality/inspect",
+            headers=headers,
+            json={"preset_or_sample": "ripe", "crop_variety": "Alphonso Mango"},
+        )
+        self.assertEqual(quality_resp.status_code, 403)
+        self.assertIn("not entitled", quality_resp.json()["detail"].lower())
+
+        # 4. Direct call to unentitled Mobility Analytics -> 403 Forbidden
+        mob_resp = self.client.post(
+            "/v1/mobility/forecast",
+            headers=headers,
+            json={"hour_of_day": 10, "temperature_f": 72.0},
+        )
+        self.assertEqual(mob_resp.status_code, 403)
+        self.assertIn("not entitled", mob_resp.json()["detail"].lower())
+
+        # 5. Direct call to unentitled Inventory Analytics -> 403 Forbidden
+        inv_resp = self.client.post(
+            "/v1/inventory/analyze",
+            headers=headers,
+            json={"service_level_z": 1.65},
+        )
+        self.assertEqual(inv_resp.status_code, 403)
+        self.assertIn("not entitled", inv_resp.json()["detail"].lower())
+
+        # 6. Direct call to unentitled Leads Discovery -> 403 Forbidden
+        leads_resp = self.client.post(
+            "/v1/leads/discover",
+            headers=headers,
+            json={"objective": "Find warehouse buyers", "limit": 2, "idempotency_key": f"lead-{uuid.uuid4()}"},
+        )
+        self.assertEqual(leads_resp.status_code, 403)
+        self.assertIn("not entitled", leads_resp.json()["detail"].lower())
+
+        # 7. Enterprise tier gets 200 OK on direct calls
+        ent_org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Ent Direct Test Co",
+            slug=f"ent-direct-{uuid.uuid4().hex[:6]}",
+            tier="company_os_enterprise",
+            is_active=True,
+            lead_credits_limit=5000,
+            metadata_json={"package_key": "company_os_enterprise"},
+        )
+        ent_user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=ent_org.id,
+            email=f"ent-direct-{uuid.uuid4().hex[:6]}@ent.in",
+            full_name="Ent Direct User",
+            password_hash=hash_password("Pass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([ent_org, ent_user])
+        self.db.commit()
+
+        ent_token = create_access_token(
+            user_id=ent_user.id, email=ent_user.email, role="admin", org_id=ent_org.id
+        )
+        ent_headers = {"Authorization": f"Bearer {ent_token}"}
+
+        ent_inv = self.client.post(
+            "/v1/inventory/analyze",
+            headers=ent_headers,
+            json={"service_level_z": 1.65},
+        )
+        self.assertEqual(ent_inv.status_code, 200)
+
+    # ── 16. Subscription Tenant Boundary Enforcement ─────────────────────────
+
+    def test_16_subscription_tenant_boundary_enforcement(self):
+        """Cross-tenant subscription tampering prevention:
+        Tenant B cannot view, create subscriptions for, or cancel Tenant A's customer or subscription.
+        """
+        # Create Tenant A
+        org_a = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Tenant A Corp",
+            slug=f"org-a-{uuid.uuid4().hex[:6]}",
+            tier="company_os_pro",
+            is_active=True,
+        )
+        cust_a = CustomerRecord(
+            id=str(uuid.uuid4()),
+            org_id=org_a.id,
+            email=f"cust-a-{uuid.uuid4().hex[:6]}@tenant-a.com",
+            name="Customer A",
+            provider="razorpay",
+            provider_customer_id=f"cust_rzp_{uuid.uuid4().hex[:8]}",
+        )
+        sub_a = SubscriptionRecord(
+            id=str(uuid.uuid4()),
+            org_id=org_a.id,
+            customer_id=cust_a.id,
+            plan_id="plan_pro_monthly",
+            provider="razorpay",
+            provider_subscription_id=f"sub_rzp_{uuid.uuid4().hex[:8]}",
+            status="active",
+        )
+        # Create Tenant B user
+        org_b = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Tenant B Corp",
+            slug=f"org-b-{uuid.uuid4().hex[:6]}",
+            tier="company_os_starter",
+            is_active=True,
+        )
+        user_b = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=org_b.id,
+            email=f"user-b-{uuid.uuid4().hex[:6]}@tenant-b.com",
+            full_name="User B",
+            password_hash=hash_password("Pass123!"),
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([org_a, cust_a, sub_a, org_b, user_b])
+        self.db.commit()
+
+        token_b = create_access_token(
+            user_id=user_b.id, email=user_b.email, role="admin", org_id=org_b.id
+        )
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        # 1. Tenant B attempting to create subscription on Tenant A customer -> 403 Forbidden
+        create_resp = self.client.post(
+            "/v1/subscriptions/create",
+            headers=headers_b,
+            json={
+                "customer_id": cust_a.id,
+                "plan_id": "plan_enterprise",
+                "provider": "razorpay",
+            },
+        )
+        self.assertEqual(create_resp.status_code, 403)
+        self.assertIn("access denied", create_resp.json()["detail"].lower())
+
+        # 2. Tenant B attempting to list Tenant A subscriptions -> 403 Forbidden
+        list_resp = self.client.get(
+            f"/v1/subscriptions/customer/{cust_a.id}",
+            headers=headers_b,
+        )
+        self.assertEqual(list_resp.status_code, 403)
+
+        # 3. Tenant B attempting to cancel Tenant A subscription -> 403 Forbidden
+        cancel_resp = self.client.post(
+            f"/v1/subscriptions/{sub_a.id}/cancel",
+            headers=headers_b,
+            json={"cancel_at_period_end": True},
+        )
+        self.assertEqual(cancel_resp.status_code, 403)
+
+    # ── 17. Refund Entitlement Revocation & Renewal Cycle Refill ──────────────
+
+    def test_17_refund_entitlement_revocation_and_renewal_cycle_refill(self):
+        """Verify:
+        1. A full refund revokes Pro capabilities and downgrades the tenant to free (blocking paid services).
+        2. A recurring subscription cycle renewal resets monthly used credits to zero.
+        """
+        import json
+        key_secret = "rzp_webhook_secret_phase3_test_32ch"
+
+        # 1. Setup tenant with paid Pro package & invoice
+        org = OrganizationRecord(
+            id=str(uuid.uuid4()),
+            name="Refund Test Co",
+            slug=f"ref-test-{uuid.uuid4().hex[:6]}",
+            tier="company_os_pro",
+            is_active=True,
+            lead_credits_limit=2500,
+            lead_credits_used=1800,
+            outreach_credits_limit=1000,
+            outreach_credits_used=650,
+            metadata_json={
+                "package_key": "company_os_pro",
+                "entitled_capabilities": ["growth_all_in_one", "seo_content_automation"],
+            },
+        )
+        user = UserRecord(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            email=f"refund-user-{uuid.uuid4().hex[:6]}@ref.in",
+            full_name="Refund User",
+            password_hash=hash_password("Pass123!"),
+            role="admin",
+            is_active=True,
+        )
+        payment_id = f"pay_rfnd_{uuid.uuid4().hex[:8]}"
+        inv = InvoiceRecord(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            customer_id=f"cust_{uuid.uuid4().hex[:8]}",
+            provider="razorpay",
+            provider_invoice_id=f"inv_{uuid.uuid4().hex[:8]}",
+            provider_payment_id=payment_id,
+            amount=499900,
+            currency="INR",
+            status="paid",
+        )
+        sub = SubscriptionRecord(
+            id=str(uuid.uuid4()),
+            org_id=org.id,
+            customer_id=inv.customer_id,
+            plan_id="plan_pro_monthly",
+            provider="razorpay",
+            provider_subscription_id=f"sub_renew_{uuid.uuid4().hex[:8]}",
+            status="active",
+        )
+        self.db.add_all([org, user, inv, sub])
+        self.db.commit()
+
+        token = create_access_token(user_id=user.id, email=user.email, role="admin", org_id=org.id)
+        user_headers = {"Authorization": f"Bearer {token}"}
+
+        # Verify tenant can execute entitled service initially
+        use_resp = self.client.post(
+            "/v1/me/use-service",
+            headers=user_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(use_resp.status_code, 200)
+
+        # 2. Trigger refund webhook
+        refund_payload = json.dumps({
+            "event": "refund.processed",
+            "payload": {
+                "refund": {
+                    "entity": {
+                        "id": f"rfnd_{uuid.uuid4().hex[:8]}",
+                        "payment_id": payment_id,
+                        "amount": 499900,
+                        "currency": "INR",
+                    }
+                }
+            }
+        }).encode("utf-8")
+        refund_sig = hmac.new(key_secret.encode("utf-8"), refund_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=refund_payload,
+                headers={"x-razorpay-signature": refund_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(resp.status_code, 200)
+
+        # Confirm organization is now downgraded to free with revoked capabilities
+        self.db.expire_all()
+        refreshed_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
+        self.assertEqual(refreshed_org.tier, "free")
+        self.assertEqual(refreshed_org.metadata_json.get("entitled_capabilities"), [])
+
+        # Invoking paid service must now fail closed with 403 Forbidden
+        blocked_resp = self.client.post(
+            "/v1/me/use-service",
+            headers=user_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(blocked_resp.status_code, 403)
+        self.assertIn("not entitled", blocked_resp.json()["detail"].lower())
+
+        # 3. Trigger subscription renewal cycle webhook -> credits replenished
+        renew_payload = json.dumps({
+            "event": "subscription.charged",
+            "payload": {
+                "subscription": {
+                    "entity": {
+                        "id": sub.provider_subscription_id,
+                        "status": "active",
+                    }
+                }
+            }
+        }).encode("utf-8")
+        renew_sig = hmac.new(key_secret.encode("utf-8"), renew_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            renew_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=renew_payload,
+                headers={"x-razorpay-signature": renew_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(renew_resp.status_code, 200)
+
+        self.db.expire_all()
+        renewed_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
+        self.assertEqual(renewed_org.lead_credits_used, 0)
+        self.assertEqual(renewed_org.outreach_credits_used, 0)
+
+    # ── 18. Verifiable Production Deployment Health ───────────────────────────
+
+    def test_18_verifiable_production_deployment_health(self):
+        """Production deployment verification:
+        GET /health must expose commit_sha, branch, environment, and database status.
+        """
+        with patch.dict(os.environ, {"GIT_COMMIT_SHA": "37b5f5f4c2810a99", "GIT_BRANCH": "main", "APP_ENV": "production"}):
+            resp = self.client.get("/health")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "healthy")
+            self.assertEqual(data["database"], "connected")
+            self.assertEqual(data["commit_sha"], "37b5f5f4")
+            self.assertEqual(data["branch"], "main")
+            self.assertEqual(data["environment"], "production")
 
 
 if __name__ == "__main__":

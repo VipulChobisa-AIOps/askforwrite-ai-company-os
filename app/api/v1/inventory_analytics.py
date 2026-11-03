@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
 from app.services.inventory_analytics import (
     DEFAULT_BENCHMARK_SKUS,
     INVENTORY_UAT_LOG,
@@ -80,9 +81,11 @@ def run_inventory_audit(
     payload: InventoryAuditRequest,
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
     x_correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
+    principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute an automated StockSense warehouse inventory audit with ABC analysis and TrustBlock sealing."""
+    check_tenant_entitlement(principal, "warehouse_automation", db)
     try:
         result = execute_inventory_audit(
             db=db,
@@ -105,8 +108,11 @@ def run_inventory_audit(
 @router.post("/reorder-plan")
 def get_reorder_recommendations(
     payload: InventoryAuditRequest,
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Calculate dynamic Reorder Points (ROP) and EOQ recommendations without database mutation."""
+    check_tenant_entitlement(principal, "warehouse_automation", db)
     items = payload.items or DEFAULT_BENCHMARK_SKUS
     reorders = compute_reorder_recommendations(
         items=items,

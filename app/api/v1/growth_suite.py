@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.smb_search_source import audit_live_website_seo_geo
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
 from app.services.catalog import CATALOG, build_payment_link, get_package
 from app.services.growth_engine import (
     execute_unified_growth_run,
@@ -112,6 +112,7 @@ def generate_creative_endpoint(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Generate multi-format visual creative specs for the Pixel AI engine."""
+    check_tenant_entitlement(principal, "pixel_ai", db)
     _inject_org_byok_key(principal, db)
     return generate_creative_assets(
         product_name=payload.product_name,
@@ -130,6 +131,7 @@ def generate_unified_campaign_endpoint(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute unified Growth Suite generation: Creative Visuals + SEO Blog + Omnichannel Ads + Closer setup."""
+    check_tenant_entitlement(principal, "growth_suite", db)
     _inject_org_byok_key(principal, db)
     correlation_id = x_correlation_id or str(uuid.uuid4())
 

@@ -220,11 +220,29 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     except Exception:
         db_status = "degraded"
 
+    commit_sha = (
+        os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or os.environ.get("GIT_COMMIT_SHA")
+        or os.environ.get("SOURCE_VERSION")
+        or "development"
+    )
+    branch = (
+        os.environ.get("RAILWAY_GIT_BRANCH")
+        or os.environ.get("RENDER_GIT_BRANCH")
+        or os.environ.get("GIT_BRANCH")
+        or "main"
+    )
+
     data: dict[str, str] = {
         "status": "healthy",
         "service": "AskforWrite AI Company OS",
         "version": "0.2.0",
         "database": db_status,
+        "commit_sha": commit_sha[:8] if len(commit_sha) >= 8 else commit_sha,
+        "commit_sha_full": commit_sha,
+        "branch": branch,
+        "environment": os.environ.get("APP_ENV", "production"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if os.environ.get("NEON_BRANCH"):
@@ -475,15 +493,6 @@ class MarketingCampaignPayload(BaseModel):
     target_audience: str = Field(min_length=1, max_length=250)
     idempotency_key: str = Field(min_length=1, max_length=200)
 
-
-
-@app.get("/health")
-def health(db: Session = Depends(get_db)) -> dict[str, str]:
-    try:
-        db.execute(text("SELECT 1"))
-    except Exception as error:
-        raise HTTPException(status_code=503, detail="database unavailable") from error
-    return {"status": "healthy", "capability": "offline_discovery", "database": "connected"}
 
 
 @app.get("/v1/project/status")

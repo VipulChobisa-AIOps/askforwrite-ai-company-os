@@ -24,7 +24,13 @@ import app.services.payment_paypal
 # Ensure provider modules are imported so @register_provider decorators execute
 import app.services.payment_razorpay  # noqa: F401
 from app.db.database import get_db
-from app.db.models import AuditLog, InvoiceRecord, SubscriptionRecord, WebhookEventRecord
+from app.db.models import (
+    AuditLog,
+    InvoiceRecord,
+    OrganizationRecord,
+    SubscriptionRecord,
+    WebhookEventRecord,
+)
 from app.security.auth import APIPrincipal, require_manager
 from app.services.payment import (
     PaymentProvider,
@@ -189,12 +195,20 @@ async def payment_webhook_endpoint(
         from sqlalchemy.orm.attributes import flag_modified
 
         inv = None
-        if event.resource_id:
+        payment_id = None
+        payload_data = event.data.get("payload", {}) if isinstance(event.data, dict) else {}
+        if "refund" in payload_data:
+            payment_id = payload_data["refund"].get("entity", {}).get("payment_id")
+        elif "payment" in payload_data:
+            payment_id = payload_data["payment"].get("entity", {}).get("id")
+
+        query_ids = [i for i in (event.resource_id, payment_id) if i]
+        if query_ids:
             inv = (
                 db.query(InvoiceRecord)
                 .filter(
-                    (InvoiceRecord.provider_payment_id == event.resource_id)
-                    | (InvoiceRecord.provider_invoice_id == event.resource_id)
+                    (InvoiceRecord.provider_payment_id.in_(query_ids))
+                    | (InvoiceRecord.provider_invoice_id.in_(query_ids))
                 )
                 .first()
             )
@@ -204,6 +218,27 @@ async def payment_webhook_endpoint(
                 inv.status = "refunded"
                 meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
                 meta["refund_event_id"] = event.id
+                # Downgrade organization and revoke paid entitlements on refund
+                if inv.org_id:
+                    org = db.get(OrganizationRecord, inv.org_id)
+                    if org:
+                        org.tier = "free"
+                        org_meta = dict(org.metadata_json or {})
+                        org_meta["package_key"] = "free"
+                        org_meta["entitled_capabilities"] = []
+                        org_meta["revoked_at"] = datetime.now(UTC).isoformat()
+                        org_meta["revocation_reason"] = f"Payment refunded ({event.event_type})"
+                        org.metadata_json = org_meta
+                        org.lead_credits_limit = 50
+                        org.lead_credits_used = 0
+                        org.outreach_credits_limit = 20
+                        org.outreach_credits_used = 0
+                        flag_modified(org, "metadata_json")
+                        logger.warning(
+                            "Organization %s downgraded to free tier and entitlements revoked due to refund of invoice %s",
+                            org.id,
+                            inv.id,
+                        )
             elif "dispute" in raw_ev:
                 inv.status = "disputed"
                 meta["settlement_status"] = "DISPUTED"
@@ -215,6 +250,37 @@ async def payment_webhook_endpoint(
                 meta["settlement_status"] = "PAYMENT_FAILED"
             inv.metadata_json = meta
             flag_modified(inv, "metadata_json")
+
+    # Step 6c: Subscription renewal cycle credit replenishment or cancellation revoking
+    if any(k in raw_ev for k in ("invoice.paid", "subscription.charged", "subscription.renewed")):
+        from sqlalchemy.orm.attributes import flag_modified
+        sub_id = event.resource_id
+        if sub_id:
+            sub = db.query(SubscriptionRecord).filter_by(provider_subscription_id=sub_id).first()
+            if sub and sub.org_id:
+                sub_org = db.get(OrganizationRecord, sub.org_id)
+                if sub_org:
+                    sub_org.lead_credits_used = 0
+                    sub_org.outreach_credits_used = 0
+                    sub_org.updated_at = datetime.now(UTC)
+                    logger.info("Replenished monthly credits for org %s on subscription renewal %s", sub_org.id, sub_id)
+    elif any(k in raw_ev for k in ("subscription.cancelled", "subscription.halted")):
+        from sqlalchemy.orm.attributes import flag_modified
+        sub_id = event.resource_id
+        if sub_id:
+            sub = db.query(SubscriptionRecord).filter_by(provider_subscription_id=sub_id).first()
+            if sub and sub.org_id:
+                sub_org = db.get(OrganizationRecord, sub.org_id)
+                if sub_org:
+                    sub_org.tier = "free"
+                    s_meta = dict(sub_org.metadata_json or {})
+                    s_meta["package_key"] = "free"
+                    s_meta["entitled_capabilities"] = []
+                    s_meta["revoked_at"] = datetime.now(UTC).isoformat()
+                    s_meta["revocation_reason"] = f"Subscription {event.event_type}"
+                    sub_org.metadata_json = s_meta
+                    flag_modified(sub_org, "metadata_json")
+                    logger.warning("Revoked entitlements for org %s due to %s", sub_org.id, event.event_type)
 
     # Mark event as processed
     event_record.processed = True

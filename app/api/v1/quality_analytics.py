@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
 from app.services.quality_analytics import (
     CAPABILITY_NAME,
     CLASSES,
@@ -89,6 +89,7 @@ def inspect_produce_batch(
     db: Session = Depends(get_db),
 ) -> QualityInspectResponse:
     """Execute automated produce quality grading and seal result into cryptographic TrustBlock."""
+    check_tenant_entitlement(principal, "quality_analytics", db)
     try:
         res = execute_produce_quality_inspection(
             db=db,
@@ -129,6 +130,7 @@ async def inspect_uploaded_image(
     db: Session = Depends(get_db),
 ) -> QualityInspectResponse:
     """Upload physical produce photograph for 4-model ripeness analysis and TrustBlock sealing."""
+    check_tenant_entitlement(principal, "quality_analytics", db)
     try:
         contents = await file.read()
         res = execute_produce_quality_inspection(

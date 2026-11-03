@@ -47,6 +47,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
             "MANAGER_API_KEY",
             "pA9F0w_3mK8sL2vX1qZ7jR6tY4uN5bE8oP3iU6yT9rE2wQ1a",
         )
+        os.environ["MANAGER_API_KEY"] = cls.manager_key
         cls.manager_headers = {"X-API-Key": cls.manager_key}
 
     def setUp(self):
@@ -243,6 +244,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         # /v1/inventory/analyze
         resp = self.client.post(
             "/v1/inventory/analyze",
+            headers=self.manager_headers,
             json={"service_level_z": 1.65, "forecast_alpha": 0.3},
         )
         self.assertEqual(resp.status_code, 200)
@@ -255,6 +257,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         # /v1/inventory/reorder-plan
         resp_reorder = self.client.post(
             "/v1/inventory/reorder-plan",
+            headers=self.manager_headers,
             json={"service_level_z": 1.65},
         )
         self.assertEqual(resp_reorder.status_code, 200)

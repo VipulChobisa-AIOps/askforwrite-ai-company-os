@@ -476,6 +476,7 @@ CATALOG: dict[str, PackageDefinition] = {
             "marketing_campaign_suite",
             "inbound_sales_closer",
             "trust_ledger_audit",
+            "customer_discovery",
         ),
         lead_credits_monthly=350,
         outreach_credits_monthly=175,
