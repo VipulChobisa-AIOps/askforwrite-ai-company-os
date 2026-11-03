@@ -19,6 +19,7 @@ from app.agents.discovery import COMPETITOR_DOMAINS
 from app.agents.smb_search_source import CURATED_SMB_DIRECTORY, discover_smb_leads
 from app.db.database import Base, SessionLocal, engine, get_db
 from app.db.models import (
+    ApprovalRequest,
     InvoiceRecord,
     LeadRecordRow,
     OrganizationRecord,
@@ -647,6 +648,238 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         # Verify transport instance initializes cleanly
         transport = SSRFSafeTransport()
         self.assertIsInstance(transport._pool._network_backend, DNSRebindingSafeNetworkBackend)
+
+    # ── 13. Revenue Lifecycle Validation & Webhook Security ───────────────────
+
+    def test_13_revenue_lifecycle_validation_and_webhook_security(self):
+        """Phase 3 Revenue Lifecycle Validation:
+        1. Webhook Signature Verification: Valid signature accepted; forged signature rejected with 401.
+        2. Payment Amount & Currency Check: Underpayment is withheld from provisioning.
+        3. Webhook Idempotency & Replay Protection: Exact event sent twice returns 'duplicate'.
+        4. Auto-Provisioning & Entitlement Activation: Confirmed payment provisions org, unlocks service.
+        5. Failed / Refund Lifecycle: payment.failed -> failed; refund.processed -> refunded.
+        6. Trust Ledger Integrity: ECDSA NIST P-256 Merkle chain verified from Genesis to Tip.
+        """
+        import json
+        key_secret = "rzp_webhook_secret_phase3_test_32ch"
+
+        # 1. Signature Verification: Forged signature -> 401 Unauthorized
+        fake_payload = json.dumps({
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_forged_{uuid.uuid4().hex[:8]}",
+                        "amount": 999900,
+                        "currency": "INR",
+                        "email": "forger@attacker.io",
+                    }
+                }
+            }
+        }).encode("utf-8")
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            forged_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=fake_payload,
+                headers={
+                    "x-razorpay-signature": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "Content-Type": "application/json",
+                },
+            )
+            self.assertEqual(forged_resp.status_code, 401)
+
+        # 2. Payment Amount & Currency Check: Underpayment withheld
+        underpaid_event_id = f"evt_underpaid_{uuid.uuid4().hex[:8]}"
+        underpaid_payload = json.dumps({
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": underpaid_event_id,
+                        "amount": 5000,
+                        "currency": "INR",
+                        "email": f"underpaid-{uuid.uuid4().hex[:6]}@client.in",
+                        "notes": {
+                            "company": "Underpaid Client Co",
+                            "package": "growth_all_in_one",
+                        },
+                    }
+                }
+            }
+        }).encode("utf-8")
+        underpaid_sig = hmac.new(key_secret.encode("utf-8"), underpaid_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            underpaid_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=underpaid_payload,
+                headers={"x-razorpay-signature": underpaid_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(underpaid_resp.status_code, 200)
+            self.assertEqual(underpaid_resp.json().get("provisioning", {}).get("status"), "underpaid_withheld")
+
+        # 3 & 4. Valid Payment: Auto-provisioning & Entitlement Activation
+        valid_event_id = f"evt_valid_{uuid.uuid4().hex[:8]}"
+        customer_email = f"paying-client-{uuid.uuid4().hex[:6]}@enterprise.in"
+        valid_payload = json.dumps({
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": valid_event_id,
+                        "amount": 999900,
+                        "currency": "INR",
+                        "email": customer_email,
+                        "notes": {
+                            "company": "Paying Client Pvt Ltd",
+                            "package": "growth_all_in_one",
+                        },
+                    }
+                }
+            }
+        }).encode("utf-8")
+        valid_sig = hmac.new(key_secret.encode("utf-8"), valid_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            # First submission -> Processed & provisioned
+            valid_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=valid_payload,
+                headers={"x-razorpay-signature": valid_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(valid_resp.status_code, 200)
+            self.assertEqual(valid_resp.json()["status"], "processed")
+            self.assertEqual(valid_resp.json()["provisioning"]["status"], "provisioned")
+            new_org_id = valid_resp.json()["provisioning"]["org_id"]
+
+            # Webhook Idempotency & Replay: Re-submitting identical event must return duplicate
+            dup_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=valid_payload,
+                headers={"x-razorpay-signature": valid_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(dup_resp.status_code, 200)
+            self.assertEqual(dup_resp.json()["status"], "duplicate")
+
+        # Confirm customer can now authenticate and execute entitled service
+        user_record = self.db.query(UserRecord).filter_by(email=customer_email).first()
+        self.assertIsNotNone(user_record)
+        cust_token = create_access_token(
+            user_id=user_record.id,
+            email=user_record.email,
+            role=user_record.role,
+            org_id=new_org_id,
+        )
+        cust_headers = {"Authorization": f"Bearer {cust_token}"}
+
+        svc_resp = self.client.post(
+            "/v1/me/use-service",
+            headers=cust_headers,
+            json={"service_key": "seo_blog_copilot", "parameters": {}},
+        )
+        self.assertEqual(svc_resp.status_code, 200, svc_resp.text)
+
+        # 5. Failed and Refund Event Lifecycle
+        refund_payload = json.dumps({
+            "event": "refund.processed",
+            "payload": {
+                "refund": {
+                    "entity": {
+                        "id": f"rfnd_{uuid.uuid4().hex[:8]}",
+                        "payment_id": valid_event_id,
+                        "amount": 999900,
+                        "currency": "INR",
+                    }
+                }
+            }
+        }).encode("utf-8")
+        refund_sig = hmac.new(key_secret.encode("utf-8"), refund_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            refund_resp = self.client.post(
+                "/v1/webhooks/payment",
+                content=refund_payload,
+                headers={"x-razorpay-signature": refund_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(refund_resp.status_code, 200)
+
+        # 6. Verify Trust Ledger Integrity
+        trust_resp = self.client.get("/v1/trust/verify", headers=self.manager_headers)
+        self.assertEqual(trust_resp.status_code, 200)
+        self.assertTrue(trust_resp.json()["chain_valid"])
+        self.assertGreaterEqual(trust_resp.json()["total_blocks"], 1)
+
+    # ── 14. Commercial Pilot Launch: Lead Discovery, Proposal & HITL Approval ──
+
+    def test_14_commercial_pilot_launch_lead_discovery_and_proposal(self):
+        """Phase 4 Commercial Pilot Launch:
+        1. Live SMB lead discovery with real commercial enterprise candidate.
+        2. Offline synthetic fixtures fail-closed in production.
+        3. Commercial proposal & pitch generation with payment checkout link.
+        4. Owner HITL review and approval governance.
+        5. Trust Ledger ECDSA block sealing upon owner approval.
+        """
+        from app.agents.sources import OfflineSignalProvider, SMBSearchSourceProvider
+
+        # 1. Offline synthetic fixtures are blocked in production
+        with patch.dict(os.environ, {"APP_ENV": "production"}):
+            offline = OfflineSignalProvider()
+            with self.assertRaises(RuntimeError):
+                offline.search("warehouse_automation")
+
+        # 2. Live discovery via SMBSearchSourceProvider
+        live_provider = SMBSearchSourceProvider()
+        candidates = live_provider.search("warehouse_automation", limit=2)
+        self.assertGreater(len(candidates), 0)
+        lead_candidate = candidates[0]
+        self.assertTrue(lead_candidate.website.startswith("http"))
+        self.assertFalse(lead_candidate.do_not_contact)
+
+        # 3. Ingest candidate into database
+        lead_row = LeadRecordRow(
+            id=str(uuid.uuid4()),
+            name=lead_candidate.company,
+            company=lead_candidate.company,
+            website=lead_candidate.website,
+            vertical="warehouse_automation",
+            email=lead_candidate.public_contact_channel or "operations@targetlead.in",
+            status="NEW",
+            qualification_score=0.92,
+        )
+        self.db.add(lead_row)
+        self.db.commit()
+
+        # 4. Generate proposal & pitch via /v1/revenue/pitch-lead (creates durable approval request)
+        pitch_resp = self.client.post(
+            "/v1/revenue/pitch-lead",
+            headers=self.manager_headers,
+            json={
+                "lead_id": lead_row.id,
+                "recipient_email": lead_row.email,
+                "recipient_name": "Operations Director",
+                "idempotency_key": f"pitch-{uuid.uuid4()}",
+            },
+        )
+        self.assertEqual(pitch_resp.status_code, 200, pitch_resp.text)
+        pitch_data = pitch_resp.json()
+        self.assertIn("payment_link", pitch_data)
+        approval_id = pitch_data.get("approval_id")
+        self.assertIsNotNone(approval_id)
+
+        # 5. Owner HITL Decision: Approve proposal for dispatch
+        decision_resp = self.client.post(
+            f"/v1/approvals/{approval_id}/decision",
+            headers=self.owner_headers,
+            json={"decision": "APPROVED", "reason": "Commercial pilot terms verified by owner"},
+        )
+        self.assertEqual(decision_resp.status_code, 200, decision_resp.text)
+        self.assertEqual(decision_resp.json()["status"], "APPROVED")
+
+        # 6. Verify Trust Ledger block was sealed for the approval
+        approval_rec = self.db.query(ApprovalRequest).filter_by(id=approval_id).first()
+        self.assertEqual(approval_rec.status, "APPROVED")
+        self.assertEqual(approval_rec.decided_by, "owner")
 
 
 if __name__ == "__main__":

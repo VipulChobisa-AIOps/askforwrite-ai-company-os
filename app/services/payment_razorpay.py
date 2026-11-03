@@ -353,9 +353,24 @@ class RazorpayProvider(PaymentProviderInterface):
             resource_type = "payment"
             entity = entity_data["payment"].get("entity", {})
             resource_id = entity.get("id", "")
+        elif "refund" in entity_data:
+            resource_type = "refund"
+            entity = entity_data["refund"].get("entity", {})
+            resource_id = entity.get("id", "")
+        elif "order" in entity_data:
+            resource_type = "order"
+            entity = entity_data["order"].get("entity", {})
+            resource_id = entity.get("id", "")
+
+        event_id = (
+            data.get("event_id")
+            or data.get("id")
+            or (f"evt_{event_type}_{resource_id}" if resource_id else None)
+            or hashlib.sha256(payload).hexdigest()
+        )
 
         return WebhookEvent(
-            id=data.get("event_id", str(uuid.uuid4())),
+            id=event_id,
             provider=PaymentProvider.RAZORPAY,
             event_type=event_type,
             raw_event_type=raw_event_type,

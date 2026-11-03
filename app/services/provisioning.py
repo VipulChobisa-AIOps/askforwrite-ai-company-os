@@ -117,6 +117,22 @@ def auto_provision_tenant_on_payment(
     # Lookup catalog package for entitlements
     pkg = get_package(package_key) or CATALOG["company_os_starter"]
 
+    # Verify payment amount and currency before provisioning (Revenue Lifecycle Validation)
+    clean_curr = (currency or "INR").upper()
+    expected_price = float(pkg.price_inr if clean_curr == "INR" else pkg.price_usd)
+    if expected_price > 0 and amount > 0 and amount < (expected_price * 0.95):
+        logger.warning(
+            "Payment underpayment detected for package '%s': received %s %s, expected %s %s. Provisioning withheld.",
+            pkg.key, amount, clean_curr, expected_price, clean_curr,
+        )
+        return {
+            "status": "underpaid_withheld",
+            "package_key": pkg.key,
+            "received_amount": amount,
+            "expected_amount": expected_price,
+            "currency": clean_curr,
+        }
+
     # Check if a user with this email already exists
     existing_user = db.query(UserRecord).filter_by(email=email).first()
     if existing_user:
