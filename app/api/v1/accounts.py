@@ -40,6 +40,7 @@ from app.security.auth import (
     enforce_tenant_access,
     require_manager,
     require_owner,
+    revoke_user,
 )
 
 logger = logging.getLogger(__name__)
@@ -286,6 +287,7 @@ def remove_org_user(
 
     db.delete(user)
     db.commit()
+    revoke_user(user_id)
 
 
 # ── Invoice Endpoints ────────────────────────────────────────────────

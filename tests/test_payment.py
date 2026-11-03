@@ -708,6 +708,119 @@ class TestWebhookEndpoint(PaymentTestBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], "duplicate")
 
+    def test_razorpay_recurring_subscription_charged_cycles_and_idempotency(self):
+        """Issue #16: Test real-format subscription.charged events across multiple billing cycles,
+        ensuring distinct payment IDs process without collision, duplicate payloads are safely dropped,
+        and missing payment IDs fallback cleanly."""
+        session = self.session_factory()
+        session.add(SubscriptionRecord(
+            id="sub-rec-rec-01",
+            provider="razorpay",
+            provider_subscription_id="sub_real_rzp_recurring",
+            status="active",
+            customer_id="cust-local-01",
+            plan_id="plan_rzp_recurring",
+        ))
+        session.commit()
+        session.close()
+
+        secret = "rzp_recurring_test_secret"
+
+        # Cycle 1: Payment entity pay_cycle_1
+        payload_c1 = json.dumps({
+            "event": "subscription.charged",
+            "payload": {
+                "subscription": {
+                    "entity": {
+                        "id": "sub_real_rzp_recurring",
+                        "status": "active",
+                    }
+                },
+                "payment": {
+                    "entity": {
+                        "id": "pay_cycle_1_id",
+                        "amount": 799900,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            }
+        })
+        sig_c1 = self._rzp_sig(payload_c1, secret)
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": secret}):
+            # First delivery of cycle 1 -> must process
+            resp1 = self._post(
+                "/v1/webhooks/payment",
+                content=payload_c1,
+                headers={"x-razorpay-signature": sig_c1, "content-type": "application/json"},
+            )
+            self.assertEqual(resp1.status_code, 200)
+            self.assertEqual(resp1.json()["status"], "processed")
+
+            # Duplicate delivery of cycle 1 -> must detect duplicate idempotently
+            resp1_dup = self._post(
+                "/v1/webhooks/payment",
+                content=payload_c1,
+                headers={"x-razorpay-signature": sig_c1, "content-type": "application/json"},
+            )
+            self.assertEqual(resp1_dup.status_code, 200)
+            self.assertEqual(resp1_dup.json()["status"], "duplicate")
+
+            # Cycle 2: Same subscription, distinct payment entity pay_cycle_2
+            payload_c2 = json.dumps({
+                "event": "subscription.charged",
+                "payload": {
+                    "subscription": {
+                        "entity": {
+                            "id": "sub_real_rzp_recurring",
+                            "status": "active",
+                        }
+                    },
+                    "payment": {
+                        "entity": {
+                            "id": "pay_cycle_2_id",
+                            "amount": 799900,
+                            "currency": "INR",
+                            "status": "captured",
+                        }
+                    }
+                }
+            })
+            sig_c2 = self._rzp_sig(payload_c2, secret)
+
+            # Cycle 2 must NOT be dropped as duplicate
+            resp2 = self._post(
+                "/v1/webhooks/payment",
+                content=payload_c2,
+                headers={"x-razorpay-signature": sig_c2, "content-type": "application/json"},
+            )
+            self.assertEqual(resp2.status_code, 200)
+            self.assertEqual(resp2.json()["status"], "processed")
+
+            # Cycle 3: Missing payment entity entirely -> synthetic fallback succeeds
+            payload_c3 = json.dumps({
+                "event": "subscription.charged",
+                "payload": {
+                    "subscription": {
+                        "entity": {
+                            "id": "sub_real_rzp_recurring",
+                            "status": "active",
+                            "created_at": 1730000000,
+                        }
+                    }
+                }
+            })
+            sig_c3 = self._rzp_sig(payload_c3, secret)
+
+            resp3 = self._post(
+                "/v1/webhooks/payment",
+                content=payload_c3,
+                headers={"x-razorpay-signature": sig_c3, "content-type": "application/json"},
+            )
+            self.assertEqual(resp3.status_code, 200)
+            self.assertIn(resp3.json()["status"], ("processed", "duplicate"))
+
     def test_list_webhook_events(self):
         session = self.session_factory()
         for i, (prov, evt_id, etype) in enumerate([

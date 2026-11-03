@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import secrets
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -65,6 +66,35 @@ def _get_signing_secret() -> str:
     )
 
 
+_REVOKED_TOKENS: set[str] = set()
+_REVOKED_USERS: set[str] = set()
+
+
+def revoke_token(token_or_jti: str) -> None:
+    """Revoke a specific token string or token jti identifier."""
+    if token_or_jti:
+        _REVOKED_TOKENS.add(token_or_jti.strip())
+
+
+def revoke_user(user_id: str) -> None:
+    """Revoke all active tokens for a deactivated user ID."""
+    if user_id:
+        _REVOKED_USERS.add(user_id.strip())
+
+
+def is_token_revoked(token: str, payload: dict[str, Any]) -> bool:
+    """Verify whether a token or its associated user has been revoked."""
+    if token in _REVOKED_TOKENS:
+        return True
+    jti = payload.get("jti")
+    if jti and jti in _REVOKED_TOKENS:
+        return True
+    sub = payload.get("sub")
+    if sub and sub in _REVOKED_USERS:
+        return True
+    return False
+
+
 def create_access_token(
     user_id: str,
     email: str,
@@ -77,6 +107,7 @@ def create_access_token(
     secret = _get_signing_secret()
     expire = datetime.now(UTC) + (expires_delta or timedelta(hours=24))
     payload: dict[str, Any] = {
+        "jti": str(uuid.uuid4()),
         "sub": user_id,
         "email": email,
         "role": role,
@@ -108,6 +139,10 @@ def decode_access_token(token: str) -> dict[str, Any]:
     exp = payload.get("exp", 0)
     if datetime.now(UTC).timestamp() > exp:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
+
+    if is_token_revoked(token, payload):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
+
     return payload
 
 
@@ -201,6 +236,15 @@ def require_platform_owner(
     """Strictly require platform owner (OWNER_API_KEY). Tenant users forbidden."""
     if principal.role != "owner" or principal.org_id is not None:
         raise HTTPException(status_code=403, detail="Platform owner credentials required")
+    return principal
+
+
+def require_subscription_owner(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Require Platform Owner or Tenant Owner/Administrator. Ordinary managers and members are forbidden."""
+    if principal.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner role required")
     return principal
 
 

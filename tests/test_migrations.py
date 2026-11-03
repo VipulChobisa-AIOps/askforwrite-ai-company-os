@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.pool import StaticPool
 
 import migrations.versions.e5f6a1b2c3d4_add_watchdog_preview_and_shift_tables as sprint5_migration
+import migrations.versions.f6a1b2c3d4e5_add_sovereign_payment_sessions as sovereign_migration
 
 
 class MigrationChainAndSchemaParityTests(unittest.TestCase):
@@ -117,6 +118,86 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
 
             finally:
                 sprint5_migration.op = orig_op
+
+    def test_sovereign_sessions_migration_upgrade_and_downgrade_parity(self):
+        """Verify upgrade() and downgrade() of f6a1b2c3d4e5 (sovereign_payment_sessions)."""
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
+        from alembic.runtime.migration import MigrationContext
+        from alembic.operations import Operations
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+
+            orig_op = sovereign_migration.op
+            sovereign_migration.op = op
+            try:
+                # 1. Run upgrade
+                sovereign_migration.upgrade()
+                conn.commit()
+
+                inspector = inspect(conn)
+                table_names = inspector.get_table_names()
+                self.assertIn("sovereign_payment_sessions", table_names)
+
+                cols = {c["name"] for c in inspector.get_columns("sovereign_payment_sessions")}
+                expected_cols = {
+                    "session_id", "package_key", "package_name", "company_name",
+                    "customer_email", "customer_name", "currency", "amount",
+                    "preferred_rail", "status", "upi_uri", "checkout_url", "created_at"
+                }
+                self.assertTrue(expected_cols.issubset(cols))
+
+                # 2. Run downgrade
+                sovereign_migration.downgrade()
+                conn.commit()
+
+                inspector_after = inspect(conn)
+                self.assertNotIn("sovereign_payment_sessions", inspector_after.get_table_names())
+            finally:
+                sovereign_migration.op = orig_op
+
+    def test_neon_postgres_migration_recovery_drill(self):
+        """Issue #18: Simulate Neon PostgreSQL transient disconnect during migration and recover cleanly."""
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
+        from alembic.runtime.migration import MigrationContext
+        from alembic.operations import Operations
+        from unittest.mock import MagicMock
+
+        # Phase 1: Simulate connection disconnect / failure mid-migration
+        failing_op = MagicMock()
+        failing_op.create_table.side_effect = ConnectionResetError("Neon server closed connection unexpectedly")
+
+        orig_op = sovereign_migration.op
+        sovereign_migration.op = failing_op
+        try:
+            with self.assertRaises(ConnectionResetError):
+                sovereign_migration.upgrade()
+        finally:
+            sovereign_migration.op = orig_op
+
+        # Phase 2: Recovery drill - reconnect with healthy connection and verify idempotent migration succeeds
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            healthy_op = Operations(ctx)
+            sovereign_migration.op = healthy_op
+            try:
+                sovereign_migration.upgrade()
+                conn.commit()
+                inspector = inspect(conn)
+                self.assertIn("sovereign_payment_sessions", inspector.get_table_names())
+            finally:
+                sovereign_migration.op = orig_op
 
 
 if __name__ == "__main__":

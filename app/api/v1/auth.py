@@ -14,7 +14,7 @@ import re
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from app.security.auth import (
     create_access_token,
     get_current_principal,
     hash_password,
+    revoke_token,
     verify_password,
 )
 from app.services.catalog import CATALOG, build_payment_link, get_package
@@ -433,3 +434,15 @@ def get_current_user_profile(
         outreach_credits_remaining=outreach_rem,
         is_active=user.is_active,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout_endpoint(
+    authorization: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> dict[str, str]:
+    """Revoke the current bearer authentication token."""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+        revoke_token(token)
+    return {"status": "logged_out", "message": "Token revoked successfully"}

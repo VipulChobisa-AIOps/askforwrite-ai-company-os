@@ -183,6 +183,10 @@ def _is_do_not_contact(candidate: SignalBundle) -> bool:
     if candidate.do_not_contact:
         return True
 
+    from app.services.suppression import is_suppressed
+    if candidate.website and is_suppressed(candidate.website):
+        return True
+
     # Domain check
     hostname = (urlsplit(candidate.website).hostname or "").casefold().rstrip(".")
     if any(hostname == c or hostname.endswith(f".{c}") for c in COMPETITOR_DOMAINS):

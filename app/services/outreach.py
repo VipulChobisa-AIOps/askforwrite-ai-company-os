@@ -114,6 +114,10 @@ def draft_outreach(
     if any(kw in company_lower for kw in COMPETITOR_COMPANY_KEYWORDS):
         raise ValueError(f"Outreach to competitor firm '{lead.company}' is strictly prohibited.")
 
+    from app.services.suppression import is_suppressed
+    if (target_email and is_suppressed(target_email)) or (target_domain and is_suppressed(target_domain)):
+        raise ValueError(f"Outreach to suppressed or opted-out recipient '{target_email or target_domain}' is strictly prohibited.")
+
     # Check organizational credit limit
     org: OrganizationRecord | None = None
     if org_id:

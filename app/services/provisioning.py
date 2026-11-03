@@ -109,25 +109,31 @@ def auto_provision_tenant_on_payment(
         plan_id = resource.get("plan_id") or ""
         description = resource.get("description") or ""
 
-        if custom_id and custom_id in CATALOG:
+        if custom_id:
             package_key = custom_id
         elif plan_id:
             sub = db.query(SubscriptionRecord).filter(
                 (SubscriptionRecord.plan_id == plan_id)
                 | (SubscriptionRecord.provider_subscription_id == resource.get("id"))
             ).first()
-            if sub and sub.plan_id in CATALOG:
+            if sub and sub.plan_id:
                 package_key = sub.plan_id
-        if package_key == "company_os_starter" and description:
+            else:
+                package_key = plan_id
+        elif description:
+            package_key = "company_os_starter"
             for k in CATALOG:
                 if k in description.lower() or CATALOG[k].name.lower() in description.lower():
                     package_key = k
                     break
-        if package_key == "company_os_starter" and amount > 0:
+        elif amount > 0:
+            package_key = "company_os_starter"
             for k, p in CATALOG.items():
                 if abs(p.price_usd - amount) < 1.0:
                     package_key = k
                     break
+        else:
+            package_key = "company_os_starter"
 
     if not email or "@" not in email:
         logger.info("Webhook event %s did not contain customer email for auto-provisioning", event.id)
@@ -140,11 +146,36 @@ def auto_provision_tenant_on_payment(
         domain_part = email.split("@")[1].split(".")[0]
         company_name = f"{domain_part.capitalize()} Operations"
 
-    # Lookup catalog package for entitlements
-    pkg = get_package(package_key) or CATALOG["company_os_starter"]
+    # Strict Package Validation (Reject unknown packages fail-closed)
+    pkg = get_package(package_key)
+    if not pkg:
+        logger.warning(
+            "Provisioning withheld: unknown package key '%s' for webhook event %s",
+            package_key,
+            event.id,
+        )
+        return {
+            "status": "unknown_package_withheld",
+            "package_key": package_key,
+        }
 
-    # Verify payment amount and currency before provisioning (Revenue Lifecycle Validation)
-    clean_curr = (currency or "INR").upper()
+    # Strict Currency Validation (Only INR and USD supported)
+    SUPPORTED_CURRENCIES = {"INR", "USD"}
+    clean_curr = (currency or "INR").upper().strip()
+    if clean_curr not in SUPPORTED_CURRENCIES:
+        logger.warning(
+            "Provisioning withheld: unsupported currency '%s' for package '%s' in event %s",
+            clean_curr,
+            pkg.key,
+            event.id,
+        )
+        return {
+            "status": "unsupported_currency_withheld",
+            "currency": clean_curr,
+            "package_key": pkg.key,
+        }
+
+    # Verify payment amount against package catalog price (Revenue Lifecycle Validation)
     expected_price = float(pkg.price_inr if clean_curr == "INR" else pkg.price_usd)
     if expected_price > 0 and (amount <= 0 or amount < (expected_price * 0.95)):
         logger.warning(

@@ -31,7 +31,13 @@ from app.db.models import (
     CustomerRecord,
     SubscriptionRecord,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner, require_platform_owner
+from app.security.auth import (
+    APIPrincipal,
+    enforce_tenant_access,
+    require_manager,
+    require_platform_owner,
+    require_subscription_owner,
+)
 from app.services.payment import (
     PaymentError,
     PaymentProvider,
@@ -357,7 +363,7 @@ async def cancel_subscription_endpoint(
     subscription_id: str,
     payload: CancelSubscriptionRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_owner),
+    principal: APIPrincipal = Depends(require_subscription_owner),
     db: Session = Depends(get_db),
 ) -> dict:
     """Cancel a subscription (owner-only)."""

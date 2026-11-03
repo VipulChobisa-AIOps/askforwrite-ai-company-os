@@ -361,3 +361,82 @@ class TestProvisioningService(unittest.TestCase):
         org2 = self.db.query(OrganizationRecord).filter_by(id=result["org_id"]).first()
         self.assertIsNotNone(org2)
         self.assertEqual(org2.slug, "acme-operations-1")
+
+    def test_auto_provision_rejects_unknown_package(self):
+        event = WebhookEvent(
+            id="evt_test_unknown_pkg",
+            provider=PaymentProvider.RAZORPAY,
+            event_type="payment.captured",
+            raw_event_type="payment.captured",
+            resource_type="payment",
+            resource_id="pay_unk01",
+            data={
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "email": "buyer@unknown.io",
+                            "notes": {"notes_package": "super_fake_tier_99"},
+                            "amount": 999900,
+                            "currency": "INR",
+                        }
+                    }
+                }
+            },
+        )
+        result = auto_provision_tenant_on_payment(self.db, event)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "unknown_package_withheld")
+        self.assertEqual(result["package_key"], "super_fake_tier_99")
+
+    def test_auto_provision_rejects_unsupported_currency(self):
+        event = WebhookEvent(
+            id="evt_test_bad_curr",
+            provider=PaymentProvider.RAZORPAY,
+            event_type="payment.captured",
+            raw_event_type="payment.captured",
+            resource_type="payment",
+            resource_id="pay_bad_curr",
+            data={
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "email": "buyer@europe.eu",
+                            "notes": {"notes_package": "company_os_starter"},
+                            "amount": 9900,
+                            "currency": "EUR",
+                        }
+                    }
+                }
+            },
+        )
+        result = auto_provision_tenant_on_payment(self.db, event)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "unsupported_currency_withheld")
+        self.assertEqual(result["currency"], "EUR")
+
+    def test_auto_provision_rejects_underpayment(self):
+        event = WebhookEvent(
+            id="evt_test_underpaid",
+            provider=PaymentProvider.RAZORPAY,
+            event_type="payment.captured",
+            raw_event_type="payment.captured",
+            resource_type="payment",
+            resource_id="pay_under01",
+            data={
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "email": "cheap@buyer.com",
+                            "notes": {"notes_package": "company_os_starter"},
+                            "amount": 10000,  # 100 INR instead of 7999 INR
+                            "currency": "INR",
+                        }
+                    }
+                }
+            },
+        )
+        result = auto_provision_tenant_on_payment(self.db, event)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["status"], "underpaid_withheld")
+        self.assertEqual(result["expected_amount"], 7999.0)
+        self.assertEqual(result["received_amount"], 100.0)
