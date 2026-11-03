@@ -36,7 +36,7 @@ from app.security.auth import (
     hash_password,
     verify_password,
 )
-from app.services.catalog import CATALOG, get_package
+from app.services.catalog import CATALOG, build_payment_link, get_all_packages, get_package
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +126,57 @@ class UpdateGeminiKeyRequest(BaseModel):
     gemini_api_key: str | None = Field(default=None, max_length=256)
 
 
+class UpgradeOption(BaseModel):
+    package_key: str
+    package_name: str
+    category: str
+    price_inr: int
+    price_usd: int
+    lead_credits_monthly: int
+    outreach_credits_monthly: int
+    entitled_capabilities: list[str]
+    checkout_url: str
+
+
+class SubscriptionResponse(BaseModel):
+    org_id: str
+    org_name: str
+    tier: str
+    package_key: str | None
+    package_name: str
+    subscription_status: str
+    is_active: bool
+    lead_credits_limit: int
+    lead_credits_used: int
+    lead_credits_remaining: int
+    outreach_credits_limit: int
+    outreach_credits_used: int
+    outreach_credits_remaining: int
+    invoices_count: int
+    upgrade_options: list[UpgradeOption]
+
+
+class ServiceExecutionStat(BaseModel):
+    action: str
+    capability: str
+    timestamp: datetime
+    status: str
+
+
+class AnalyticsResponse(BaseModel):
+    org_id: str
+    org_name: str
+    lead_credits_used: int
+    lead_credits_limit: int
+    outreach_credits_used: int
+    outreach_credits_limit: int
+    lead_utilization_pct: float
+    outreach_utilization_pct: float
+    total_service_executions: int
+    recent_executions: list[ServiceExecutionStat]
+    estimated_cost_savings_inr: int
+
+
 
 # ── Capability descriptions ───────────────────────────────────────────────────
 
@@ -210,10 +261,10 @@ def get_me(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     meta = org.metadata_json or {}
-    package_key = meta.get("package_key", "company_os_starter")
-    pkg = get_package(package_key) or CATALOG.get("company_os_starter")
-    entitled = pkg.entitled_capabilities if pkg else set()
-    package_name = pkg.name if pkg else None
+    package_key = meta.get("package_key") or (org.tier if org.tier != "free" else None)
+    pkg = get_package(package_key) if package_key else None
+    entitled = set(meta.get("entitled_capabilities") or (pkg.entitled_capabilities if pkg else ()))
+    package_name = pkg.name if pkg else ("Free Trial" if org.tier == "free" else None)
 
     org_gemini_key = meta.get("gemini_api_key")
     has_custom = bool(org_gemini_key and str(org_gemini_key).strip())
@@ -364,11 +415,149 @@ def get_me_capabilities(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     meta = org.metadata_json or {}
-    package_key = meta.get("package_key", "company_os_starter")
-    pkg = get_package(package_key) or CATALOG.get("company_os_starter")
-    entitled = pkg.entitled_capabilities if pkg else set()
+    package_key = meta.get("package_key") or (org.tier if org.tier != "free" else None)
+    pkg = get_package(package_key) if package_key else None
+    entitled = set(meta.get("entitled_capabilities") or (pkg.entitled_capabilities if pkg else ()))
 
     return _build_capability_entries(entitled)
+
+
+@router.get(
+    "/subscription",
+    response_model=SubscriptionResponse,
+    summary="Get subscription status, plan details, and upgrade options",
+    operation_id="get_me_subscription",
+)
+def get_me_subscription(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> SubscriptionResponse:
+    """Return the authenticated tenant's complete subscription lifecycle status, renewal limits, and upgrade paths."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    meta = org.metadata_json or {}
+    pkg_key = meta.get("package_key") or (org.tier if org.tier != "free" else None)
+    pkg = get_package(pkg_key) if pkg_key else None
+    pkg_name = pkg.name if pkg else ("Free Trial" if org.tier == "free" else "Custom Plan")
+    sub_status = meta.get("subscription_status") or ("ACTIVE" if org.is_active else "PENDING_PAYMENT")
+    if org.tier == "free" and not meta.get("package_key"):
+        sub_status = "FREE_TIER"
+
+    invoices_count = db.query(InvoiceRecord).filter_by(org_id=org.id).count()
+
+    upgrade_options = []
+    for p in get_all_packages():
+        if p.key != pkg_key and p.category in ("master_bundle", "modular_tool"):
+            checkout_url = build_payment_link(
+                package_key=p.key,
+                customer_email=user.email,
+                company=org.name,
+                provider=meta.get("payment_provider", "sovereign_direct"),
+            )
+            upgrade_options.append(
+                UpgradeOption(
+                    package_key=p.key,
+                    package_name=p.name,
+                    category=p.category,
+                    price_inr=p.price_inr,
+                    price_usd=p.price_usd,
+                    lead_credits_monthly=p.lead_credits_monthly,
+                    outreach_credits_monthly=p.outreach_credits_monthly,
+                    entitled_capabilities=list(p.entitled_capabilities),
+                    checkout_url=checkout_url,
+                )
+            )
+
+    lead_rem = max(0, org.lead_credits_limit - org.lead_credits_used)
+    out_rem = max(0, org.outreach_credits_limit - org.outreach_credits_used)
+
+    return SubscriptionResponse(
+        org_id=org.id,
+        org_name=org.name,
+        tier=org.tier,
+        package_key=pkg_key,
+        package_name=pkg_name,
+        subscription_status=sub_status,
+        is_active=org.is_active,
+        lead_credits_limit=org.lead_credits_limit,
+        lead_credits_used=org.lead_credits_used,
+        lead_credits_remaining=lead_rem,
+        outreach_credits_limit=org.outreach_credits_limit,
+        outreach_credits_used=org.outreach_credits_used,
+        outreach_credits_remaining=out_rem,
+        invoices_count=invoices_count,
+        upgrade_options=upgrade_options[:6],
+    )
+
+
+@router.get(
+    "/analytics",
+    response_model=AnalyticsResponse,
+    summary="Get tenant service execution analytics and estimated ROI savings",
+    operation_id="get_me_analytics",
+)
+def get_me_analytics(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> AnalyticsResponse:
+    """Return consumption telemetry, recent modular executions, and estimated cost savings."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    lead_util = (
+        round((org.lead_credits_used / org.lead_credits_limit) * 100, 1)
+        if org.lead_credits_limit > 0
+        else 0.0
+    )
+    out_util = (
+        round((org.outreach_credits_used / org.outreach_credits_limit) * 100, 1)
+        if org.outreach_credits_limit > 0
+        else 0.0
+    )
+
+    recent_logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.agent_id.in_([user.id, principal.subject]))
+        .order_by(AuditLog.id.desc())
+        .limit(10)
+        .all()
+    )
+
+    stats = [
+        ServiceExecutionStat(
+            action=log.action,
+            capability=log.capability_name,
+            timestamp=log.created_at,
+            status=log.status,
+        )
+        for log in recent_logs
+    ]
+
+    total_execs = db.query(AuditLog).filter(AuditLog.agent_id.in_([user.id, principal.subject])).count()
+    estimated_savings = total_execs * 2500
+
+    return AnalyticsResponse(
+        org_id=org.id,
+        org_name=org.name,
+        lead_credits_used=org.lead_credits_used,
+        lead_credits_limit=org.lead_credits_limit,
+        outreach_credits_used=org.outreach_credits_used,
+        outreach_credits_limit=org.outreach_credits_limit,
+        lead_utilization_pct=lead_util,
+        outreach_utilization_pct=out_util,
+        total_service_executions=total_execs,
+        recent_executions=stats,
+        estimated_cost_savings_inr=estimated_savings,
+    )
 
 
 @router.post(

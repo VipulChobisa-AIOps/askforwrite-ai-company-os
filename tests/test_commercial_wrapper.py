@@ -120,6 +120,78 @@ class TestCustomerSignupOnboarding(unittest.TestCase):
         resp = self.client.post("/v1/auth/signup", json=payload)
         self.assertEqual(resp.status_code, 422)
 
+    def test_customer_portal_subscription_lifecycle_and_analytics_endpoints(self):
+        """Verify GET /v1/me/subscription returns plan status, upgrade options, and GET /v1/me/analytics returns execution metrics."""
+        from app.security.auth import create_access_token
+
+        # 1. Create org and admin user
+        org = OrganizationRecord(
+            name="SaaS Scale Dynamics",
+            slug="saas-scale-dynamics",
+            tier="starter",
+            lead_credits_limit=150,
+            lead_credits_used=30,
+            outreach_credits_limit=75,
+            outreach_credits_used=15,
+            is_active=True,
+            metadata_json={"package_key": "company_os_starter", "subscription_status": "ACTIVE"},
+        )
+        self.db.add(org)
+        self.db.commit()
+
+        user = UserRecord(
+            org_id=org.id,
+            email="founder@saasscale.io",
+            full_name="Vikram Joshi",
+            role="admin",
+            password_hash="fakehash",
+            is_active=True,
+        )
+        self.db.add(user)
+        self.db.commit()
+
+        # Add mock audit logs for analytics
+        for i in range(3):
+            self.db.add(
+                AuditLog(
+                    task_id=f"task-dyn-{i}",
+                    correlation_id=f"corr-dyn-{i}",
+                    agent_id=user.id,
+                    capability_name="warehouse_automation",
+                    action="inventory_audit",
+                    input_payload={"sku_count": 5},
+                    output_payload={"status": "completed"},
+                    status="COMPLETED",
+                )
+            )
+        self.db.commit()
+
+        token = create_access_token(user_id=user.id, email=user.email, role="admin", org_id=org.id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 2. Test GET /v1/me/subscription
+        sub_resp = self.client.get("/v1/me/subscription", headers=headers)
+        self.assertEqual(sub_resp.status_code, 200)
+        sub_data = sub_resp.json()
+        self.assertEqual(sub_data["package_key"], "company_os_starter")
+        self.assertEqual(sub_data["subscription_status"], "ACTIVE")
+        self.assertEqual(sub_data["lead_credits_limit"], 150)
+        self.assertEqual(sub_data["lead_credits_used"], 30)
+        self.assertEqual(sub_data["lead_credits_remaining"], 120)
+        self.assertTrue(len(sub_data["upgrade_options"]) > 0)
+        self.assertIn("checkout_url", sub_data["upgrade_options"][0])
+
+        # 3. Test GET /v1/me/analytics
+        ana_resp = self.client.get("/v1/me/analytics", headers=headers)
+        self.assertEqual(ana_resp.status_code, 200)
+        ana_data = ana_resp.json()
+        self.assertEqual(ana_data["lead_credits_used"], 30)
+        self.assertEqual(ana_data["lead_credits_limit"], 150)
+        self.assertEqual(ana_data["lead_utilization_pct"], 20.0)
+        self.assertEqual(ana_data["total_service_executions"], 3)
+        self.assertEqual(len(ana_data["recent_executions"]), 3)
+        self.assertEqual(ana_data["estimated_cost_savings_inr"], 3 * 2500)
+
 
 class TestTenantAwareRateLimiter(unittest.TestCase):
     """Tests for RateLimitMiddleware tenant and tier sensitivity."""
