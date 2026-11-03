@@ -215,30 +215,45 @@ async def payment_webhook_endpoint(
         if inv:
             meta = dict(inv.metadata_json or {})
             if "refund" in raw_ev:
-                inv.status = "refunded"
-                meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
-                meta["refund_event_id"] = event.id
-                # Downgrade organization and revoke paid entitlements on refund
-                if inv.org_id:
-                    org = db.get(OrganizationRecord, inv.org_id)
-                    if org:
-                        org.tier = "free"
-                        org_meta = dict(org.metadata_json or {})
-                        org_meta["package_key"] = "free"
-                        org_meta["entitled_capabilities"] = []
-                        org_meta["revoked_at"] = datetime.now(UTC).isoformat()
-                        org_meta["revocation_reason"] = f"Payment refunded ({event.event_type})"
-                        org.metadata_json = org_meta
-                        org.lead_credits_limit = 50
-                        org.lead_credits_used = 0
-                        org.outreach_credits_limit = 20
-                        org.outreach_credits_used = 0
-                        flag_modified(org, "metadata_json")
-                        logger.warning(
-                            "Organization %s downgraded to free tier and entitlements revoked due to refund of invoice %s",
-                            org.id,
-                            inv.id,
-                        )
+                refund_entity = payload_data.get("refund", {}).get("entity", {}) if payload_data else {}
+                raw_rfnd_amt = refund_entity.get("amount") or (event.data or {}).get("amount")
+                rfnd_amt = float(raw_rfnd_amt) if raw_rfnd_amt is not None else 0.0
+                inv_amt = float(inv.amount or 0.0)
+
+                # Full refund check: if refund amount matches or exceeds invoice amount, or is non-itemized
+                is_full_refund = (rfnd_amt == 0.0) or (inv_amt > 0 and rfnd_amt >= inv_amt)
+
+                if is_full_refund:
+                    inv.status = "refunded"
+                    meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
+                    meta["refund_event_id"] = event.id
+                    # Downgrade organization and revoke paid entitlements on full refund
+                    if inv.org_id:
+                        org = db.get(OrganizationRecord, inv.org_id)
+                        if org:
+                            org.tier = "free"
+                            org_meta = dict(org.metadata_json or {})
+                            org_meta["package_key"] = "free"
+                            org_meta["entitled_capabilities"] = []
+                            org_meta["revoked_at"] = datetime.now(UTC).isoformat()
+                            org_meta["revocation_reason"] = f"Payment fully refunded ({event.event_type})"
+                            org.metadata_json = org_meta
+                            org.lead_credits_limit = 50
+                            org.lead_credits_used = 0
+                            org.outreach_credits_limit = 20
+                            org.outreach_credits_used = 0
+                            flag_modified(org, "metadata_json")
+                            logger.warning(
+                                "Organization %s downgraded to free tier and entitlements revoked due to full refund of invoice %s",
+                                org.id,
+                                inv.id,
+                            )
+                else:
+                    inv.status = "partially_refunded"
+                    meta["settlement_status"] = "PARTIALLY_REFUNDED"
+                    meta["refund_event_id"] = event.id
+                    meta["refunded_amount"] = rfnd_amt
+                    logger.info("Invoice %s marked partially refunded for %s; tenant tier maintained", inv.id, rfnd_amt)
             elif "dispute" in raw_ev:
                 inv.status = "disputed"
                 meta["settlement_status"] = "DISPUTED"

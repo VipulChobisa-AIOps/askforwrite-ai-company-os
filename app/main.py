@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -235,7 +235,7 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     )
 
     data: dict[str, str] = {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "unhealthy",
         "service": "AskforWrite AI Company OS",
         "version": "0.2.0",
         "database": db_status,
@@ -247,6 +247,12 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     }
     if os.environ.get("NEON_BRANCH"):
         data["neon_branch"] = os.environ.get("NEON_BRANCH", "")
+
+    if db_status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=data,
+        )
     return data
 
 
@@ -1487,6 +1493,8 @@ def publish_seo_draft_endpoint(
             correlation_id=correlation_id,
             published_by=principal.subject,
         )
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

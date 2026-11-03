@@ -90,6 +90,15 @@ def publish_seo_draft_to_wordpress(
     if not draft:
         raise ValueError(f"SeoDraftRecord '{draft_id}' not found")
 
+    # HITL Governance: An associated approval must be in APPROVED state before publication
+    if draft.approval_id:
+        from app.db.models import ApprovalRequest
+        approval = db.get(ApprovalRequest, draft.approval_id)
+        if approval and approval.status != "APPROVED":
+            raise PermissionError(
+                f"SEO Draft '{draft_id}' cannot be published: approval '{draft.approval_id}' status is '{approval.status}'. Owner approval required."
+            )
+
     network = (draft.target_network or "askforwrite.in").strip().lower()
     # Normalize network url if full url passed
     if "://" in network:
@@ -153,6 +162,8 @@ def publish_seo_draft_to_wordpress(
     db.add(draft)
 
     # Register AuditLog
+    is_simulated = (mode == "WORDPRESS_SIMULATED_REST")
+    delivery_verification = "LIVE_WORDPRESS_REST" if not is_simulated else "SIMULATED_CREDENTIALS_UNSET"
     audit_payload = {
         "draft_id": str(draft.id),
         "network": network,
@@ -161,6 +172,8 @@ def publish_seo_draft_to_wordpress(
         "url": canonical_url,
         "post_id": post_id,
         "mode": mode,
+        "is_simulated": is_simulated,
+        "delivery_verification": delivery_verification,
         "status": "PUBLISHED",
     }
     audit = AuditLog(
@@ -196,6 +209,8 @@ def publish_seo_draft_to_wordpress(
         "canonical_url": canonical_url,
         "post_id": post_id,
         "mode": mode,
+        "is_simulated": is_simulated,
+        "delivery_verification": delivery_verification,
         "published_at": now.isoformat(),
         "block_hash": block.block_hash,
     }

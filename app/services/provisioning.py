@@ -21,6 +21,7 @@ from app.db.models import (
     CustomerRecord,
     InvoiceRecord,
     OrganizationRecord,
+    SubscriptionRecord,
     UserRecord,
 )
 from app.security.auth import hash_password
@@ -103,6 +104,31 @@ def auto_provision_tenant_on_payment(
         amount = float(amount_dict.get("value", 0.0))
         currency = amount_dict.get("currency_code", "USD")
 
+        # Map package from PayPal metadata, plan_id, or description
+        custom_id = resource.get("custom_id") or resource.get("custom") or ""
+        plan_id = resource.get("plan_id") or ""
+        description = resource.get("description") or ""
+
+        if custom_id and custom_id in CATALOG:
+            package_key = custom_id
+        elif plan_id:
+            sub = db.query(SubscriptionRecord).filter(
+                (SubscriptionRecord.plan_id == plan_id)
+                | (SubscriptionRecord.provider_subscription_id == resource.get("id"))
+            ).first()
+            if sub and sub.plan_id in CATALOG:
+                package_key = sub.plan_id
+        if package_key == "company_os_starter" and description:
+            for k in CATALOG:
+                if k in description.lower() or CATALOG[k].name.lower() in description.lower():
+                    package_key = k
+                    break
+        if package_key == "company_os_starter" and amount > 0:
+            for k, p in CATALOG.items():
+                if abs(p.price_usd - amount) < 1.0:
+                    package_key = k
+                    break
+
     if not email or "@" not in email:
         logger.info("Webhook event %s did not contain customer email for auto-provisioning", event.id)
         return None
@@ -120,9 +146,9 @@ def auto_provision_tenant_on_payment(
     # Verify payment amount and currency before provisioning (Revenue Lifecycle Validation)
     clean_curr = (currency or "INR").upper()
     expected_price = float(pkg.price_inr if clean_curr == "INR" else pkg.price_usd)
-    if expected_price > 0 and amount > 0 and amount < (expected_price * 0.95):
+    if expected_price > 0 and (amount <= 0 or amount < (expected_price * 0.95)):
         logger.warning(
-            "Payment underpayment detected for package '%s': received %s %s, expected %s %s. Provisioning withheld.",
+            "Payment underpayment or invalid zero amount detected for package '%s': received %s %s, expected %s %s. Provisioning withheld.",
             pkg.key, amount, clean_curr, expected_price, clean_curr,
         )
         return {

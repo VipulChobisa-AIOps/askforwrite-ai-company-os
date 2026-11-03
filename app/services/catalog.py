@@ -20,7 +20,7 @@ from urllib.parse import quote_plus
 class PackageDefinition:
     key: str
     name: str
-    category: Literal["modular_tool", "master_bundle"]
+    category: Literal["modular_tool", "master_bundle", "b2c_one_off", "managed_pilot"]
     description: str
     target_buyer_persona: str
     target_pain_point: str
@@ -313,6 +313,44 @@ CATALOG: dict[str, PackageDefinition] = {
         outreach_credits_monthly=0,
         tier="b2c_single_pack",
     ),
+    "managed_seo_content_pilot": PackageDefinition(
+        key="managed_seo_content_pilot",
+        name="AskforWrite Managed SEO & Content Pilot (14-Day)",
+        category="managed_pilot",
+        description="14-Day Done-For-You Managed SEO Pilot: 1 in-depth technical SEO/GEO audit, 1 commercial keyword cluster, 2 human-reviewed authoritative articles, Schema.org JSON-LD injection, and verified WordPress draft or live delivery.",
+        target_buyer_persona="B2B founders, niche service agencies, and marketing leaders wanting guaranteed organic search deliverables before committing to monthly software retainers.",
+        target_pain_point="Skeptical of purely automated AI content, lack time to configure complex SaaS dashboards, and need immediate verified content assets delivered to their CMS with human editorial review.",
+        key_features=(
+            "1 In-depth technical SEO & Generative Engine Optimization (GEO) audit report for target domain",
+            "1 High-intent commercial keyword cluster map with competitor gap analysis",
+            "2 Comprehensive, human-reviewed authoritative articles (1,500+ words each) formatted for AI citation",
+            "Custom Schema.org (Article, FAQPage, Organization) JSON-LD markup included with every article",
+            "Human-in-the-Loop review and staging directly into client WordPress or export as markdown/HTML",
+        ),
+        deliverables=(
+            "1 Comprehensive Technical SEO & GEO Gap Audit (PDF & Markdown)",
+            "1 High-Intent Keyword Cluster & Content Plan",
+            "2 Publication-ready authoritative articles delivered to client CMS as reviewed drafts",
+            "14-Day dedicated support with verified NIST P-256 cryptographic proof-of-delivery",
+            "Projected ROI metrics are benchmark-based estimates, not guaranteed financial returns",
+        ),
+        seo_geo_aio_capabilities=(
+            "Direct Perplexity & ChatGPT citation formatting with semantic entity grounding",
+            "Complete Schema.org structured data graph injection",
+            "Human-edited editorial quality with zero hallucinated claims",
+        ),
+        price_inr=4999,
+        price_usd=59,
+        currency_default="INR",
+        entitled_capabilities=(
+            "seo_content_automation",
+            "evidence_research",
+            "trust_ledger_audit",
+        ),
+        lead_credits_monthly=50,
+        outreach_credits_monthly=25,
+        tier="managed_pilot",
+    ),
     "company_os_starter": PackageDefinition(
         key="company_os_starter",
         name="AskforWrite AI Company OS (Starter)",
@@ -445,22 +483,23 @@ CATALOG: dict[str, PackageDefinition] = {
         key="growth_all_in_one",
         name="AskforWrite Autonomous AI Growth & Inbound Sales Suite",
         category="master_bundle",
-        description="All-in-one AI Growth & Revenue Suite: Pixel AI Visual Studio, 4-Site SEO Blog Copilot, Omnichannel Ad Campaigns, and 24/7 Autonomous Inbound Sales Closer.",
-        target_buyer_persona="Solo founders, D2C e-commerce brands, SMB service businesses, and scaling agencies wanting full-funnel automated creative, SEO, and sales closing.",
+        description="All-in-one AI Growth & Revenue Suite: Pixel AI Creative Studio prompt specifications, 4-Site SEO Blog Copilot with HITL WordPress publishing, Omnichannel Campaign copy scripts, and Inbound Sales Closer conversation logic.",
+        target_buyer_persona="Solo founders, D2C e-commerce brands, SMB service businesses, and scaling agencies wanting full-funnel creative, SEO, and sales closing workflows.",
         target_pain_point="Juggling expensive design tools, slow content writers, fragmented ad tools, and losing inbound leads on WhatsApp/chat due to slow human response times.",
         key_features=(
-            "Pixel AI Visual & Creative Studio: automated product visuals, high-converting ad photos, and multi-aspect banners (1:1, 9:16, 16:9)",
-            "4-Site SEO & GEO Blog Copilot: entity-dense topical authority publishing structured for Google SERPs, ChatGPT, and Perplexity",
-            "Omnichannel Marketing Engine: tailored ad copy for Meta Ads, Google Search, LinkedIn, and social media posting schedules",
-            "24/7 Autonomous Inbound Sales Closer: natural conversational closing on WhatsApp & Web Chat with objection handling and instant Razorpay/PayPal checkout",
+            "Pixel AI Creative Studio: Structured prompt recipes, visual composition blueprints, and multi-aspect prompt specs (1:1, 9:16, 16:9) ready for external diffusion rendering",
+            "4-Site SEO & GEO Blog Copilot: Entity-dense topical authority publishing structured for Google SERPs, ChatGPT, and Perplexity with human-in-the-loop review gating",
+            "Omnichannel Marketing Engine: Tailored ad copy scripts for Meta Ads, Google Search, LinkedIn, and social media posting schedules",
+            "Inbound Sales Closer: Conversational objection handling and payment link generation with webhook integration ready for WhatsApp/web chat bridges",
             "NIST P-256 Merkle TrustBlock audit trail certifying lead conversions and state transitions",
         ),
         deliverables=(
             "Full access to Pixel AI Creative Studio & prompt composition engine",
-            "Automated 4-site WordPress SEO publishing bridge with Schema.org JSON-LD",
-            "24/7 Inbound Sales Closer webhook endpoints for WhatsApp & Web Chat",
+            "WordPress SEO publishing bridge with Schema.org JSON-LD and HITL approval gating",
+            "Inbound Sales Closer webhook endpoints for WhatsApp and Web Chat bridges",
             "350 qualified lead discovery credits / month with tech-stack profiling",
             "175 approved outreach & closing dispatch credits / month",
+            "Projected ROI metrics are benchmark-based estimates, not guaranteed financial returns",
         ),
         seo_geo_aio_capabilities=(
             "Full-funnel Generative Engine Optimization (GEO) structured for citation in SearchGPT, Perplexity, and Claude",
@@ -536,8 +575,27 @@ def get_all_packages() -> list[PackageDefinition]:
 
 
 def get_package(package_key: str) -> PackageDefinition | None:
-    """Lookup a package by its catalog key."""
-    return CATALOG.get(package_key)
+    """Lookup a package by its catalog key or tier alias."""
+    if not package_key:
+        return None
+    pkg = CATALOG.get(package_key)
+    if pkg:
+        return pkg
+    alias_map = {
+        "starter": "company_os_starter",
+        "pro": "company_os_pro",
+        "professional": "company_os_pro",
+        "enterprise": "company_os_enterprise",
+        "managed_pilot": "managed_seo_content_pilot",
+        "pilot": "managed_seo_content_pilot",
+    }
+    target_key = alias_map.get(package_key.lower().strip())
+    if target_key:
+        return CATALOG.get(target_key)
+    for p in CATALOG.values():
+        if p.tier.lower() == package_key.lower().strip():
+            return p
+    return None
 
 
 def build_payment_link(

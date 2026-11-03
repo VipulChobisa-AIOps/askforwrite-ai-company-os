@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/CI%2FCD-Passing-brightgreen?style=for-the-badge&logo=github-actions" alt="CI/CD Status" />
-  <img src="https://img.shields.io/badge/Tests-396%2F396%20Passing-success?style=for-the-badge&logo=pytest" alt="Test Status" />
+  <img src="https://img.shields.io/badge/Tests-400%2F400%20Passing-success?style=for-the-badge&logo=pytest" alt="Test Status" />
   <img src="https://img.shields.io/badge/Coverage-82%25-informational?style=for-the-badge&logo=pytest" alt="Coverage" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
@@ -84,18 +84,25 @@ flowchart TD
 
 ## 8-Vertical Commercial Catalog & Pricing Matrix
 
-All 8 verticals feature automated lead discovery, dynamic pain point diagnosis, personalized pitch generation, and instant cryptographic onboarding.
+All 8 verticals feature automated lead discovery, dynamic pain point diagnosis, personalized pitch generation, and instant cryptographic onboarding. *Note: Projected ROI figures are model estimates based on industry benchmarks, not guaranteed financial returns.*
 
-| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Deliverables | Pricing (INR / USD) | Est. Client ROI |
+| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Deliverables | Pricing (INR / USD) | Est. Client ROI* |
 |---|---|---|---|---|---|
-| **`growth_all_in_one`** | Full-Funnel Growth Suite (Pixel AI Studio, 4-Site SEO, Omnichannel SDR, 24/7 Closer) | Founders, D2C Brands, Scaling Agencies | Automated campaigns, SEO/GEO audit, social copy, 24/7 widget | **₹9,999 / $129** | **25x ROI** (Replaces 3 agency retainers) |
-| **`mango_quality_analytics`** | AgriTech Produce Vision & Ripeness AI (HSV Color + GLCM Texture + Shelf-Life) | Exporters, Packhouses, Fresh Fruit Distributors | Batch inspection API, cryptographic quality certificates | **₹3,999 / $49** | **18x ROI** (Cuts export rejection by 85%) |
-| **`bike_rebalance_analytics`** | Urban Mobility & Spatio-Temporal Logistics (OLS ML Demand Forecasting + Station Churn) | Micro-mobility operators, EV fleet managers | Hourly demand forecasts, priority rebalance truck routes | **₹3,999 / $49** | **15x ROI** (Recovers 30% lost commuter trips) |
-| **`warehouse_automation`** | StockSense Warehouse AI (Pareto ABC, Dynamic EOQ/ROP, Dead-Stock Scoring) | 3PL Warehouses, Supply Chain Directors | Inventory health matrices, replenishment schedules | **₹4,999 / $59** | **20x ROI** (Unlocks dead capital >90 days) |
-| **`field_force`** | Field Operations Automation (Anti-Spoof GPS, Timestamped Proof-of-Visit, Auto-Conveyance) | Logistics operators, FMCG sales networks | Live on-ground logs, route compliance, conveyance audit | **₹3,999 / $49** | **12x ROI** (Eliminates proxy attendance fraud) |
-| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot (2026 GEO/AIO, Schema JSON-LD, /llms.txt) | Content agencies, Media publishers | Automated 4-site publishing pipeline, topical authority maps | **₹1,999 / $29** | **14x ROI** (Generates 30+ organic articles/mo) |
-| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Conversational Copy, Multi-Platform Ads) | Performance marketers, B2B SaaS | Multi-channel ad variations, nurture sequences, chatbot embed | **₹2,999 / $39** | **16x ROI** (Doubles landing page conversions) |
-| **`trust_engine`** | AFW 2030 Cryptographic Trust Engine (ECDSA NIST P-256 Merkle DAG Audit Ledger) | Regulated fintechs, Health-tech, Legal firms | Proof-of-execution certificates, auditor JSON export | **₹4,999 / $69** | **Infinite** (Verifiable AI legal compliance) |
+| **`managed_seo_content_pilot`** | 14-Day Managed SEO & Content Pilot (1 Technical Audit, 1 Commercial Keyword Map, 2 Human-Reviewed Articles, Schema JSON-LD, WordPress HITL Delivery) | B2B Founders, Niche Agencies, Marketing Leaders | 1 Audit Report, 1 Keyword Plan, 2 Reviewed Articles staged to CMS, NIST P-256 Seal | **₹4,999 / $59** | **Guaranteed Pilot Deliverables** (14-day delivery) |
+| **`growth_all_in_one`** | Full-Funnel Growth Suite (Pixel AI prompt specs, 4-site SEO/GEO copilot, campaign copy scripts, 24/7 objection closer) | Founders, D2C Brands, Scaling Agencies | Structured prompt recipes, reviewed SEO drafts, copy scripts, webhook sales closer | **₹9,999 / $129** | **Estimated 25x ROI** (Replaces 3 agency retainers) |
+| **`mango_quality_analytics`** | AgriTech Produce Vision & Ripeness AI (HSV Color + GLCM Texture + Shelf-Life) | Exporters, Packhouses, Fresh Fruit Distributors | Batch inspection API, cryptographic quality certificates | **₹3,999 / $49** | **Estimated 18x ROI** (Cuts export rejection by 85%) |
+| **`bike_rebalance_analytics`** | Urban Mobility & Spatio-Temporal Logistics (OLS ML Demand Forecasting + Station Churn) | Micro-mobility operators, EV fleet managers | Hourly demand forecasts, priority rebalance truck routes | **₹3,999 / $49** | **Estimated 15x ROI** (Recovers 30% lost commuter trips) |
+| **`warehouse_automation`** | StockSense Warehouse AI (Pareto ABC, Dynamic EOQ/ROP, Dead-Stock Scoring) | 3PL Warehouses, Supply Chain Directors | Inventory health matrices, replenishment schedules | **₹4,999 / $59** | **Estimated 20x ROI** (Unlocks dead capital >90 days) |
+| **`field_force`** | Field Operations Automation (Anti-Spoof GPS, Timestamped Proof-of-Visit, Auto-Conveyance) | Logistics operators, FMCG sales networks | Live on-ground logs, route compliance, conveyance audit | **₹3,999 / $49** | **Estimated 12x ROI** (Eliminates proxy attendance fraud) |
+| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot (2026 GEO/AIO, Schema JSON-LD, /llms.txt) | Content agencies, Media publishers | Automated 4-site publishing pipeline, topical authority maps | **₹1,999 / $29** | **Estimated 14x ROI** (Generates 30+ organic articles/mo) |
+| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Conversational Copy, Multi-Platform Ads) | Performance marketers, B2B SaaS | Multi-channel ad variations, nurture sequences, chatbot embed | **₹2,999 / $39** | **Estimated 16x ROI** (Doubles landing page conversions) |
+| **`trust_engine`** | AFW 2030 Cryptographic Trust Engine (ECDSA NIST P-256 Merkle DAG Audit Ledger) | Regulated fintechs, Health-tech, Legal firms | Proof-of-execution certificates, auditor JSON export | **₹4,999 / $69** | **Verifiable AI Governance** (NIST P-256 verification) |
+
+### Transparent Operational Boundaries & Verification
+* **Pixel AI Creative Studio**: Generates high-converting structured prompt specifications, aspect ratio blueprints (1:1, 9:16, 16:9), and typography overlays (prompt recipes). Rendering image files directly requires an external diffusion provider API key.
+* **WordPress Publishing**: Connects directly to WordPress REST APIs. If live credentials are not configured, executions are transparently marked as `SIMULATED_CREDENTIALS_UNSET`. All production publishes strictly require human owner approval (`ApprovalRequest.status == "APPROVED"`).
+* **Social & Inbound SDR**: Delivers tailored ad copy scripts, nurture sequences, and conversational closer logic. Production dispatch across WhatsApp and ad platforms operates via webhook integrations and external delivery bridges.
+
 
 ### Master Bundles
 
@@ -185,10 +192,10 @@ uvicorn app.main:app --reload --port 8000
 
 ### 2. Run Tests & Linting
 ```powershell
-# Full test discovery suite (396/396 passing, 82% coverage)
+# Full test discovery suite (400/400 passing, 82% coverage)
 python -m pytest -v --cov=app
 
-# Adversarial competitor audit suite (18/18 passing)
+# Adversarial competitor audit suite (22/22 passing)
 python -m pytest tests/test_competitor_adversarial_audit.py -v
 
 # Ruff linting & style enforcement

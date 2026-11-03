@@ -31,7 +31,7 @@ from app.db.models import (
     CustomerRecord,
     SubscriptionRecord,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager, require_owner, require_platform_owner
 from app.services.payment import (
     PaymentError,
     PaymentProvider,
@@ -182,7 +182,7 @@ async def create_customer_endpoint(
 async def create_plan_endpoint(
     payload: CreatePlanRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_owner),
     db: Session = Depends(get_db),
 ) -> dict:
     """Create a billing plan on the payment provider."""

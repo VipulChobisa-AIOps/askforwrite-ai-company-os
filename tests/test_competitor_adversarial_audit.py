@@ -25,6 +25,7 @@ from app.db.models import (
     LeadRecordRow,
     OrganizationRecord,
     OutreachRecord,
+    SeoDraftRecord,
     SubscriptionRecord,
     UserRecord,
 )
@@ -1259,6 +1260,242 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
             self.assertEqual(data["commit_sha"], "37b5f5f4")
             self.assertEqual(data["branch"], "main")
             self.assertEqual(data["environment"], "production")
+
+    # ── 19. WordPress HITL Approval Required Before Publishing ───────────────
+
+    def test_19_wordpress_hitl_approval_required_before_publishing(self):
+        """Verify that WordPress publishing fails closed with HTTP 403 if associated
+        ApprovalRequest is not APPROVED, and succeeds once approved."""
+        task_id = f"task-seo-{uuid.uuid4().hex[:8]}"
+        approval = ApprovalRequest(
+            id=f"appr-{uuid.uuid4().hex[:8]}",
+            task_id=task_id,
+            action="wordpress_publish",
+            detail={"domain": "askforwrite.in"},
+            idempotency_key=f"idemp-{uuid.uuid4().hex}",
+            request_hash=hashlib.sha256(b"wp_publish").hexdigest(),
+            requested_by="manager",
+            status="PENDING",
+        )
+        draft = SeoDraftRecord(
+            id=f"draft-{uuid.uuid4().hex[:8]}",
+            task_id=task_id,
+            target_network="askforwrite.in",
+            keywords=["seo", "ai"],
+            content="# Autonomous AI Operations Guide\nContent here",
+            status="DRAFT",
+            approval_id=approval.id,
+        )
+        self.db.add_all([approval, draft])
+        self.db.commit()
+
+        # 1. Attempt to publish while approval is PENDING -> Must raise 403 Forbidden
+        resp_blocked = self.client.post(
+            f"/v1/seo/drafts/{draft.id}/publish",
+            headers=self.manager_headers,
+        )
+        self.assertEqual(resp_blocked.status_code, 403)
+        self.assertIn("Owner approval required", resp_blocked.json()["detail"])
+
+        # 2. Update approval to APPROVED
+        approval.status = "APPROVED"
+        self.db.commit()
+
+        # 3. Publish draft -> Must succeed and indicate delivery verification
+        resp_published = self.client.post(
+            f"/v1/seo/drafts/{draft.id}/publish",
+            headers=self.manager_headers,
+        )
+        self.assertEqual(resp_published.status_code, 200)
+        data = resp_published.json()
+        self.assertEqual(data["status"], "PUBLISHED")
+        self.assertIn("delivery_verification", data)
+        self.assertIn("is_simulated", data)
+
+    # ── 20. Payment Zero Amount and Partial Refund Handling ───────────────────
+
+    def test_20_payment_zero_amount_and_partial_refund_handling(self):
+        """Verify that:
+        A. Zero or negative amounts fail underpayment check without provisioning.
+        B. Partial refunds mark invoice partially_refunded and maintain tenant tier.
+        C. Full refund revokes paid entitlements.
+        """
+        import json
+        key_secret = "rzp_test_secret_for_adv_test_32ch"
+
+        # A. Zero-dollar payment webhook
+        zero_payload = json.dumps({
+            "event": "payment.captured",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_zero_{uuid.uuid4().hex[:6]}",
+                        "amount": 0,
+                        "currency": "INR",
+                        "status": "captured",
+                        "email": f"zero-{uuid.uuid4().hex[:6]}@example.com",
+                        "notes": {"package": "company_os_starter"},
+                    }
+                }
+            }
+        }).encode("utf-8")
+        zero_sig = hmac.new(key_secret.encode("utf-8"), zero_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            resp_zero = self.client.post(
+                "/v1/webhooks/payment",
+                content=zero_payload,
+                headers={"x-razorpay-signature": zero_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(resp_zero.status_code, 200)
+
+        # B & C: Tenant with invoice undergoing partial then full refund
+        org, user, user_token = self._create_tenant_org_and_token(tier="modular_marketing")
+        inv_id = f"inv_{uuid.uuid4().hex[:8]}"
+        pay_id = f"pay_{uuid.uuid4().hex[:8]}"
+        invoice = InvoiceRecord(
+            id=inv_id,
+            org_id=org.id,
+            customer_id=f"cust_{uuid.uuid4().hex[:8]}",
+            provider="razorpay",
+            provider_invoice_id=f"inv_rzp_{uuid.uuid4().hex[:8]}",
+            amount=299900,
+            currency="INR",
+            status="paid",
+            provider_payment_id=pay_id,
+            metadata_json={"settlement_status": "PAID"},
+        )
+        self.db.add(invoice)
+        self.db.commit()
+
+        # Partial refund webhook: 50000 paise out of 299900 paise
+        partial_payload = json.dumps({
+            "event": "refund.processed",
+            "payload": {
+                "refund": {
+                    "entity": {
+                        "id": f"rfnd_{uuid.uuid4().hex[:6]}",
+                        "payment_id": pay_id,
+                        "amount": 50000,
+                    }
+                }
+            }
+        }).encode("utf-8")
+        partial_sig = hmac.new(key_secret.encode("utf-8"), partial_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            resp_partial = self.client.post(
+                "/v1/webhooks/payment",
+                content=partial_payload,
+                headers={"x-razorpay-signature": partial_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(resp_partial.status_code, 200)
+
+        self.db.expire_all()
+        refreshed_inv = self.db.query(InvoiceRecord).filter_by(id=inv_id).first()
+        self.assertEqual(refreshed_inv.status, "partially_refunded")
+        self.assertEqual(refreshed_inv.metadata_json.get("settlement_status"), "PARTIALLY_REFUNDED")
+
+        # Tenant tier must still be modular_marketing (NOT downgraded to free)
+        refreshed_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
+        self.assertEqual(refreshed_org.tier, "modular_marketing")
+
+        # Full refund webhook: remaining 299900 paise
+        full_payload = json.dumps({
+            "event": "refund.processed",
+            "payload": {
+                "refund": {
+                    "entity": {
+                        "id": f"rfnd_full_{uuid.uuid4().hex[:6]}",
+                        "payment_id": pay_id,
+                        "amount": 299900,
+                    }
+                }
+            }
+        }).encode("utf-8")
+        full_sig = hmac.new(key_secret.encode("utf-8"), full_payload, hashlib.sha256).hexdigest()
+
+        with patch.dict(os.environ, {"RAZORPAY_KEY_SECRET": key_secret}):
+            resp_full = self.client.post(
+                "/v1/webhooks/payment",
+                content=full_payload,
+                headers={"x-razorpay-signature": full_sig, "Content-Type": "application/json"},
+            )
+            self.assertEqual(resp_full.status_code, 200)
+
+        self.db.expire_all()
+        downgraded_org = self.db.query(OrganizationRecord).filter_by(id=org.id).first()
+        self.assertEqual(downgraded_org.tier, "free")
+
+    # ── 21. Field-Force Paid Entitlement and User Binding ─────────────────────
+
+    def test_21_field_force_paid_entitlement_and_user_binding(self):
+        """Verify that:
+        A. Free tier tenant users cannot access field force endpoints (403 Forbidden).
+        B. User ID spoofing in attendance check-in is prevented (bound to principal.user_id).
+        """
+        # A. Free tier tenant
+        org_free, user_free, token_free = self._create_tenant_org_and_token(tier="free")
+        free_headers = {"Authorization": f"Bearer {token_free}"}
+
+        resp_blocked = self.client.post(
+            "/v1/field-force/attendance/check-in",
+            headers=free_headers,
+            json={
+                "user_id": user_free.id,
+                "latitude": 24.5854,
+                "longitude": 73.7125,
+                "accuracy_meters": 10.0,
+                "device_fingerprint": "device-hw-fingerprint-12345",
+                "idempotency_key": f"checkin-free-{uuid.uuid4().hex}",
+            },
+        )
+        self.assertEqual(resp_blocked.status_code, 403)
+        self.assertIn("delivery_field_force", resp_blocked.json()["detail"].lower())
+        self.assertIn("not entitled", resp_blocked.json()["detail"].lower())
+
+        # B. Paid field force tenant
+        org_paid, user_paid, token_paid = self._create_tenant_org_and_token(tier="field_force")
+        paid_headers = {"Authorization": f"Bearer {token_paid}"}
+
+        # Attempt to spoof check-in as another victim user ID
+        spoofed_user_id = f"victim-user-{uuid.uuid4().hex[:6]}"
+        resp_checkin = self.client.post(
+            "/v1/field-force/attendance/check-in",
+            headers=paid_headers,
+            json={
+                "user_id": spoofed_user_id,
+                "latitude": 24.5854,
+                "longitude": 73.7125,
+                "accuracy_meters": 10.0,
+                "device_fingerprint": "device-hw-fingerprint-12345",
+                "idempotency_key": f"checkin-paid-{uuid.uuid4().hex}",
+            },
+        )
+        self.assertIn(resp_checkin.status_code, (200, 201))
+        checkin_data = resp_checkin.json()
+        # Verify server bound the check-in record to the authenticated user ID, NOT the spoofed one
+        self.assertEqual(checkin_data["user_id"], user_paid.id)
+
+    # ── 22. Database Degraded Health Returns 503 ──────────────────────────────
+
+    def test_22_database_degraded_health_returns_503(self):
+        """Verify that /health fails closed with HTTP 503 Service Unavailable
+        when database connectivity is degraded/disconnected."""
+        from unittest.mock import MagicMock
+        mock_db = MagicMock()
+        mock_db.execute.side_effect = Exception("Database connection lost")
+
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            resp = self.client.get("/health")
+            self.assertEqual(resp.status_code, 503)
+            data = resp.json()
+            detail = data.get("detail", data)
+            self.assertEqual(detail["status"], "unhealthy")
+            self.assertEqual(detail["database"], "degraded")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
 
 
 if __name__ == "__main__":

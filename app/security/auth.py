@@ -286,7 +286,9 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
         "growth_suite": {"growth_all_in_one", "growth_suite", "all_access"},
         "trust_engine": {"trust_ledger_audit", "trust_engine", "all_access"},
         "trust_ledger": {"trust_ledger_audit", "trust_engine", "all_access"},
-        "field_force": {"field_force_automation", "field_force", "all_access"},
+        "field_force": {"field_force_automation", "field_force", "delivery_field_force", "all_access"},
+        "delivery_field_force": {"field_force_automation", "field_force", "delivery_field_force", "all_access"},
+        "field_force_automation": {"field_force_automation", "field_force", "delivery_field_force", "all_access"},
         "lead_generation": {"lead_generation", "customer_discovery", "smb_discovery", "growth_all_in_one", "all_access"},
         "customer_discovery": {"lead_generation", "customer_discovery", "smb_discovery", "growth_all_in_one", "all_access"},
     }

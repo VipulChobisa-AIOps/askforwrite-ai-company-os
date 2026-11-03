@@ -362,10 +362,19 @@ class RazorpayProvider(PaymentProviderInterface):
             entity = entity_data["order"].get("entity", {})
             resource_id = entity.get("id", "")
 
+        # Ensure renewal events across distinct billing cycles carry unique event IDs
+        extra_key = ""
+        if "subscription" in entity_data:
+            payment_ent = entity_data.get("payment", {}).get("entity", {})
+            if payment_ent.get("id"):
+                extra_key = f"_{payment_ent['id']}"
+            elif data.get("created_at"):
+                extra_key = f"_{data['created_at']}"
+
         event_id = (
             data.get("event_id")
             or data.get("id")
-            or (f"evt_{event_type}_{resource_id}" if resource_id else None)
+            or (f"evt_{event_type}_{resource_id}{extra_key}" if resource_id else None)
             or hashlib.sha256(payload).hexdigest()
         )
 

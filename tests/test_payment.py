@@ -415,6 +415,11 @@ class TestSubscriptionEndpoints(PaymentTestBase):
         self.assertEqual(resp.status_code, 422)
 
     def test_create_plan(self):
+        # Plans creation is restricted to platform owner
+        app.dependency_overrides[get_current_principal] = lambda: APIPrincipal(
+            subject="test-owner",
+            role="owner",
+        )
         mock_plan = PlanInfo(
             id="plan-local-id",
             name="Pro Plan",
@@ -437,6 +442,18 @@ class TestSubscriptionEndpoints(PaymentTestBase):
         data = resp.json()
         self.assertEqual(data["status"], "created")
         self.assertEqual(data["provider_plan_id"], "plan_rzp_456")
+
+        # Verify tenant admin is rejected
+        app.dependency_overrides[get_current_principal] = lambda: APIPrincipal(
+            subject="tenant-admin",
+            role="tenant_admin",
+            org_id="org-tenant-1",
+        )
+        resp_denied = self._post(
+            "/v1/subscriptions/plans",
+            json={"name": "Tenant Rogue Plan", "amount": 100, "currency": "INR", "interval": "monthly", "provider": "razorpay"},
+        )
+        self.assertEqual(resp_denied.status_code, 403)
 
     def test_create_subscription(self):
         session = self.session_factory()
