@@ -95,12 +95,18 @@ def public_opportunity_scan_endpoint(
             "Missing automated 24/7 inbound WhatsApp/web lead qualification closer",
         ]
 
+    from app.services.catalog import CATALOG, get_package
+
+    # Resolve authoritative package definition from catalog (Managed SEO Pilot)
+    recommended_pkg_key = "managed_seo_content_pilot"
+    pkg = get_package(recommended_pkg_key) or CATALOG["managed_seo_content_pilot"]
+
     try:
         preview = generate_trojan_horse_preview(
             db=db,
             company_name=comp_name,
             domain=clean_domain,
-            recommended_package="growth_all_in_one",
+            recommended_package=pkg.key,
             correlation_id=correlation_id,
         )
         preview_token = preview.get("preview_token")
@@ -108,9 +114,9 @@ def public_opportunity_scan_endpoint(
     except Exception as exc:
         logger.warning(f"Trojan horse preview generation fallback during scan: {exc}")
         preview_token = None
-        preview_url = f"/v1/pay/checkout?package=growth_all_in_one&company={quote_plus(comp_name)}"
+        preview_url = f"/v1/pay/checkout?package={pkg.key}&company={quote_plus(comp_name)}"
 
-    checkout_url = f"/v1/pay/checkout?package=growth_all_in_one&company={quote_plus(comp_name)}"
+    checkout_url = f"/v1/pay/checkout?package={pkg.key}&company={quote_plus(comp_name)}"
     if payload.email:
         checkout_url += f"&email={quote_plus(payload.email.strip().lower())}"
 
@@ -124,11 +130,11 @@ def public_opportunity_scan_endpoint(
         "preview_token": preview_token,
         "preview_url": preview_url,
         "checkout_url": checkout_url,
-        "recommended_package": "growth_all_in_one",
-        "package_name": "Starter AI Ops & Growth Studio",
-        "price_inr": 2499,
-        "price_usd": 29,
-        "remediation_offer": "Unlock the automated remediation engine & 50 verified buyer leads for ₹2,499.",
+        "recommended_package": pkg.key,
+        "package_name": pkg.name,
+        "price_inr": pkg.price_inr,
+        "price_usd": pkg.price_usd,
+        "remediation_offer": f"Done-For-You 14-Day SEO & Content Pilot: Technical audit, keyword cluster & 2 human-reviewed articles for ₹{pkg.price_inr:,} (${pkg.price_usd}).",
     }
 
 

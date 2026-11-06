@@ -176,6 +176,16 @@ def draft_outreach(
         db.add(task)
         db.flush()
 
+    # Evaluate contact verification status & approval policy (Findings 1 & 2)
+    is_verified_contact = True
+    if target_email and lead.domain and target_email.lower().strip() == f"contact@{lead.domain.lower().strip()}":
+        is_verified_contact = False
+    elif target_email and target_email.lower().startswith(("info@", "support@", "admin@", "sales@", "hello@")):
+        is_verified_contact = False
+
+    verification_status = "VERIFIED_EXTRACTED" if is_verified_contact else "UNVERIFIED_SYNTHETIC"
+    approval_policy = "VERIFIED_BATCH_ELIGIBLE" if is_verified_contact else "MANUAL_STRICT"
+
     # Request Owner approval via the durable HITL framework
     approval_resp = request_approval(
         db=db,
@@ -192,6 +202,9 @@ def draft_outreach(
             "payment_link": payment_link,
             "package_key": package_key,
             "custom_notes": custom_notes,
+            "is_contact_verified": is_verified_contact,
+            "contact_verification_status": verification_status,
+            "approval_policy": approval_policy,
         },
         idempotency_key=f"appr-outreach-{idempotency_key}",
         requested_by=requested_by,

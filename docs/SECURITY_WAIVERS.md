@@ -23,3 +23,4 @@ The production container `Dockerfile` enforces:
 - Non-root user `appuser:appgroup`
 - Stripped build dependencies (`--no-cache-dir`)
 - Explicit virtual environment boundary without development test harnesses.
+

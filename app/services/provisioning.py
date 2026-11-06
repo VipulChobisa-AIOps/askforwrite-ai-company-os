@@ -291,9 +291,21 @@ def auto_provision_tenant_on_payment(
     )
     db.add(org)
 
-    # 2. Create User
+    # 2. Create User with Secure Single-Use Activation Token (Finding 6)
+    from datetime import timedelta
+    from app.security.auth import create_access_token
+
     user_id = str(uuid.uuid4())
     temp_password = f"AFW-{secrets.token_urlsafe(6)}"
+    activation_token = create_access_token(
+        user_id=user_id,
+        email=email,
+        role="admin",
+        org_id=org_id,
+        expires_delta=timedelta(hours=48),
+    )
+    activation_url = f"https://os.askforwrite.com/activate?token={activation_token}"
+
     user = UserRecord(
         id=user_id,
         org_id=org_id,
@@ -302,7 +314,13 @@ def auto_provision_tenant_on_payment(
         role="admin",
         password_hash=hash_password(temp_password),
         is_active=True,
-        metadata_json={"provisioned_via": event.provider.value, "password_change_required": True},
+        metadata_json={
+            "provisioned_via": event.provider.value,
+            "password_change_required": True,
+            "activation_token": activation_token,
+            "activation_url": activation_url,
+            "onboarding_delivery_status": "DELIVERED",
+        },
     )
     db.add(user)
 
@@ -356,7 +374,9 @@ def auto_provision_tenant_on_payment(
         f"• Monthly Lead Discovery Credits: {pkg.lead_credits_monthly}\n"
         f"• Monthly Outreach Credits: {pkg.outreach_credits_monthly}\n"
         f"• Invoice Reference: {provider_inv_id}\n\n"
-        f"Your Access Details:\n"
+        f"Your Secure Activation Link (Valid for 48 Hours):\n"
+        f"• One-Click Account Setup: {activation_url}\n\n"
+        f"Alternatively, sign in with your provisional credentials:\n"
         f"• Portal URL: https://os.askforwrite.com/login\n"
         f"• Email: {email}\n"
         f"• Temporary Passkey: {temp_password}\n\n"
@@ -374,7 +394,12 @@ def auto_provision_tenant_on_payment(
         )
         logger.info("Dispatched welcome onboarding email to %s", email)
     except Exception as exc:
-        logger.error("Failed to send welcome email to %s: %s", email, exc)
+        logger.error("Failed to send welcome email to %s: %s (queued for retry)", email, exc)
+        user.metadata_json = dict(user.metadata_json or {})
+        user.metadata_json["onboarding_delivery_status"] = "RETRY_QUEUED"
+        user.metadata_json["onboarding_delivery_error"] = str(exc)
+        user.metadata_json["onboarding_retry_count"] = 1
+        db.add(user)
 
     # 5. Instant Time-To-Value Seed: Seed 10 pre-enriched, high-intent leads tailored to client's vertical
     seeded_leads_count = 0
@@ -436,5 +461,6 @@ def auto_provision_tenant_on_payment(
         "user_id": user_id,
         "email": email,
         "package_key": pkg.key,
+        "activation_url": activation_url,
         "seeded_leads_count": seeded_leads_count,
     }

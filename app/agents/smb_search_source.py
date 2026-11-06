@@ -745,8 +745,12 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
             logger.debug(f"Live web audit fallback for {domain}: {exc}")
 
     # Fallback default email if none extracted
+    is_contact_verified = bool(extracted_emails)
     if not extracted_emails and domain:
         extracted_emails = [f"contact@{domain}"]
+        contact_verification_status = "UNVERIFIED_SYNTHETIC"
+    else:
+        contact_verification_status = "VERIFIED_EXTRACTED" if is_contact_verified else "UNVERIFIED"
 
     # Calculate 0-100 SEO & Generative Engine Optimization (GEO) gap score and list detected gaps
     # Higher score = more critical gaps needing AskforWrite Company OS
@@ -779,6 +783,8 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
         "has_meta_description": has_meta_desc,
         "has_open_graph": has_og,
         "extracted_emails": extracted_emails,
+        "is_contact_verified": is_contact_verified,
+        "contact_verification_status": contact_verification_status,
         "detected_gaps": detected_gaps,
         "seo_geo_gap_score": gap_score,
         "audit_status": audit_status,
@@ -860,10 +866,26 @@ def discover_smb_leads(
         audit = audit_live_website_seo_geo(website, timeout=audit_timeout)
 
         contact_channel = cand.get("public_contact_channel")
+        is_verified = bool(cand.get("is_contact_verified", False))
+        verification_status = cand.get("contact_verification_status")
+
         if not contact_channel and audit.get("extracted_emails"):
             contact_channel = audit["extracted_emails"][0]
+            is_verified = audit.get("is_contact_verified", False)
+            verification_status = audit.get("contact_verification_status", "UNVERIFIED")
+
         if not contact_channel:
             contact_channel = f"contact@{domain}"
+            is_verified = False
+            verification_status = "UNVERIFIED_SYNTHETIC"
+        elif not verification_status:
+            # If candidate provided its own non-synthetic email
+            if contact_channel == f"contact@{domain}":
+                is_verified = False
+                verification_status = "UNVERIFIED_SYNTHETIC"
+            else:
+                is_verified = True
+                verification_status = "VERIFIED_CURATED"
 
         lead_dict: dict[str, Any] = {
             "company": cand.get("company", "Candidate SMB"),
@@ -873,6 +895,8 @@ def discover_smb_leads(
             "geography": cand.get("geography", region),
             "observed_signals": list(cand.get("signals", [])),
             "public_contact_channel": contact_channel,
+            "is_contact_verified": is_verified,
+            "contact_verification_status": verification_status,
             "target_buyer_persona": pkg.target_buyer_persona,
             "identified_pain_point": pkg.target_pain_point,
             "recommended_package": pkg.key,
