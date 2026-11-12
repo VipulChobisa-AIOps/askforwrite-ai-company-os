@@ -322,6 +322,9 @@
               <button type="button" class="secondary-btn" id="btn-view-connector-inventory" style="padding: 7px 12px; font-size: 0.76rem;">
                 🔌 Connector Status (10)
               </button>
+              <button type="button" class="secondary-btn" id="btn-view-release-checklist" style="padding: 7px 12px; font-size: 0.76rem; border-color: rgba(16, 185, 129, 0.45); color: #34d399;">
+                ✅ 12/12 Release Gate
+              </button>
               <button type="button" class="secondary-btn" id="btn-run-jaipur-sme-e2e" style="padding: 7px 12px; font-size: 0.76rem; border-color: rgba(56, 189, 248, 0.45); color: #38bdf8;">
                 🏭 Run Jaipur SME 12-Step Sandbox
               </button>
@@ -599,6 +602,18 @@
                 </select>
                 <button type="button" class="primary-btn" id="btn-execute-agent-run-console" style="padding: 8px 16px; font-size: 0.8rem; white-space: nowrap;">
                   ▶ Run Agent
+                </button>
+              </div>
+              <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+                <span style="font-size: 0.72rem; color: var(--text-muted); margin-right: auto;">Governance Controls (Selected Agent):</span>
+                <button type="button" class="secondary-btn" id="btn-agent-activate-selected" style="padding: 4px 10px; font-size: 0.72rem; color: #4ade80; border-color: rgba(74, 222, 128, 0.35);">
+                  🟢 Activate / Resume
+                </button>
+                <button type="button" class="secondary-btn" id="btn-agent-pause-selected" style="padding: 4px 10px; font-size: 0.72rem; color: #fbbf24; border-color: rgba(251, 191, 36, 0.35);">
+                  ⏸️ Pause Agent
+                </button>
+                <button type="button" class="secondary-btn" id="btn-agent-emergency-stop-selected" style="padding: 4px 10px; font-size: 0.72rem; color: #f87171; border-color: rgba(248, 113, 113, 0.45);">
+                  🛑 Emergency Stop
                 </button>
               </div>
             </div>

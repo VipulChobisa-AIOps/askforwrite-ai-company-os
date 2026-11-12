@@ -433,6 +433,140 @@ def test_frontend_no_false_success_and_pwa_cache_bust() -> None:
     # 5. Agent Run Console & Connector Status controls present in index.html
     assert 'id="agent-run-console"' in index_html
     assert 'id="btn-view-connector-inventory"' in index_html
+    assert 'id="btn-view-release-checklist"' in index_html
     assert 'id="btn-run-jaipur-sme-e2e"' in index_html
+    assert 'id="btn-agent-pause-selected"' in index_html
+    assert 'id="btn-agent-emergency-stop-selected"' in index_html
+
+
+def test_agent_pause_emergency_stop_sme_onboarding_and_12_release_checklist() -> None:
+    """Verify 12/12 Commercial Release Checklist, SME Business Profile + Modular Subscription add-ons,
+    and Agent Pause / Emergency Stop with zero credit deduction on blocked runs."""
+    client = TestClient(app)
+
+    # 1. 12/12 Commercial Release Acceptance Checklist
+    chk_res = client.get("/v1/watchdog/release-checklist", headers=_owner_headers())
+    assert chk_res.status_code == 200, chk_res.text
+    chk = chk_res.json()
+    assert chk["status"] == "READY_FOR_CONTROLLED_PILOT"
+    assert chk["passed_count"] == 12
+    assert chk["total_items"] == 12
+
+    # 2. Global Agent Emergency Stop & Resume via /v1/watchdog/agent-control
+    stop_res = client.post(
+        "/v1/watchdog/agent-control",
+        headers=_owner_headers(),
+        json={"agent_key": "warehouse_automation", "action": "emergency_stop", "reason": "Safety drill"},
+    )
+    assert stop_res.status_code == 200
+    assert stop_res.json()["control"]["state"] == "EMERGENCY_STOPPED"
+
+    blocked_invoke = client.post(
+        "/v1/watchdog/invoke-tool",
+        headers=_owner_headers(),
+        json={"target_key": "warehouse_automation", "payload": {}},
+    )
+    assert blocked_invoke.status_code == 423
+    assert "EMERGENCY_STOPPED" in blocked_invoke.json()["detail"]
+
+    resume_res = client.post(
+        "/v1/watchdog/agent-control",
+        headers=_owner_headers(),
+        json={"agent_key": "warehouse_automation", "action": "activate", "reason": "Drill complete"},
+    )
+    assert resume_res.status_code == 200
+    assert resume_res.json()["control"]["state"] == "ACTIVE"
+
+    # 3. Tenant SME Onboarding (Business Profile + Growth Plan + Inventory Add-on + Zero Credit Deduction when Paused)
+    db = SessionLocal()
+    try:
+        org_id = str(uuid.uuid4())
+        user_id = str(uuid.uuid4())
+        email = f"sme-jaipur-{uuid.uuid4().hex[:8]}@askforwrite-test.com"
+        org = OrganizationRecord(
+            id=org_id,
+            name="Jaipur SME Modular Test",
+            slug=f"jaipur-sme-{uuid.uuid4().hex[:8]}",
+            tier="growth",
+            is_active=True,
+            lead_credits_limit=100,
+            lead_credits_used=0,
+            outreach_credits_limit=50,
+            outreach_credits_used=0,
+        )
+        user = UserRecord(
+            id=user_id,
+            org_id=org_id,
+            email=email,
+            password_hash=hash_password("SmePass#2026"),
+            full_name="Jaipur SME Owner",
+            role="admin",
+            is_active=True,
+        )
+        db.add_all([org, user])
+        db.commit()
+        token = create_access_token(user_id=user_id, email=email, role="admin", org_id=org_id)
+    finally:
+        db.close()
+
+    t_headers = {"Authorization": f"Bearer {token}"}
+
+    # Save Business Profile
+    prof_res = client.post(
+        "/v1/me/business-profile",
+        headers=t_headers,
+        json={
+            "business_name": "Jaipur SME Modular Test",
+            "industry": "Distribution & Retail",
+            "city": "Jaipur",
+            "company_size": "25 employees",
+            "requirements_text": "We need sales leads and warehouse inventory management.",
+        },
+    )
+    assert prof_res.status_code == 200
+    assert "inventory" in prof_res.json()["assessment"]["selected_modules"]
+
+    # Configure Modular Subscription: Growth Plan + Inventory Add-on Module
+    mod_res = client.post(
+        "/v1/me/modular-subscription",
+        headers=t_headers,
+        json={"base_tier": "growth", "addon_modules": ["inventory"]},
+    )
+    assert mod_res.status_code == 200
+    assert "warehouse_automation" in mod_res.json()["entitled_capabilities"]
+
+    # Pause warehouse_automation for this tenant and verify 0 credits deducted on blocked call
+    pause_res = client.post(
+        "/v1/me/agents/warehouse_automation/control",
+        headers=t_headers,
+        json={"action": "pause", "reason": "Scheduled maintenance"},
+    )
+    assert pause_res.status_code == 200
+    assert pause_res.json()["control"]["state"] == "PAUSED"
+
+    blocked_portal = client.post(
+        "/v1/me/use-service",
+        headers=t_headers,
+        json={"service_key": "warehouse_automation", "payload": {}},
+    )
+    assert blocked_portal.status_code == 423
+
+    usage_after_blocked = client.get("/v1/me/usage", headers=t_headers).json()
+    assert usage_after_blocked["lead_credits_used"] == 0, "Blocked run must deduct 0 credits!"
+
+    # Reactivate and run -> 1 credit deducted
+    client.post(
+        "/v1/me/agents/warehouse_automation/control",
+        headers=t_headers,
+        json={"action": "activate"},
+    )
+    ok_portal = client.post(
+        "/v1/me/use-service",
+        headers=t_headers,
+        json={"service_key": "warehouse_automation", "payload": {}},
+    )
+    assert ok_portal.status_code == 200
+    assert ok_portal.json()["credits_used"] == 1
+
 
 

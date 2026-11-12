@@ -674,6 +674,22 @@ def use_tenant_service(
     input_payload = body.payload or {}
     exec_result: dict[str, Any] = {}
 
+    # Check tenant-level or global agent pause / emergency stop before running or deducting credits
+    from app.services.watchdog import AGENT_RUNTIME_CONTROLS
+
+    tenant_controls = (org.metadata_json or {}).get("agent_controls") or {}
+    tenant_agent_ctrl = tenant_controls.get(service_key) or tenant_controls.get("__all__")
+    global_agent_ctrl = AGENT_RUNTIME_CONTROLS.get(service_key) or AGENT_RUNTIME_CONTROLS.get("__all__")
+    active_ctrl = tenant_agent_ctrl or global_agent_ctrl
+    if active_ctrl and active_ctrl.get("state") in ("PAUSED", "EMERGENCY_STOPPED"):
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=(
+                f"BLOCKED: Service/Agent '{service_key}' is {active_ctrl['state']} "
+                f"(reason: {active_ctrl.get('reason', 'operator control')}). 0 credits deducted."
+            ),
+        )
+
 
     if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading"):
         from app.services.quality_analytics import execute_produce_quality_inspection
@@ -1058,3 +1074,224 @@ def use_tenant_service(
         "credits_remaining": max(0, org.lead_credits_limit - org.lead_credits_used) if org.lead_credits_limit > 0 else 0,
         "credits_used": org.lead_credits_used,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 4, 5 & 6: Tenant SME 7-Step Onboarding, Modular Plan & Agent Controls
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TenantBusinessProfileRequest(BaseModel):
+    business_name: str = Field(min_length=1, max_length=200)
+    industry: str = Field(default="SME Business", max_length=200)
+    company_size: str = Field(default="10-50 employees", max_length=100)
+    city: str = Field(default="Jaipur", max_length=100)
+    website: str = Field(default="", max_length=300)
+    sales_channels: list[str] = Field(default_factory=lambda: ["B2B Direct", "Website", "WhatsApp"])
+    products: list[str] = Field(default_factory=list)
+    current_software: list[str] = Field(default_factory=list)
+    requirements_text: str = Field(
+        default="Generate qualified leads, manage inventory shortages, and publish SEO content",
+        max_length=2000,
+    )
+
+
+class TenantModularSubscriptionRequest(BaseModel):
+    base_tier: str = Field(default="growth", description="launch | growth | operations | business_pro | enterprise")
+    addon_modules: list[str] = Field(
+        default_factory=list,
+        description="Additional modules: sales, marketing, seo, inventory, field_force, customer_ops",
+    )
+
+
+class TenantAgentControlRequest(BaseModel):
+    action: str = Field(default="activate", description="activate | pause | emergency_stop | resume | configure")
+    reason: str = Field(default="", max_length=500)
+    budget_credits: int | None = Field(default=None, ge=0, le=100000)
+
+
+@router.post(
+    "/business-profile",
+    summary="Save SME business profile and run AI requirement assessment (Steps 1-3)",
+    operation_id="save_me_business_profile",
+)
+def save_tenant_business_profile(
+    body: TenantBusinessProfileRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Persist SME Business Profile into tenant workspace and return tailored 6-Layer SME OS assessment."""
+    from app.services.watchdog import assess_sme_business_requirements
+
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    assessment = assess_sme_business_requirements(
+        business_name=body.business_name,
+        industry=body.industry,
+        city=body.city,
+        company_size=body.company_size,
+        requirements_text=body.requirements_text,
+    )
+    meta = dict(org.metadata_json or {})
+    meta["business_profile"] = {
+        **assessment["business_profile"],
+        "website": body.website,
+        "sales_channels": body.sales_channels,
+        "products": body.products,
+        "current_software": body.current_software,
+        "recommended_base_tier": assessment["recommended_base_tier"],
+        "selected_modules": assessment["selected_modules"],
+        "recommended_agents": assessment["recommended_agents"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    org.metadata_json = meta
+    flag_modified(org, "metadata_json")
+    db.add(org)
+    db.commit()
+
+    return {
+        "status": "SAVED",
+        "org_id": org.id,
+        "business_profile": meta["business_profile"],
+        "assessment": assessment,
+    }
+
+
+@router.get(
+    "/business-profile",
+    summary="Get SME business profile and recommended modular workforce",
+    operation_id="get_me_business_profile",
+)
+def get_tenant_business_profile(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Retrieve the tenant's saved SME Business Profile and modular subscription configuration."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    meta = org.metadata_json or {}
+    return {
+        "org_id": org.id,
+        "org_name": org.name,
+        "tier": org.tier,
+        "business_profile": meta.get("business_profile") or {},
+        "modular_subscription": meta.get("modular_subscription") or {},
+        "agent_controls": meta.get("agent_controls") or {},
+    }
+
+
+@router.post(
+    "/modular-subscription",
+    summary="Configure modular SME subscription (Base Plan + Add-on Service Modules)",
+    operation_id="configure_me_modular_subscription",
+)
+def configure_tenant_modular_subscription(
+    body: TenantModularSubscriptionRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Compose a modular SME subscription (e.g., Growth plan + Inventory module) and return its 13-field contract."""
+    from app.services.catalog import MODULAR_SERVICE_MODULES, get_modular_pricing_contract
+
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    contract = get_modular_pricing_contract(body.base_tier, addon_modules=body.addon_modules)
+    entitled_caps: list[str] = []
+    for mod_key in contract["included_modules"]:  # type: ignore[union-attr]
+        mod_spec = MODULAR_SERVICE_MODULES.get(str(mod_key), {})
+        for cap in mod_spec.get("capabilities", []):  # type: ignore[union-attr]
+            if cap not in entitled_caps:
+                entitled_caps.append(str(cap))
+
+    meta = dict(org.metadata_json or {})
+    meta["modular_subscription"] = contract
+    meta["entitled_capabilities"] = entitled_caps
+    org.metadata_json = meta
+    flag_modified(org, "metadata_json")
+    db.add(org)
+    db.commit()
+
+    return {
+        "status": "CONFIGURED",
+        "org_id": org.id,
+        "pricing_contract": contract,
+        "entitled_capabilities": entitled_caps,
+    }
+
+
+@router.post(
+    "/agents/{agent_key}/control",
+    summary="Activate, pause, configure, or emergency-stop a tenant AI agent",
+    operation_id="control_me_agent",
+)
+def control_tenant_agent(
+    agent_key: str,
+    body: TenantAgentControlRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Update tenant-scoped lifecycle state (ACTIVE, PAUSED, EMERGENCY_STOPPED) for an AI agent."""
+    user = db.get(UserRecord, principal.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    org = db.get(OrganizationRecord, user.org_id)
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    clean_agent = agent_key.strip().lower()
+    clean_action = body.action.strip().lower()
+    state_map = {
+        "activate": "ACTIVE",
+        "resume": "ACTIVE",
+        "pause": "PAUSED",
+        "emergency_stop": "EMERGENCY_STOPPED",
+        "configure": "ACTIVE",
+    }
+    if clean_action not in state_map:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported action '{body.action}'. Use activate, pause, emergency_stop, resume, or configure.",
+        )
+
+    meta = dict(org.metadata_json or {})
+    controls = dict(meta.get("agent_controls") or {})
+    entry = {
+        "agent_key": clean_agent,
+        "state": state_map[clean_action],
+        "last_action": clean_action,
+        "reason": body.reason or f"Tenant {clean_action}",
+        "budget_credits": body.budget_credits if body.budget_credits is not None else 100,
+        "updated_by": user.email,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if clean_action in ("activate", "resume") and clean_agent == "__all__":
+        controls.clear()
+    else:
+        controls[clean_agent] = entry
+    meta["agent_controls"] = controls
+    org.metadata_json = meta
+    flag_modified(org, "metadata_json")
+    db.add(org)
+    db.commit()
+
+    return {
+        "status": "UPDATED",
+        "org_id": org.id,
+        "control": entry,
+    }
+

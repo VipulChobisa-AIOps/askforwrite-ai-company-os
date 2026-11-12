@@ -14,6 +14,8 @@ from app.security.auth import APIPrincipal, require_platform_manager
 from app.services.watchdog import (
     WatchdogAlertNotFound,
     assess_sme_business_requirements,
+    control_agent_runtime,
+    get_commercial_release_checklist,
     get_connector_inventory,
     get_system_control_telemetry,
     invoke_connected_tool_or_agent,
@@ -148,6 +150,11 @@ def invoke_tool_or_agent_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/credibility-audit")
@@ -212,4 +219,44 @@ def trigger_jaipur_sme_sandbox_scenario(
         db=db,
         correlation_id=x_correlation_id,
     )
+
+
+class AgentControlRequest(BaseModel):
+    agent_key: str = Field(default="__all__", max_length=100)
+    action: str = Field(default="activate", description="activate | pause | emergency_stop | resume | configure")
+    reason: str = Field(default="", max_length=500)
+    budget_credits: int | None = Field(default=None, ge=0, le=100000)
+
+
+@router.post("/agent-control")
+def control_agent_runtime_endpoint(
+    body: AgentControlRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Activate, pause, configure, or emergency-stop an AI agent or the entire workforce."""
+    try:
+        return control_agent_runtime(
+            db=db,
+            agent_key=body.agent_key,
+            action=body.action,
+            reason=body.reason,
+            budget_credits=body.budget_credits,
+            operator_id=principal.subject or "owner-l0",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/release-checklist")
+def get_release_checklist_endpoint(
+    _principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Evaluate all 12 items of the Commercial Release Acceptance Checklist with live verification evidence."""
+    return get_commercial_release_checklist(db=db)
+
 

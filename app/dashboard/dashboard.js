@@ -1753,6 +1753,7 @@
 
     $('#btn-run-credibility-audit')?.addEventListener('click', handleRunCredibilityAudit);
     $('#btn-view-connector-inventory')?.addEventListener('click', handleViewConnectorInventory);
+    $('#btn-view-release-checklist')?.addEventListener('click', handleViewReleaseChecklist);
     $('#btn-run-jaipur-sme-e2e')?.addEventListener('click', handleRunJaipurSmeScenario);
     $('#btn-execute-agent-run-console')?.addEventListener('click', () => {
       const targetKey = ($('#agent-run-target-select')?.value || 'discovery_sdr_agent').trim();
@@ -1760,6 +1761,9 @@
       const runMode = ($('#agent-run-mode-select')?.value || 'human_assisted').trim();
       handleInvokeCommandDockTool(targetKey, { objective: taskText, mode: runMode });
     });
+    $('#btn-agent-activate-selected')?.addEventListener('click', () => handleControlAgentState('activate'));
+    $('#btn-agent-pause-selected')?.addEventListener('click', () => handleControlAgentState('pause'));
+    $('#btn-agent-emergency-stop-selected')?.addEventListener('click', () => handleControlAgentState('emergency_stop'));
     $('#btn-close-os-console')?.addEventListener('click', () => {
       const c = $('#os-command-dock-console');
       if (c) c.style.display = 'none';
@@ -2795,6 +2799,67 @@
     } catch (err) {
       if (outEl) outEl.textContent = `❌ Connector check failed: ${err.message}`;
       toast(`Connector check failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleViewReleaseChecklist() {
+    const consoleBox = $('#os-command-dock-console');
+    const titleEl = $('#os-console-title');
+    const badgeEl = $('#os-console-badge');
+    const outEl = $('#os-console-output');
+
+    if (consoleBox) consoleBox.style.display = 'block';
+    if (titleEl) titleEl.textContent = '✅ Evaluating 12/12 Commercial Release Acceptance Checklist...';
+    try {
+      const res = await api('GET', '/v1/watchdog/release-checklist');
+      if (titleEl) titleEl.textContent = `✅ Commercial Release Checklist: ${res.passed_count}/${res.total_items} Passed (${res.status})`;
+      if (badgeEl) {
+        badgeEl.className = res.passed_count === res.total_items ? 'status-pill approved' : 'status-pill rejected';
+        badgeEl.textContent = `${res.passed_count}/${res.total_items} VERIFIED`;
+      }
+      if (outEl) {
+        const rows = (res.checklist || []).map(item =>
+          `${String(item.id).padStart(2, '0')}. [${item.passed ? 'PASS' : 'FAIL'}] ${item.gate.padEnd(62, ' ')} | Evidence: ${item.evidence}`
+        ).join('\n');
+        outEl.textContent =
+          `========================================================================================\n` +
+          `ASKFORWRITE AI COMPANY OS — 12/12 COMMERCIAL RELEASE ACCEPTANCE CHECKLIST\n` +
+          `========================================================================================\n` +
+          `${rows}\n` +
+          `========================================================================================`;
+      }
+      toast(`Release Checklist: ${res.passed_count}/${res.total_items} Passed!`, 'success');
+    } catch (err) {
+      if (outEl) outEl.textContent = `❌ Release checklist check failed: ${err.message}`;
+      toast(`Release checklist failed: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleControlAgentState(action) {
+    const agentKey = ($('#agent-run-target-select')?.value || 'discovery_sdr_agent').trim();
+    const consoleBox = $('#os-command-dock-console');
+    const titleEl = $('#os-console-title');
+    const badgeEl = $('#os-console-badge');
+    const outEl = $('#os-console-output');
+
+    if (consoleBox) consoleBox.style.display = 'block';
+    try {
+      const res = await api('POST', '/v1/watchdog/agent-control', {
+        agent_key: agentKey,
+        action,
+        reason: `Dashboard operator command: ${action}`,
+      });
+      if (titleEl) titleEl.textContent = `🎛️ Agent Governance Control: ${res.control.agent_key} -> ${res.control.state}`;
+      if (badgeEl) {
+        badgeEl.className = res.control.state === 'ACTIVE' ? 'status-pill approved' : 'status-pill rejected';
+        badgeEl.textContent = `${res.control.state} • BLOCK #${res.trust_block_index}`;
+      }
+      if (outEl) {
+        outEl.textContent = JSON.stringify(res, null, 2);
+      }
+      toast(`Agent ${agentKey} state set to ${res.control.state}`, res.control.state === 'ACTIVE' ? 'success' : 'warning');
+    } catch (err) {
+      toast(`Agent control failed: ${err.message}`, 'error');
     }
   }
 
