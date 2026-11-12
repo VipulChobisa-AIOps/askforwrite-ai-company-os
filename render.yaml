@@ -11,12 +11,16 @@ services:
     name: askforwrite-ai-company-os
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     region: singapore
     healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
+      - key: BUILD_VERSION
+        value: "v3.5-p0-truthfulness"
+      - key: ENABLE_EXTERNAL_SIDE_EFFECTS
+        value: "true"
       - key: DATABASE_URL
         sync: false
       - key: NEON_DATABASE_URL
@@ -95,3 +99,33 @@ services:
         value: "info@askforwrite.in"
       - key: WP_APP_PASSWORD
         sync: false
+
+  # ── Isolated Staging & Sandbox Environment (Zero Production Side-Effects) ──
+  - type: web
+    name: askforwrite-ai-company-os-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: BUILD_VERSION
+        value: "v3.5-p0-truthfulness-staging"
+      - key: ENABLE_EXTERNAL_SIDE_EFFECTS
+        value: "false"
+      - key: PAYMENT_MODE
+        value: sandbox
+      - key: SMTP_MODE
+        value: sandbox_sink
+      - key: DATABASE_URL
+        sync: false
+      - key: MANAGER_API_KEY
+        generateValue: true
+      - key: OWNER_API_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true

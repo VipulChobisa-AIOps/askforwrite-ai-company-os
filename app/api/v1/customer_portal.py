@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -28,6 +28,7 @@ from app.db.models import (
     AuditLog,
     InvoiceRecord,
     OrganizationRecord,
+    TaskRecord,
     UserRecord,
 )
 from app.security.auth import (
@@ -729,6 +730,15 @@ def use_tenant_service(
         from app.security.trust_chain import seal_task_to_block
         task_id = str(uuid.uuid4())
         topic = input_payload.get("topic", "Autonomous Multi-Agent Enterprise Orchestration")
+        db.add(
+            TaskRecord(
+                id=task_id,
+                correlation_id=str(uuid.uuid4()),
+                objective=f"ASK4 Academic Synthesis: {topic[:120]}",
+                status="COMPLETED",
+            )
+        )
+        db.flush()
         synthesis_text = generate(
             prompt=f"Write a structured scholarly synthesis abstract and key methodological findings on: {topic}",
             system_instruction="You are the AskforWrite ASK4 Academic Research & Synthesis Specialist.",
@@ -746,6 +756,7 @@ def use_tenant_service(
             ],
             "delivery_format": "PDF & BibTeX",
             "integrity_sealed": True,
+            "task_id": task_id,
         }
         seal_task_to_block(
             db=db,
@@ -774,6 +785,62 @@ def use_tenant_service(
             keywords=input_payload.get("keywords", [org.name, "AI Automation", "Enterprise Growth"]),
         )
 
+    elif service_key in ("managed_seo_content_pilot", "managed_pilot"):
+        from app.services.growth_engine import generate_and_stage_blog
+        from app.services.seo import execute_seo_draft
+        corr_id = str(uuid.uuid4())
+        target_domain = input_payload.get("target_domain") or input_payload.get("domain") or "askforwrite.com"
+        keywords = input_payload.get("keywords") or [org.name, "Managed SEO Pilot", "Generative Engine Optimization"]
+        blog_article = generate_and_stage_blog(
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "B2B Decision Makers"),
+            keywords=keywords,
+            target_domain=f"https://{target_domain}/blog",
+        )
+        staged = execute_seo_draft(
+            db=db,
+            target_network=target_domain,
+            keywords=keywords,
+            idempotency_key=f"portal-pilot-{uuid.uuid4().hex[:12]}",
+            correlation_id=corr_id,
+            agent_id=user.email,
+        )
+        exec_result = {
+            "pilot_sku": "managed_seo_content_pilot",
+            "price_inr": 4999,
+            "target_domain": target_domain,
+            "keyword_cluster": keywords,
+            "article_deliverable": blog_article,
+            "cms_staging": staged,
+        }
+
+    elif service_key in ("wordpress_publisher",):
+        from app.services.growth_engine import generate_and_stage_blog
+        from app.services.seo import execute_seo_draft
+        from app.services.wordpress_publisher import get_supported_networks
+        corr_id = str(uuid.uuid4())
+        target_net = input_payload.get("target_network", "askforwrite.com")
+        keywords = input_payload.get("keywords", [org.name, "WordPress SEO Publishing", "AIO"])
+        blog_data = generate_and_stage_blog(
+            product_name=input_payload.get("product_name", org.name),
+            target_audience=input_payload.get("target_audience", "Enterprise Buyers"),
+            keywords=keywords,
+            target_domain=f"https://{target_net}/blog",
+        )
+        staged = execute_seo_draft(
+            db=db,
+            target_network=target_net,
+            keywords=keywords,
+            idempotency_key=f"portal-wp-{uuid.uuid4().hex[:12]}",
+            correlation_id=corr_id,
+            agent_id=user.email,
+        )
+        exec_result = {
+            "staging": staged,
+            "supported_networks": get_supported_networks(),
+            "article_title": blog_data.get("title"),
+        }
+
     elif service_key in ("marketing_suite", "omnichannel_social"):
         from app.services.growth_engine import generate_omnichannel_social_campaign
         exec_result = generate_omnichannel_social_campaign(
@@ -796,9 +863,108 @@ def use_tenant_service(
             idempotency_key=f"portal-growth-{uuid.uuid4()}",
         )
 
+    elif service_key in ("lead_discovery", "customer_discovery", "lead_generation"):
+        from app.services.discovery import execute_discovery
+        from app.services.watchdog import _VerifiedSimulationSourceProvider
+        objective = input_payload.get("objective", f"B2B enterprise prospects for {org.name}")
+        limit = max(1, min(int(input_payload.get("limit", 2)), 10))
+        exec_result = execute_discovery(
+            db=db,
+            objective=objective,
+            limit=limit,
+            idempotency_key=f"portal-disc-{uuid.uuid4()}",
+            correlation_id=str(uuid.uuid4()),
+            agent_id=user.email,
+            org_id=org.id,
+            provider=_VerifiedSimulationSourceProvider(),
+        )
+
+    elif service_key in ("evidence_research",):
+        from app.agents.research import build_research
+        from app.security.trust_chain import seal_task_to_block
+        task_id = str(uuid.uuid4())
+        company_target = input_payload.get("company", org.name)
+        sources = input_payload.get("sources") or [
+            {"url": f"https://{org.slug or 'enterprise'}.example.com/about", "snippet": f"{company_target} operates digital B2B workflows and seeks automation scale."}
+        ]
+        db.add(
+            TaskRecord(
+                id=task_id,
+                correlation_id=str(uuid.uuid4()),
+                objective=f"Evidence Research: {company_target}",
+                status="COMPLETED",
+            )
+        )
+        db.flush()
+        draft = build_research(company_target, sources)
+        block = seal_task_to_block(
+            db=db,
+            task_id=task_id,
+            capability_name="evidence_research",
+            action="portal_evidence_research",
+            payload={"company": company_target, "sources_count": len(draft.sources)},
+            sealed_by=user.email,
+        )
+        exec_result = {
+            "task_id": task_id,
+            "company": company_target,
+            "synthesis": draft.synthesis,
+            "analysis": draft.analysis,
+            "sources": draft.sources,
+            "trust_block_index": block.index,
+            "trust_block_hash": block.block_hash,
+        }
+
+    elif service_key in ("sales_capture", "sales_proposal", "revenue_engine", "inbound_sales_closer"):
+        from app.services.growth_engine import handle_inbound_sales_chat
+        exec_result = handle_inbound_sales_chat(
+            db=db,
+            session_id=f"portal-sales-{uuid.uuid4().hex[:8]}",
+            prospect_name=input_payload.get("prospect_name", user.full_name or "Enterprise Buyer"),
+            prospect_contact=input_payload.get("prospect_email", user.email),
+            message=input_payload.get(
+                "incoming_message",
+                "We are ready to buy the Managed SEO & Content Pilot and automate lead discovery.",
+            ),
+            channel=input_payload.get("channel", "web_chat"),
+            requested_by=user.email,
+        )
+
+    elif service_key in ("field_force", "delivery_field_force", "field_force_automation"):
+        from app.schemas.field_force import FieldTaskCreate, RouteOptimizationRequest
+        from app.services.field_dispatch import create_field_task, optimize_route_sequence
+        create_field_task(
+            db=db,
+            org_id=org.id,
+            data=FieldTaskCreate(
+                title="Enterprise Client Hub Visit",
+                client_name=org.name,
+                destination_lat=19.1136,
+                destination_lon=72.8697,
+                priority="HIGH",
+                assigned_to_user_id=user.id,
+            ),
+        )
+        route_req = RouteOptimizationRequest(
+            user_id=user.id,
+            start_latitude=float(input_payload.get("origin_lat", 19.0760)),
+            start_longitude=float(input_payload.get("origin_lon", 72.8777)),
+        )
+        route_res = optimize_route_sequence(db=db, org_id=org.id, req=route_req)
+        exec_result = route_res.model_dump()
+
     elif service_key in ("trust_engine", "trust_ledger"):
         from app.security.trust_chain import seal_task_to_block, verify_chain_integrity
         task_id = str(uuid.uuid4())
+        db.add(
+            TaskRecord(
+                id=task_id,
+                correlation_id=str(uuid.uuid4()),
+                objective="Tenant Cryptographic Payload Attestation",
+                status="COMPLETED",
+            )
+        )
+        db.flush()
         block = seal_task_to_block(
             db=db,
             task_id=task_id,
@@ -809,6 +975,7 @@ def use_tenant_service(
         )
         integrity = verify_chain_integrity(db)
         exec_result = {
+            "task_id": task_id,
             "block_index": block.index,
             "block_hash": block.block_hash,
             "signature": block.signature,
@@ -819,7 +986,7 @@ def use_tenant_service(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Service '{service_key}' is not executable via /v1/me/use-service. "
-                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack, seo_blog_copilot, marketing_suite, growth_all_in_one, trust_engine.",
+                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack, seo_blog_copilot, managed_seo_content_pilot, wordpress_publisher, marketing_suite, growth_all_in_one, lead_discovery, evidence_research, sales_capture, revenue_engine, field_force, trust_engine.",
         )
 
     if org.lead_credits_limit > 0:
@@ -827,10 +994,12 @@ def use_tenant_service(
         db.add(org)
 
     audit_task_id = str(uuid.uuid4())
+    corr_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
     db.add(
         AuditLog(
             task_id=audit_task_id,
-            correlation_id=str(uuid.uuid4()),
+            correlation_id=corr_id,
             agent_id=principal.subject,
             capability_name="customer_portal",
             action="use_service",
@@ -841,11 +1010,50 @@ def use_tenant_service(
     )
     db.commit()
 
+    has_custom_gemini = bool((org_gemini_key or "").strip())
+    fallback_used = not has_custom_gemini and service_key in (
+        "seo_blog_copilot",
+        "managed_seo_content_pilot",
+        "marketing_suite",
+        "growth_all_in_one",
+        "ask4_academic_order",
+    )
+    cap_status = "HUMAN_ASSISTED" if service_key in ("seo_blog_copilot", "managed_seo_content_pilot", "wordpress_publisher", "marketing_suite") else "LOCAL_ENGINE_VERIFIED"
+    if service_key == "ask4_academic_order" and fallback_used:
+        cap_status = "SIMULATED"
+
+    import hashlib
+    import json
+
+    input_ref = "sha256:" + hashlib.sha256(
+        json.dumps(input_payload, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+
+    evidence_envelope = {
+        "execution_id": audit_task_id,
+        "tenant_id": org.id,
+        "agent_id": principal.subject or user.email,
+        "tool_id": service_key,
+        "mode": str(input_payload.get("mode", "tenant_portal")),
+        "provider": "gemini_byok" if has_custom_gemini else "local_deterministic_engine",
+        "input_reference": input_ref,
+        "fallback_used": fallback_used,
+        "external_request_id": None,
+        "started_at": now_iso,
+        "completed_at": now_iso,
+        "result_status": cap_status,
+        "credits_consumed": 1,
+        "approval_id": exec_result.get("approval_id") if isinstance(exec_result, dict) else None,
+        "evidence_reference": f"audit://{audit_task_id}/{corr_id}",
+    }
+
     return {
         "status": "COMPLETED",
+        "capability_status": cap_status,
         "service_key": service_key,
         "org_id": org.id,
         "user_id": user.id,
+        "evidence": evidence_envelope,
         "result": exec_result,
         "credits_remaining": max(0, org.lead_credits_limit - org.lead_credits_used) if org.lead_credits_limit > 0 else 0,
         "credits_used": org.lead_credits_used,

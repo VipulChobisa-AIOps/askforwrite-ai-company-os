@@ -52,29 +52,44 @@ def execute_marketing_campaign(
     )
     db.add(task)
 
-    # Generate ad copy via LLM with deterministic fallback
+    # Generate ad copy via LLM with rich, conversion-engineered deterministic fallback
     from app.agents.llm_client import generate
 
     ad_copy = {
         "instagram": generate(
             prompt=f"Generate an engaging Instagram caption for campaign '{campaign_type}' targeting {target_audience}",
             system_instruction="You are an expert B2B social media growth copywriter.",
-            fallback_text=f"Insta ad for {target_audience}",
+            fallback_text=(
+                f"Stop losing hours to manual workflows. Our '{campaign_type}' blueprint built for {target_audience} "
+                f"delivers autonomous execution, human-governed quality control, and verifiable ROI from day one. "
+                f"Tap the link in bio to launch your live preview today. #AIAutomation #GrowthOS #EnterpriseAI #B2BOps"
+            ),
         ),
         "facebook": generate(
             prompt=f"Generate a high-converting Facebook post for campaign '{campaign_type}' targeting {target_audience}",
             system_instruction="You are an expert B2B social media growth copywriter.",
-            fallback_text=f"FB ad for {target_audience}",
+            fallback_text=(
+                f"[Case Study & Live Blueprint] Why top {target_audience} teams are switching to autonomous '{campaign_type}' "
+                f"workflows: 10x faster execution, zero unverified outputs, and cryptographic audit trails. "
+                f"Run a free live domain diagnostic at os.askforwrite.com."
+            ),
         ),
         "twitter": generate(
             prompt=f"Generate a viral Twitter/X post for campaign '{campaign_type}' targeting {target_audience}",
             system_instruction="You are an expert B2B social media growth copywriter.",
-            fallback_text=f"Tweet for {target_audience}",
+            fallback_text=(
+                f"Manual operations are costing {target_audience} 40%+ in lost pipeline velocity. "
+                f"Here is how our '{campaign_type}' engine automates discovery, content, and fulfillment with 100% HITL governance -> os.askforwrite.com"
+            ),
         ),
         "linkedin": generate(
             prompt=f"Generate a professional LinkedIn article excerpt for campaign '{campaign_type}' targeting {target_audience}",
             system_instruction="You are an expert B2B social media growth copywriter.",
-            fallback_text=f"LinkedIn post for {target_audience}",
+            fallback_text=(
+                f"Executive Briefing for {target_audience}: Scaling '{campaign_type}' requires more than generic prompts—it "
+                f"demands an integrated Operating System with deterministic fallbacks, Human-in-the-Loop approval gates, "
+                f"and NIST P-256 cryptographic verification. Explore our production architecture at os.askforwrite.com."
+            ),
         ),
     }
     

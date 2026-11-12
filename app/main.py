@@ -212,7 +212,7 @@ if dashboard_dir.exists():
 
 
 @app.get("/health", tags=["system"])
-def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
+def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Production health check endpoint for Render, cloud monitors, and load balancers."""
     db_status = "connected"
     try:
@@ -221,28 +221,45 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
         db_status = "degraded"
 
     commit_sha = (
-        os.environ.get("RAILWAY_GIT_COMMIT_SHA")
-        or os.environ.get("RENDER_GIT_COMMIT")
+        os.environ.get("RENDER_GIT_COMMIT")
+        or os.environ.get("RAILWAY_GIT_COMMIT_SHA")
         or os.environ.get("GIT_COMMIT_SHA")
         or os.environ.get("SOURCE_VERSION")
         or "development"
     )
     branch = (
-        os.environ.get("RAILWAY_GIT_BRANCH")
-        or os.environ.get("RENDER_GIT_BRANCH")
+        os.environ.get("RENDER_GIT_BRANCH")
+        or os.environ.get("RAILWAY_GIT_BRANCH")
         or os.environ.get("GIT_BRANCH")
         or "main"
     )
+    app_env = os.environ.get("APP_ENV", "production")
+    build_version = os.environ.get("BUILD_VERSION", "v3.5-p0-truthfulness")
+    side_effects_raw = os.environ.get(
+        "ENABLE_EXTERNAL_SIDE_EFFECTS",
+        "true" if app_env == "production" else "false",
+    )
+    external_side_effects_enabled = side_effects_raw.lower() in ("1", "true", "yes")
+    runtime_posture = (
+        "LIVE_PRODUCTION"
+        if (app_env == "production" and external_side_effects_enabled)
+        else "ISOLATED_STAGING_SANDBOX"
+    )
 
-    data: dict[str, str] = {
+    data: dict[str, Any] = {
         "status": "healthy" if db_status == "connected" else "unhealthy",
         "service": "AskforWrite AI Company OS",
         "version": "0.2.0",
+        "build_version": build_version,
+        "hosting_provider": "render",
         "database": db_status,
         "commit_sha": commit_sha[:8] if len(commit_sha) >= 8 else commit_sha,
         "commit_sha_full": commit_sha,
         "branch": branch,
-        "environment": os.environ.get("APP_ENV", "production"),
+        "environment": app_env,
+        "external_side_effects_enabled": external_side_effects_enabled,
+        "runtime_posture": runtime_posture,
+        "capability_status_taxonomy_version": "1.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if os.environ.get("NEON_BRANCH"):

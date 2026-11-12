@@ -69,6 +69,7 @@ def execute_manager_workflow(
     idempotency_key: str,
     correlation_id: str,
     manager_id: str,
+    provider: object | None = None,
 ) -> dict[str, object]:
     key = idempotency_key.strip()
     normalized_objective = objective.strip()
@@ -137,6 +138,7 @@ def execute_manager_workflow(
             idempotency_key=child_key,
             correlation_id=correlation_id,
             agent_id=manager_id,
+            provider=provider,  # type: ignore[arg-type]
         )
         qualified_leads = [
             lead for lead in discovery["leads"]

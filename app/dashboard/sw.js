@@ -1,10 +1,11 @@
 /**
  * AskforWrite AI Company OS — Service Worker
- * Version: 1.0.0
- * Provides fast asset caching, offline shell fallback, and background sync.
+ * Version: 3.5.0 (P0 Truthfulness & Fail-Closed Release)
+ * Provides network-first asset freshness, cache-busting on release, and offline fallback.
  */
 
-const CACHE_NAME = 'afw-os-shell-v1';
+const CACHE_NAME = 'afw-os-shell-v3.5-truthfulness';
+const BUILD_VERSION = 'v3.5-p0-truthfulness';
 
 const STATIC_ASSETS = [
   '/dashboard/',
@@ -52,14 +53,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Bypass dynamic API requests (always network-first for live data)
-  if (url.pathname.startsWith('/v1/') || url.pathname.startsWith('/api/') || url.pathname.startsWith('/docs') || url.pathname.startsWith('/openapi.json')) {
+  // Bypass dynamic API & health requests (always network-only for live data; never serve cached auth/health)
+  if (url.pathname.startsWith('/v1/') || url.pathname.startsWith('/api/') || url.pathname === '/health' || url.pathname.startsWith('/docs') || url.pathname.startsWith('/openapi.json')) {
     event.respondWith(
       fetch(request).catch(() => {
         return new Response(
           JSON.stringify({
             error: 'Offline Mode',
-            message: 'Network connection is currently unavailable. Cached OS telemetry is displayed.',
+            status: 'BLOCKED',
+            capability_status: 'BLOCKED',
+            message: 'Network connection is currently unavailable. Live API action blocked (no false success).',
             offline: true
           }),
           {
@@ -72,47 +75,27 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation requests: Network-first, fallback to cached App Shell
-  if (request.mode === 'navigate') {
+  // Navigation & Dashboard static assets: Network-first so updated Login Gate & JS are never served stale from cache
+  if (request.mode === 'navigate' || url.pathname.startsWith('/dashboard/')) {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const responseClone = response.clone();
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
           }
-          return response;
+          return networkResponse;
         })
         .catch(async () => {
-          const cachedResponse = await caches.match('/dashboard/index.html') || await caches.match('/dashboard/');
+          const cachedResponse = await caches.match(request) || await caches.match('/dashboard/index.html') || await caches.match('/dashboard/');
           if (cachedResponse) {
             return cachedResponse;
           }
           return new Response(
-            '<!DOCTYPE html><html><body style="background:#07090e;color:#fff;font-family:sans-serif;text-align:center;padding:50px;"><h1>AFW OS — Offline</h1><p>You are currently offline. Please reconnect to the internet.</p></body></html>',
+            '<!DOCTYPE html><html><body style="background:#07090e;color:#fff;font-family:sans-serif;text-align:center;padding:50px;"><h1>AFW OS — Offline (BLOCKED)</h1><p>You are currently offline. Live workspace requires an active connection.</p></body></html>',
             { headers: { 'Content-Type': 'text/html' } }
           );
         })
-    );
-    return;
-  }
-
-  // Dashboard static assets: Stale-While-Revalidate
-  if (url.pathname.startsWith('/dashboard/')) {
-    event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        const fetchPromise = fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const responseToCache = networkResponse.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
-            }
-            return networkResponse;
-          })
-          .catch(() => cachedResponse);
-
-        return cachedResponse || fetchPromise;
-      })
     );
     return;
   }

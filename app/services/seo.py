@@ -47,11 +47,44 @@ def execute_seo_draft(
     )
     db.add(task)
 
-    # Draft content using LLM with deterministic fallback
+    # Draft content using LLM with rich, structured SEO/GEO deterministic fallback
     from app.agents.llm_client import generate
 
-    prompt = f"Write an authoritative SEO article draft for network '{target_network}' targeting keywords: {', '.join(keywords)}."
-    fallback = f"Draft content for {target_network} targeting keywords: {', '.join(keywords)}..."
+    kw_list = [k.strip() for k in keywords if k and k.strip()] or [target_network, "Enterprise AI Automation"]
+    primary_kw = kw_list[0]
+    secondary_kws = ", ".join(kw_list[1:]) if len(kw_list) > 1 else "Autonomous Operations, GEO Optimization, Cryptographic Trust"
+    schema_ld = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "Article",
+            "headline": f"{primary_kw}: Authoritative Implementation & ROI Blueprint ({target_network})",
+            "keywords": ", ".join(kw_list),
+            "publisher": {"@type": "Organization", "name": target_network},
+        }
+    )
+    fallback = (
+        f"# {primary_kw}: Strategic Architecture & Implementation Guide for {target_network}\n\n"
+        f"**Executive Summary (GEO Citation Block):** Organizations deploying **{primary_kw}** alongside "
+        f"{secondary_kws} achieve measurable operational velocity, deterministic quality governance, and "
+        f"verifiable audit compliance across {target_network}.\n\n"
+        f"## 1. Core Operational Imperatives for {primary_kw}\n"
+        f"Modern enterprise teams face structural bottlenecks when scaling {', '.join(kw_list)} manually. "
+        f"By combining human-in-the-loop (HITL) governance with deterministic execution pipelines on {target_network}, "
+        f"teams eliminate unverified outputs and establish repeatable organic growth.\n\n"
+        f"## 2. Key Technical Pillars & Entity Alignment\n"
+        + "\n".join(
+            f"- **{kw}**: Production-grade workflow integration with real-time telemetry and Schema.org entity grounding."
+            for kw in kw_list
+        )
+        + "\n\n"
+        f"## 3. Frequently Asked Questions (AIO / Answer Engine Ready)\n"
+        f"**Q: How does {target_network} validate {primary_kw} performance?**\n"
+        f"A: Every publication and workflow transition is gated by owner approval and sealed into an immutable NIST P-256 cryptographic ledger.\n\n"
+        f"**Q: What are the primary keywords targeted in this cluster?**\n"
+        f"A: This topical authority cluster targets {', '.join(kw_list)} with structured semantic headings.\n\n"
+        f"```json\n{schema_ld}\n```"
+    )
+    prompt = f"Write an authoritative SEO article draft for network '{target_network}' targeting keywords: {', '.join(kw_list)}."
     content_draft = generate(prompt, fallback_text=fallback)
     
     draft = SeoDraftRecord(

@@ -625,3 +625,238 @@ def build_payment_link(
         amount = pkg.price_inr
         note = f"{pkg.name} for {company or 'Client'}"
         return f"{base_url.rstrip('/')}?amount={amount*100}&notes_package={pkg.key}&notes_company={quote_plus(company or '')}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unified SME Business OS — Modular Subscription & 13-Field Pricing Contracts
+# ═══════════════════════════════════════════════════════════════════════════════
+
+MODULAR_SERVICE_MODULES: dict[str, dict[str, object]] = {
+    "sales": {
+        "module_key": "sales",
+        "name": "Sales & CRM Module",
+        "monthly_price_inr": 2499,
+        "monthly_price_usd": 35,
+        "agents": ["discovery_sdr_agent", "sales_closer_agent", "evidence_research_agent"],
+        "capabilities": ["customer_discovery", "evidence_research", "sales_proposal", "inbound_sales_closer"],
+    },
+    "marketing": {
+        "module_key": "marketing",
+        "name": "Marketing & Creative Studio Module",
+        "monthly_price_inr": 2999,
+        "monthly_price_usd": 39,
+        "agents": ["pixelbot_marketing_agent"],
+        "capabilities": ["marketing_campaign_suite", "pixel_ai_creative_studio", "pixel_ai_pack"],
+    },
+    "seo": {
+        "module_key": "seo",
+        "name": "SEO, GEO & WordPress Publishing Module",
+        "monthly_price_inr": 1999,
+        "monthly_price_usd": 29,
+        "agents": ["seo_geo_copilot_agent"],
+        "capabilities": ["seo_content_automation", "wordpress_publisher", "managed_seo_content_pilot"],
+    },
+    "inventory": {
+        "module_key": "inventory",
+        "name": "Inventory & Warehouse StockSense Module",
+        "monthly_price_inr": 3999,
+        "monthly_price_usd": 49,
+        "agents": ["warehouse_automation"],
+        "capabilities": ["warehouse_automation", "inventory_analytics"],
+    },
+    "field_force": {
+        "module_key": "field_force",
+        "name": "Field Operations & Conveyance Module",
+        "monthly_price_inr": 3999,
+        "monthly_price_usd": 49,
+        "agents": ["field_ops_dispatcher_agent"],
+        "capabilities": ["delivery_field_force", "bike_rebalance_analytics", "mobility_analytics"],
+    },
+    "customer_ops": {
+        "module_key": "customer_ops",
+        "name": "Quality Grading, Compliance & Trust Ops Module",
+        "monthly_price_inr": 3499,
+        "monthly_price_usd": 45,
+        "agents": ["watchdog_supervisor_agent", "shift_scheduler_agent"],
+        "capabilities": ["trust_ledger_audit", "mango_quality_analytics", "quality_analytics"],
+    },
+}
+
+MODULAR_SME_TIERS: dict[str, dict[str, object]] = {
+    "launch": {
+        "tier_key": "launch",
+        "name": "Launch (Micro-Business)",
+        "target_sme": "Micro-business & solo founders",
+        "base_price": {"inr": 2999, "usd": 39},
+        "included_modules": ["seo"],
+        "agent_limit": 2,
+        "seat_limit": 2,
+        "included_credits": {"lead_credits": 50, "outreach_credits": 25, "ai_execution_credits": 100},
+        "support_level": "standard_sla",
+        "customization_allowance": "standard_templates",
+    },
+    "growth": {
+        "tier_key": "growth",
+        "name": "Growth (Sales & Marketing SME)",
+        "target_sme": "Sales/marketing-led SME",
+        "base_price": {"inr": 7999, "usd": 99},
+        "included_modules": ["sales", "marketing", "seo"],
+        "agent_limit": 5,
+        "seat_limit": 5,
+        "included_credits": {"lead_credits": 250, "outreach_credits": 125, "ai_execution_credits": 500},
+        "support_level": "priority_business_hours",
+        "customization_allowance": "workflow_and_prompt_tuning",
+    },
+    "operations": {
+        "tier_key": "operations",
+        "name": "Operations (Inventory & Field SME)",
+        "target_sme": "Inventory, distribution & field-led SME",
+        "base_price": {"inr": 8999, "usd": 115},
+        "included_modules": ["inventory", "field_force", "customer_ops"],
+        "agent_limit": 6,
+        "seat_limit": 10,
+        "included_credits": {"lead_credits": 150, "outreach_credits": 75, "ai_execution_credits": 600},
+        "support_level": "priority_business_hours",
+        "customization_allowance": "erp_and_warehouse_connectors",
+    },
+    "business_pro": {
+        "tier_key": "business_pro",
+        "name": "Business Pro (Multi-Department SME)",
+        "target_sme": "Multiple departments with cross-module workflows",
+        "base_price": {"inr": 19999, "usd": 249},
+        "included_modules": ["sales", "marketing", "seo", "inventory", "field_force", "customer_ops"],
+        "agent_limit": 12,
+        "seat_limit": 25,
+        "included_credits": {"lead_credits": 1000, "outreach_credits": 500, "ai_execution_credits": 2500},
+        "support_level": "priority_24x7",
+        "customization_allowance": "custom_workflows_and_connectors",
+    },
+    "enterprise": {
+        "tier_key": "enterprise",
+        "name": "Enterprise (Regulated & Custom Scale)",
+        "target_sme": "Larger or regulated multi-branch operations",
+        "base_price": {"inr": 49999, "usd": 599},
+        "included_modules": ["sales", "marketing", "seo", "inventory", "field_force", "customer_ops"],
+        "agent_limit": 50,
+        "seat_limit": 100,
+        "included_credits": {"lead_credits": 5000, "outreach_credits": 2500, "ai_execution_credits": 10000},
+        "support_level": "dedicated_architect_sla",
+        "customization_allowance": "bespoke_private_node_and_custom_integrations",
+    },
+}
+
+
+def get_modular_pricing_contract(
+    package_or_tier_key: str,
+    addon_modules: list[str] | None = None,
+) -> dict[str, object]:
+    """Return the 13-field machine-readable pricing & entitlement contract for any SKU or Modular SME Plan."""
+    clean_key = (package_or_tier_key or "growth").strip().lower()
+    addons = [m.strip().lower() for m in (addon_modules or []) if m.strip().lower() in MODULAR_SERVICE_MODULES]
+
+    credit_costs = {
+        "agent_run": 1,
+        "seo_article": 2,
+        "lead_discovery": 1,
+        "inventory_audit": 1,
+        "field_dispatch": 1,
+        "marketing_campaign": 2,
+    }
+
+    if clean_key in MODULAR_SME_TIERS:
+        tier_spec = MODULAR_SME_TIERS[clean_key]
+        base_mods = list(tier_spec["included_modules"])  # type: ignore[arg-type]
+        combined_mods = list(dict.fromkeys(base_mods + addons))
+        extra_mods = [m for m in addons if m not in base_mods]
+        extra_inr = sum(int(MODULAR_SERVICE_MODULES[m]["monthly_price_inr"]) for m in extra_mods)  # type: ignore[arg-type]
+        extra_usd = sum(int(MODULAR_SERVICE_MODULES[m]["monthly_price_usd"]) for m in extra_mods)  # type: ignore[arg-type]
+        base_price_dict = dict(tier_spec["base_price"])  # type: ignore[arg-type]
+        total_inr = int(base_price_dict["inr"]) + extra_inr
+        total_usd = int(base_price_dict["usd"]) + extra_usd
+
+        return {
+            "sku_key": clean_key,
+            "name": tier_spec["name"],
+            "billing_type": "recurring_subscription",
+            "billing_interval": "monthly",
+            "base_price": {"inr": total_inr, "usd": total_usd, "addon_inr": extra_inr, "addon_usd": extra_usd},
+            "provider_plan_id": {
+                "razorpay": f"plan_afw_{clean_key}_inr",
+                "paypal": f"P-AFW-{clean_key.upper()}-USD",
+                "sovereign_direct": f"direct_afw_{clean_key}",
+            },
+            "included_modules": combined_mods,
+            "addon_modules": extra_mods,
+            "agent_limit": int(tier_spec["agent_limit"]) + (len(extra_mods) * 2),  # type: ignore[arg-type]
+            "included_credits": dict(tier_spec["included_credits"]),  # type: ignore[arg-type]
+            "credit_costs": credit_costs,
+            "seat_limit": int(tier_spec["seat_limit"]),  # type: ignore[arg-type]
+            "setup_fee": {"inr": 0 if clean_key in ("launch", "growth") else 4999, "usd": 0 if clean_key in ("launch", "growth") else 59},
+            "support_level": tier_spec["support_level"],
+            "renewal_policy": "auto_renew_monthly_cancel_anytime",
+            "customization_allowance": tier_spec["customization_allowance"],
+        }
+
+    pkg = get_package(clean_key) or CATALOG["managed_seo_content_pilot"]
+    if pkg.category == "managed_pilot":
+        billing_type = "managed_pilot_14d"
+        billing_interval = "14_days"
+        renewal_policy = "manual_pilot_conversion_After_14d"
+    elif pkg.category == "b2c_one_off":
+        billing_type = "one_time_purchase"
+        billing_interval = "one_time"
+        renewal_policy = "one_time_no_renewal"
+    else:
+        billing_type = "recurring_subscription"
+        billing_interval = "monthly"
+        renewal_policy = "auto_renew_monthly_cancel_anytime"
+
+    inferred_modules: list[str] = []
+    caps_str = " ".join(pkg.entitled_capabilities)
+    if "seo" in caps_str:
+        inferred_modules.append("seo")
+    if "marketing" in caps_str or "pixel" in caps_str:
+        inferred_modules.append("marketing")
+    if "discovery" in caps_str or "sales" in caps_str:
+        inferred_modules.append("sales")
+    if "warehouse" in caps_str or "inventory" in caps_str:
+        inferred_modules.append("inventory")
+    if "field" in caps_str or "mobility" in caps_str:
+        inferred_modules.append("field_force")
+    if "trust" in caps_str or "quality" in caps_str or not inferred_modules:
+        inferred_modules.append("customer_ops")
+    for m in addons:
+        if m not in inferred_modules:
+            inferred_modules.append(m)
+
+    return {
+        "sku_key": pkg.key,
+        "name": pkg.name,
+        "billing_type": billing_type,
+        "billing_interval": billing_interval,
+        "base_price": {"inr": pkg.price_inr, "usd": pkg.price_usd},
+        "provider_plan_id": {
+            "razorpay": f"plan_{pkg.key}_inr" if billing_type == "recurring_subscription" else f"order_{pkg.key}_inr",
+            "paypal": f"P-{pkg.key.upper()[:14]}-USD",
+            "sovereign_direct": f"direct_{pkg.key}",
+        },
+        "included_modules": inferred_modules,
+        "addon_modules": addons,
+        "agent_limit": 9 if pkg.category == "master_bundle" else 3,
+        "included_credits": {
+            "lead_credits": pkg.lead_credits_monthly,
+            "outreach_credits": pkg.outreach_credits_monthly,
+            "ai_execution_credits": max(50, pkg.lead_credits_monthly * 2),
+        },
+        "credit_costs": credit_costs,
+        "seat_limit": 10 if pkg.category == "master_bundle" else 3,
+        "setup_fee": {"inr": 0, "usd": 0},
+        "support_level": "priority_24x7" if pkg.price_inr >= 9999 else "standard_sla",
+        "renewal_policy": renewal_policy,
+        "customization_allowance": (
+            "custom_workflows_and_connectors"
+            if pkg.category == "master_bundle"
+            else "standard_templates"
+        ),
+    }
+
