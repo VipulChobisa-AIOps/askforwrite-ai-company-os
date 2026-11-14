@@ -114,7 +114,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Create tables (SQLite dev) and initialize Genesis trust block on startup."""
     from app.db.database import APP_ENV, DATABASE_URL, Base, engine
-    if DATABASE_URL:
+    skip_worker_ddl = os.environ.get("AFW_SKIP_WORKER_DDL", "").strip().lower() in ("1", "true", "yes")
+    if DATABASE_URL and not skip_worker_ddl:
         try:
             Base.metadata.create_all(bind=engine)
         except Exception as exc:
@@ -123,15 +124,16 @@ async def lifespan(app: FastAPI):
                 raise
     from app.db.database import SessionLocal
     from app.security.trust_chain import ensure_genesis_block
-    db = SessionLocal()
-    try:
-        ensure_genesis_block(db)
-    except Exception as exc:
-        if APP_ENV == "production":
-            logger.error("Failed initializing genesis trust block on startup in production: %s", exc)
-            raise
-    finally:
-        db.close()
+    if not skip_worker_ddl:
+        db = SessionLocal()
+        try:
+            ensure_genesis_block(db)
+        except Exception as exc:
+            if APP_ENV == "production":
+                logger.error("Failed initializing genesis trust block on startup in production: %s", exc)
+                raise
+        finally:
+            db.close()
     yield
     # Shutdown logic (if needed in the future) goes here
 
@@ -224,8 +226,12 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
     """Production health check endpoint for Render, cloud monitors, and load balancers."""
     db_status = "connected"
     try:
+        bind = db.get_bind()
+        if bind is not None and bind.dialect.name == "postgresql":
+            db.execute(text("SET LOCAL statement_timeout = 3000"))
         db.execute(text("SELECT 1"))
     except Exception:
+        db.rollback()
         db_status = "degraded"
 
     commit_sha = (

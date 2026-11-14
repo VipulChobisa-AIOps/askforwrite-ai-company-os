@@ -130,8 +130,13 @@ def list_service_landing_pages() -> HTMLResponse:
 @router.get("/services/{service_key}", response_class=HTMLResponse, include_in_schema=False)
 def get_service_landing_page(service_key: str) -> HTMLResponse:
     """Render a dedicated, SEO/AEO/GEO-optimized HTML5 landing page for a specific catalog service."""
-    pkg = get_package(service_key.strip().lower())
+    clean_key = service_key.strip().lower()
+    pkg = get_package(clean_key)
     if not pkg:
+        from app.api.v1.solutions_pages import SOLUTION_SLUGS, solution_detail_page
+
+        if clean_key in SOLUTION_SLUGS:
+            return solution_detail_page(clean_key)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Service '{service_key}' not found in catalog")
 
     canonical_url = f"https://os.askforwrite.com/services/{pkg.key}"

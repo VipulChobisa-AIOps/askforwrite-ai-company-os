@@ -192,6 +192,9 @@ def start_server() -> None:
     workers = int(os.environ.get("UVICORN_WORKERS", "2"))
     port = int(os.environ.get("PORT") or os.environ.get("APP_PORT", "8000"))
 
+    # Migrations and genesis seeding already executed once before forking workers.
+    env = os.environ.copy()
+    env.setdefault("AFW_SKIP_WORKER_DDL", "1")
 
     print(f"\n-- Starting Uvicorn (workers={workers}, port={port}) --\n")
     import subprocess
@@ -204,7 +207,8 @@ def start_server() -> None:
             "--workers", str(workers),
             "--access-log",
             "--log-level", "info",
-        ]
+        ],
+        env=env,
     )
 
 

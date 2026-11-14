@@ -329,23 +329,32 @@
 
     try {
       const invoices = await api('GET', '/v1/me/billing');
-      if (Array.isArray(invoices) && invoices.length > 0) {
-        const tbody = $('#portal-invoices-tbody');
-        if (tbody) {
-          tbody.innerHTML = invoices.map(inv => `
-            <tr>
-              <td><code>${esc(inv.invoice_id)}</code></td>
-              <td>AskforWrite AI Workspace</td>
-              <td>${inv.currency === 'USD' ? '$' : '₹'}${inv.amount}</td>
-              <td>${esc(inv.provider)}</td>
-              <td><span class="status-pill ${inv.status === 'PAID' ? 'approved' : 'pending'}">${esc(inv.status)}</span></td>
-              <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
-            </tr>
-          `).join('');
+      const tbody = $('#portal-invoices-tbody');
+      if (tbody && Array.isArray(invoices)) {
+        if (invoices.length > 0) {
+          tbody.innerHTML = invoices.map(inv => {
+            const st = String(inv.status || 'PENDING').toUpperCase();
+            return `
+              <tr>
+                <td><code>${esc(inv.invoice_id)}</code></td>
+                <td>AskforWrite AI Workspace</td>
+                <td>${inv.currency === 'USD' ? '$' : '₹'}${inv.amount}</td>
+                <td>${esc(inv.provider)}</td>
+                <td><span class="status-pill ${st === 'PAID' ? 'approved' : 'pending'}">${esc(st)}</span></td>
+                <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
+              </tr>
+            `;
+          }).join('');
+        } else {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No verified billing invoices yet</td></tr>';
         }
       }
     } catch (e) {
       console.warn('Billing invoices fetch:', e.message);
+      const tbody = $('#portal-invoices-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Unable to load billing invoices</td></tr>';
+      }
     }
     await fetchCustomerP3PortalData();
   }
@@ -395,56 +404,83 @@
         api('GET', '/v1/me/support/tickets'),
       ]);
 
-      const pct = Number(onb.completion_pct ?? 0);
+      const pct = Number(onb.progress_pct ?? onb.completion_pct ?? 0);
+      const obStatus = onb.status || onb.readiness_state || 'NOT_STARTED';
       if (summaryEl) {
-        summaryEl.textContent = `${pct}% Complete • ${onb.readiness_state || 'PENDING'}`;
+        summaryEl.textContent = `${pct}% Complete • ${obStatus}`;
       }
       const tasks = Array.isArray(onb.tasks) ? onb.tasks : [];
-      tasksEl.innerHTML = tasks.length ? tasks.map(t => `
+      tasksEl.innerHTML = tasks.length ? tasks.map(t => {
+        const ownerLabel = t.owner_role || t.assigned_to || t.owner || 'customer';
+        const isDone = Boolean(t.completed || t.status === 'completed');
+        return `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
           <div>
             <strong>${esc(t.title || t.task_key)}</strong>
-            <div style="font-size:0.74rem;color:var(--text-muted)">Owner: ${esc(t.owner || 'customer')} • Status: ${esc(t.status || 'pending')}</div>
+            <div style="font-size:0.74rem;color:var(--text-muted)">Owner: ${esc(ownerLabel)} • Status: ${isDone ? 'completed' : 'pending'}</div>
           </div>
-          ${t.status === 'completed'
+          ${isDone
             ? '<span class="status-pill approved">Completed</span>'
             : `<button type="button" class="secondary-btn portal-task-complete-btn" onclick="app.portalCompleteTask('${esc(t.task_key)}')" style="padding:5px 10px;font-size:0.75rem">Mark Done</button>`
           }
         </div>
-      `).join('') : '<div class="empty-state"><p>No onboarding tasks configured.</p></div>';
+      `;
+      }).join('') : '<div class="empty-state"><p>No onboarding tasks configured.</p></div>';
 
       const deliveries = Array.isArray(delivRes.deliveries) ? delivRes.deliveries : [];
       delivEl.innerHTML = deliveries.length ? deliveries.map(d => {
         const qs = String(d.quality_state || 'NOT_STARTED');
-        const canRespond = qs === 'DELIVERED' || qs === 'QUALITY_REVIEW';
+        const canAccept = qs === 'DELIVERED';
+        const canRequestRev = qs === 'DELIVERED' || qs === 'QUALITY_REVIEW';
+        const scopeLabel = Array.isArray(d.approved_scope) && d.approved_scope.length
+          ? d.approved_scope.join(', ')
+          : (d.original_requirement || d.customer_requirement || 'Standard delivery');
         return `
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
             <div>
               <strong>${esc(d.title || d.sku_key || d.delivery_id)}</strong>
               <span class="status-pill ${qs === 'ACCEPTED' ? 'approved' : qs === 'REVISION_REQUESTED' ? 'rejected' : 'pending'}" style="margin-left:6px">${esc(qs)}</span>
-              <div style="font-size:0.74rem;color:var(--text-muted)">Scope: ${esc(d.approved_scope || d.customer_requirement || 'Standard delivery')}</div>
+              <div style="font-size:0.74rem;color:var(--text-muted)">Scope: ${esc(scopeLabel)}</div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              ${canRespond ? `
-                <button type="button" class="success-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','ACCEPTED')" style="padding:5px 10px;font-size:0.75rem">Accept</button>
-                <button type="button" class="danger-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','REVISION_REQUESTED')" style="padding:5px 10px;font-size:0.75rem">Request Revision</button>
-              ` : ''}
+              ${canAccept ? `<button type="button" class="success-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','ACCEPTED')" style="padding:5px 10px;font-size:0.75rem">Accept</button>` : ''}
+              ${canRequestRev ? `<button type="button" class="danger-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','REVISION_REQUESTED')" style="padding:5px 10px;font-size:0.75rem">Request Revision</button>` : ''}
             </div>
           </div>
         `;
       }).join('') : '<div class="empty-state"><p>No service deliverables assigned yet.</p></div>';
 
       const tickets = Array.isArray(tickRes.tickets) ? tickRes.tickets : [];
-      ticketsEl.innerHTML = tickets.length ? tickets.map(t => `
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
-          <div>
-            <strong>${esc(t.subject)}</strong>
-            <span class="status-pill ${t.status === 'RESOLVED' || t.status === 'CLOSED' ? 'approved' : 'pending'}" style="margin-left:6px">${esc(t.status)}</span>
-            <div style="font-size:0.74rem;color:var(--text-muted)">${esc(t.category || 'general')} • Priority: ${esc(t.priority || 'medium')}</div>
+      ticketsEl.innerHTML = tickets.length ? tickets.map(t => {
+        const msgs = Array.isArray(t.messages) ? t.messages : [];
+        const latestMsg = msgs.length ? msgs[msgs.length - 1] : null;
+        const canCsat = (t.status === 'RESOLVED' || t.status === 'CLOSED') && t.csat_rating == null;
+        return `
+        <div style="padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div>
+              <strong>${esc(t.subject)}</strong>
+              <span class="status-pill ${t.status === 'RESOLVED' || t.status === 'CLOSED' ? 'approved' : 'pending'}" style="margin-left:6px">${esc(t.status)}</span>
+              <div style="font-size:0.74rem;color:var(--text-muted)">${esc(t.category || 'general')} • Priority: ${esc(t.priority || 'MEDIUM')} • Messages: ${msgs.length}${t.csat_rating ? ` • CSAT: ${t.csat_rating}/5` : ''}</div>
+              ${latestMsg ? `<div style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px">Latest (${esc(latestMsg.sender_type || 'update')}): ${esc(latestMsg.body || '')}</div>` : ''}
+            </div>
+            <code style="font-size:0.72rem;color:var(--text-muted)">${esc(t.ticket_id)}</code>
           </div>
-          <code style="font-size:0.72rem;color:var(--text-muted)">${esc(t.ticket_id)}</code>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <input id="portal-tkt-reply-${esc(t.ticket_id)}" class="settings-input" placeholder="Reply to ticket..." style="flex:1;min-width:160px;padding:5px 8px;font-size:0.76rem">
+            <button type="button" class="secondary-btn" onclick="app.portalReplyTicket('${esc(t.ticket_id)}')" style="padding:5px 10px;font-size:0.75rem">Send Reply</button>
+            ${canCsat ? `
+              <select id="portal-tkt-csat-${esc(t.ticket_id)}" class="settings-select" style="width:90px;padding:5px 8px;font-size:0.75rem">
+                <option value="5">5 ★</option><option value="4">4 ★</option><option value="3">3 ★</option><option value="2">2 ★</option><option value="1">1 ★</option>
+              </select>
+              <button type="button" class="primary-btn" onclick="app.portalSubmitCsat('${esc(t.ticket_id)}')" style="padding:5px 10px;font-size:0.75rem">Rate CSAT</button>
+            ` : ''}
+          </div>
         </div>
-      `).join('') : '<div class="empty-state"><p>No support tickets raised yet.</p></div>';
+      `;
+      }).join('') : '<div class="empty-state"><p>No support tickets raised yet.</p></div>';
+
+      await portalRefreshGsc();
 
       if (statusPill) {
         statusPill.textContent = 'Synced';
@@ -516,6 +552,83 @@
         errBox.textContent = `Ticket submission failed: ${e.message || 'Network or server error'}`;
       }
       toast(`Ticket submission failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalReplyTicket(ticketId) {
+    const inputEl = $(`#portal-tkt-reply-${ticketId}`);
+    const body = (inputEl?.value || '').trim();
+    if (!body) {
+      toast('Enter a reply message first', 'error');
+      return;
+    }
+    try {
+      await api('POST', `/v1/me/support/tickets/${encodeURIComponent(ticketId)}/messages`, { body });
+      toast('Reply posted to support ticket', 'success');
+      await fetchCustomerP3PortalData();
+    } catch (e) {
+      toast(`Ticket reply failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalSubmitCsat(ticketId) {
+    const rating = Number($(`#portal-tkt-csat-${ticketId}`)?.value || 5);
+    try {
+      await api('POST', `/v1/me/support/tickets/${encodeURIComponent(ticketId)}/csat`, {
+        rating,
+        comment: `Rated ${rating}/5 from Customer Portal`,
+      });
+      toast('Thank you for your feedback!', 'success');
+      await fetchCustomerP3PortalData();
+    } catch (e) {
+      toast(`CSAT submission failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalExportData() {
+    const outEl = $('#portal-privacy-output');
+    try {
+      const res = await api('GET', '/v1/me/data-export');
+      if (outEl) {
+        const counts = res.compliance_request?.export_manifest?.record_counts || res.export_manifest?.record_counts || {};
+        outEl.textContent = `Redacted export ready (secrets stripped). Records: ${JSON.stringify(counts)}`;
+      }
+      toast('Tenant DPDP/GDPR data export generated', 'success');
+    } catch (e) {
+      if (outEl) outEl.textContent = `Export failed: ${e.message}`;
+      toast(`Data export failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalSaveConsent() {
+    const outEl = $('#portal-privacy-output');
+    const marketing = Boolean($('#portal-consent-marketing')?.checked);
+    const aiAssist = Boolean($('#portal-consent-ai')?.checked);
+    try {
+      await api('PATCH', '/v1/me/consent-preferences', {
+        consent_preferences: { marketing_updates: marketing, ai_support_triage: aiAssist },
+      });
+      if (outEl) outEl.textContent = `Consent saved (marketing=${marketing}, ai_triage=${aiAssist})`;
+      toast('Privacy consent preferences updated', 'success');
+    } catch (e) {
+      toast(`Consent update failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalRefreshGsc() {
+    const gscEl = $('#portal-gsc-status');
+    if (!gscEl) return;
+    try {
+      const gsc = await api('GET', '/v1/me/integrations/gsc/status');
+      const missing = Array.isArray(gsc.missing_env_vars) && gsc.missing_env_vars.length
+        ? ` • Missing env: ${gsc.missing_env_vars.join(', ')}`
+        : '';
+      gscEl.innerHTML = `
+        <div><strong>State:</strong> ${esc(gsc.gsc_state || 'BLOCKED')} (${esc(gsc.connection_status || 'NOT_CONNECTED')})</div>
+        <div><strong>Property:</strong> ${esc(gsc.selected_property || 'None selected')}${esc(missing)}</div>
+      `;
+    } catch (e) {
+      gscEl.textContent = `GSC status unavailable: ${e.message}`;
     }
   }
 
@@ -1920,6 +2033,9 @@
     $('#btn-run-tenant-service')?.addEventListener('click', handleRunTenantService);
     $('#btn-portal-refresh')?.addEventListener('click', fetchCustomerPortalData);
     $('#btn-portal-create-ticket')?.addEventListener('click', portalCreateTicket);
+    $('#btn-portal-export-data')?.addEventListener('click', portalExportData);
+    $('#btn-portal-save-consent')?.addEventListener('click', portalSaveConsent);
+    $('#btn-portal-refresh-gsc')?.addEventListener('click', portalRefreshGsc);
     window.addEventListener('offline', () => setConnectionStatus(false));
     window.addEventListener('online', () => setConnectionStatus(true));
 
@@ -4700,6 +4816,7 @@
         api('GET', '/v1/cs/ops/readiness'),
         api('GET', '/v1/cs/acceptance'),
       ]);
+      const rrRes = await api('GET', '/v1/cs/release-readiness').catch(() => null);
 
       const vco = ccRes.verified_customer_ops || {};
       const act = vco.activation || {};
@@ -4758,7 +4875,10 @@
               <td><code>${escapeHtml(d.org_id)}</code></td>
               <td><span class="badge">${escapeHtml(d.quality_state)}</span></td>
               <td>${Object.keys(d.output_artifacts || {}).length} artifact(s)</td>
-              <td><button type="button" class="secondary-btn" onclick="window.app.p3QaPass('${escapeHtml(d.delivery_id)}', true)">QA Pass</button></td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                <button type="button" class="secondary-btn" onclick="window.app.p3QaPass('${escapeHtml(d.delivery_id)}', true)">QA Pass</button>
+                <button type="button" class="danger-btn" onclick="window.app.p3QaPass('${escapeHtml(d.delivery_id)}', false)">QA Fail</button>
+              </td>
             </tr>`).join('')
           : '<tr><td colspan="5">No service deliveries recorded</td></tr>';
       }
@@ -4772,7 +4892,8 @@
               <td>${escapeHtml(t.priority)}</td>
               <td><span class="badge">${escapeHtml(t.status)}</span></td>
               <td>${t.csat_rating ?? '-'}</td>
-              <td style="display:flex;gap:4px;">
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                <button type="button" class="secondary-btn" onclick="window.app.p3SelectTicketReply('${escapeHtml(t.ticket_id)}')">Reply</button>
                 <button type="button" class="secondary-btn" onclick="window.app.p3AiAssistTicket('${escapeHtml(t.ticket_id)}')">AI Triage</button>
                 <button type="button" class="secondary-btn" onclick="window.app.p3ResolveTicket('${escapeHtml(t.ticket_id)}')">Resolve</button>
               </td>
@@ -4789,8 +4910,14 @@
               <td>${i.priority_score}</td>
               <td>${i.frequency_count}</td>
               <td><span class="badge">${escapeHtml(i.status)}</span></td>
+              <td style="display:flex;gap:4px;align-items:center;">
+                <select id="p3-imp-status-${escapeHtml(i.improvement_id)}" class="settings-select" style="width:120px;padding:3px 6px;font-size:0.74rem;">
+                  ${['OPEN', 'IN_BACKLOG', 'PLANNED', 'RESOLVED', 'DISMISSED'].map(st => `<option value="${st}" ${i.status === st ? 'selected' : ''}>${st}</option>`).join('')}
+                </select>
+                <button type="button" class="secondary-btn" onclick="window.app.p3UpdateImprovement('${escapeHtml(i.improvement_id)}')">Save</button>
+              </td>
             </tr>`).join('')
-          : '<tr><td colspan="5">No improvement clusters yet</td></tr>';
+          : '<tr><td colspan="6">No improvement clusters yet</td></tr>';
       }
 
       if ($('#p3-renewals-tbody')) {
@@ -4823,6 +4950,16 @@
         const dbh = opsRes.database_health || {};
         const conc = opsRes.concurrency_limits || {};
         $('#p3-ops-summary').innerHTML = `DB Status: <strong>${escapeHtml(dbh.status || 'UNKNOWN')}</strong> (${escapeHtml(dbh.dialect || '')}, ping ${dbh.ping_latency_ms ?? '-'}ms) | Active Workflows: ${conc.active_runs_total ?? 0} (Cap/org: ${conc.max_concurrent_runs_per_org ?? 5})`;
+      }
+      if ($('#p3-release-readiness-summary') && rrRes) {
+        const subs = Object.entries(rrRes.subsystems || {})
+          .map(([k, v]) => `<code>${escapeHtml(k)}</code>: <strong>${escapeHtml(v.state || 'UNKNOWN')}</strong>`)
+          .join(' | ');
+        const gaps = (rrRes.blocking_gaps || []).length;
+        $('#p3-release-readiness-summary').innerHTML = `
+          <div>Overall Gate: <strong>${escapeHtml(rrRes.overall_release_readiness || 'BLOCKED')}</strong> • Cutover Approved: <strong>${rrRes.production_cutover_approved ? 'YES' : 'NO'}</strong> • Blocking Gaps: ${gaps}</div>
+          <div style="margin-top:4px;font-size:0.78rem;color:var(--text-muted);">${subs}</div>
+        `;
       }
       if ($('#p3-dlq-tbody')) {
         const dlqs = opsRes.dlq_summary?.open_items || [];
@@ -4884,6 +5021,49 @@
         await p3LoadControlCentre();
       } catch (e) {
         toast(`Activation blocked: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-transition-lifecycle')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      const targetState = $('#p3-lifecycle-target')?.value || 'ONBOARDING';
+      const reason = ($('#p3-lifecycle-reason')?.value || '').trim() || 'Updated from Customer Operations console';
+      if (!oid) return toast('Enter or select an org_id first', 'error');
+      try {
+        await api('POST', `/v1/cs/customers/${encodeURIComponent(oid)}/lifecycle`, { target_state: targetState, reason });
+        toast(`Customer lifecycle updated to ${targetState}`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Lifecycle transition failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-reply-ticket')?.addEventListener('click', async () => {
+      const ticketId = ($('#p3-tkt-reply-id')?.value || '').trim();
+      const visibility = $('#p3-tkt-reply-vis')?.value || 'customer_visible';
+      const body = ($('#p3-tkt-reply-body')?.value || '').trim();
+      if (!ticketId || !body) return toast('Select a Ticket ID and enter a message', 'error');
+      try {
+        await api('POST', `/v1/cs/support/tickets/${encodeURIComponent(ticketId)}/messages`, {
+          body,
+          visibility,
+          sender_type: 'staff',
+        });
+        if ($('#p3-tkt-reply-body')) $('#p3-tkt-reply-body').value = '';
+        toast(`Posted ${visibility === 'internal_only' ? 'internal note' : 'customer reply'}`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Ticket message failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-run-maintenance')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/cs/ops/run-maintenance', {});
+        const graceCount = Array.isArray(res.grace_enforcement)
+          ? res.grace_enforcement.length
+          : (res.grace_enforcement?.suspended_count || 0);
+        toast(`Maintenance complete (grace suspended: ${graceCount})`, 'info');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Maintenance sweep failed: ${e.message}`, 'error');
       }
     });
     $('#btn-p3-create-delivery')?.addEventListener('click', async () => {
@@ -5035,6 +5215,11 @@
     fetchCustomerP3PortalData,
     portalCompleteTask,
     portalRespondDelivery,
+    portalReplyTicket,
+    portalSubmitCsat,
+    portalExportData,
+    portalSaveConsent,
+    portalRefreshGsc,
     p2LoadAll: p2LoadControlCentre,
     p2SelectLead: p2FillLeadForms,
     p2ShowBrief: async (leadId) => {
@@ -5147,6 +5332,20 @@
         await p3LoadControlCentre();
       } catch (e) {
         toast(`Resolve failed: ${e.message}`, 'error');
+      }
+    },
+    p3SelectTicketReply: (ticketId) => {
+      if ($('#p3-tkt-reply-id')) $('#p3-tkt-reply-id').value = ticketId;
+      $('#p3-tkt-reply-body')?.focus();
+    },
+    p3UpdateImprovement: async (improvementId) => {
+      const st = $(`#p3-imp-status-${improvementId}`)?.value || 'IN_BACKLOG';
+      try {
+        await api('PATCH', `/v1/cs/improvements/${encodeURIComponent(improvementId)}`, { status: st });
+        toast(`Improvement item updated to ${st}`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Improvement update failed: ${e.message}`, 'error');
       }
     },
     p3ShareOpportunity: async (oppId) => {

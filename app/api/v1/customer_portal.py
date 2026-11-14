@@ -1650,6 +1650,32 @@ def list_tenant_execution_evidence(
     return {"org_id": principal.org_id, "count": len(rows), "records": rows}
 
 
+_PLATFORM_OWNER_ONLY_APPROVAL_ACTIONS = {
+    "support_sensitive_external_reply",
+    "subscription_pricing_or_refund_action",
+    "expansion_offer_or_referral",
+    "customer_offboarding_and_deletion",
+    "sovereign_payment_verification",
+}
+
+
+def _approval_belongs_to_org(
+    appr: Any,
+    *,
+    org_id: str,
+    wf_app_ids: set[str],
+    user_emails: set[str],
+    principal_subject: str,
+) -> bool:
+    detail_org = appr.detail.get("org_id") if isinstance(getattr(appr, "detail", None), dict) else None
+    return (
+        appr.id in wf_app_ids
+        or detail_org == org_id
+        or appr.requested_by in user_emails
+        or appr.requested_by == principal_subject
+    )
+
+
 @router.get("/approvals", summary="List HITL approvals belonging to current tenant workspace")
 def list_tenant_approvals(
     principal: APIPrincipal = Depends(get_current_principal),
@@ -1659,18 +1685,24 @@ def list_tenant_approvals(
 
     if not principal.org_id:
         raise HTTPException(status_code=400, detail="Tenant organization required")
-    # Match approvals requested by tenant users OR attached to tenant workflow runs
-    wf_app_ids = [
+    # Match approvals requested by tenant users, attached to tenant workflow runs, or scoped to org_id
+    wf_app_ids = {
         r.approval_id
         for r in db.query(WorkflowRunRecord).filter_by(org_id=principal.org_id).all()
         if r.approval_id
-    ]
-    user_emails = [u.email for u in db.query(UserRecord).filter_by(org_id=principal.org_id).all()]
+    }
+    user_emails = {u.email for u in db.query(UserRecord).filter_by(org_id=principal.org_id).all()}
     all_apprs = db.query(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(200).all()
     scoped = [
         a
         for a in all_apprs
-        if a.id in wf_app_ids or a.requested_by in user_emails or a.requested_by == principal.subject
+        if _approval_belongs_to_org(
+            a,
+            org_id=principal.org_id,
+            wf_app_ids=wf_app_ids,
+            user_emails=user_emails,
+            principal_subject=principal.subject,
+        )
     ]
     return {
         "org_id": principal.org_id,
@@ -1682,6 +1714,7 @@ def list_tenant_approvals(
                 "action": a.action,
                 "requested_by": a.requested_by,
                 "status": a.status,
+                "requires_platform_owner": a.action in _PLATFORM_OWNER_ONLY_APPROVAL_ACTIONS,
                 "decided_by": a.decided_by,
                 "decision_note": a.decision_note,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
@@ -1715,10 +1748,26 @@ def decide_tenant_approval(
         raise HTTPException(status_code=404, detail="Approval request not found")
 
     # Verify tenant ownership
-    wf_match = db.query(WorkflowRunRecord).filter_by(org_id=principal.org_id, approval_id=approval_id).first()
+    wf_app_ids = {
+        r.approval_id
+        for r in db.query(WorkflowRunRecord).filter_by(org_id=principal.org_id, approval_id=approval_id).all()
+        if r.approval_id
+    }
     user_emails = {u.email for u in db.query(UserRecord).filter_by(org_id=principal.org_id).all()}
-    if not wf_match and appr.requested_by not in user_emails and appr.requested_by != principal.subject:
+    if not _approval_belongs_to_org(
+        appr,
+        org_id=principal.org_id,
+        wf_app_ids=wf_app_ids,
+        user_emails=user_emails,
+        principal_subject=principal.subject,
+    ):
         raise HTTPException(status_code=403, detail="Approval request belongs to a different organization")
+
+    if appr.action in _PLATFORM_OWNER_ONLY_APPROVAL_ACTIONS and principal.role not in ("owner", "platform_owner"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Platform owner authorization required to decide '{appr.action}' approval.",
+        )
 
     effective_dec = (body.decision if body else None) or decision or "APPROVED"
     effective_note = (body.decision_note or body.reason if body else "") or decision_note

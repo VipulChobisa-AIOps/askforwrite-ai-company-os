@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.security.auth import APIPrincipal, get_current_principal, require_tenant_operator
-from app.services.connectors import configure_connector, verify_connector
+from app.services.connectors import build_connector_probe_adapter, configure_connector, verify_connector
 from app.services.evidence import get_execution_evidence, list_execution_evidence
 from app.services.execution_guard import ExecutionBlockedError
 from app.services.registry import (
@@ -66,6 +66,7 @@ class ConnectorConfigureRequest(BaseModel):
 
 class ConnectorVerifyRequest(BaseModel):
     mode: str | None = Field(default=None, max_length=32)
+    execute_live_probe: bool = False
 
 
 @router.get("/services")
@@ -232,12 +233,18 @@ def verify_connector_endpoint(
 ) -> dict[str, Any]:
     """Run honest verification check for a connector without fabricating LIVE_VERIFIED."""
     org_scope = principal.org_id or "__platform__"
+    probe_fn = (
+        build_connector_probe_adapter(connector_id)
+        if (body and body.execute_live_probe)
+        else None
+    )
     try:
         result = verify_connector(
             db,
             connector_id=connector_id,
             org_id=org_scope,
             mode=body.mode if body else None,
+            probe_fn=probe_fn,
         )
         db.commit()
     except ValueError as exc:

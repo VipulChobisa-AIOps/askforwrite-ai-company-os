@@ -274,6 +274,74 @@ def prepare_run_ready(db: Session, *, run_id: str, principal: APIPrincipal) -> d
     return serialize_run(run)
 
 
+_ESTIMATED_INR_PER_CREDIT = 14.99
+
+
+def _accrue_workflow_cost_if_budgeted(
+    db: Session,
+    *,
+    defn: WorkflowDefinitionRecord,
+    run: WorkflowRunRecord,
+    step_results: list[dict[str, Any]],
+    credits_delta: int,
+    actor: str,
+) -> None:
+    """Enforce P3 customer cost caps and log ESTIMATED workflow usage when a cost budget is configured."""
+    if credits_delta <= 0 or not run.org_id:
+        return
+    from app.db.models import P3CustomerCostBudgetRecord
+    from app.services.p3_revenue_growth import CostBudgetExceededError, record_unit_economics_cost
+
+    if not db.query(P3CustomerCostBudgetRecord).filter_by(org_id=run.org_id).first():
+        return
+    try:
+        record_unit_economics_cost(
+            db,
+            org_id=run.org_id,
+            cost_category="AI_API_USAGE",
+            cost_type_label="ESTIMATED",
+            amount_inr=round(float(credits_delta) * _ESTIMATED_INR_PER_CREDIT, 2),
+            service_id=defn.workflow_key or "workflow",
+            workflow_run_id=run.id,
+            provider="workflow_engine",
+            evidence_ref=f"wfrun:{run.id}",
+            notes=f"Automatic workflow cost accrual for {defn.workflow_key} ({credits_delta} credits)",
+            actor=actor,
+        )
+    except CostBudgetExceededError as exc:
+        if run.status in ("RUNNING", "WAITING_APPROVAL"):
+            transition_run_state(run, "BLOCKED")
+        run.failure_reason = str(exc)
+        run.completed_at = datetime.now(UTC)
+        run.output_summary = {
+            "completed_steps": len(step_results),
+            "credits_consumed": run.credits_consumed,
+            "blocked_by_cost_budget": True,
+        }
+        record_execution_evidence(
+            db,
+            execution_id=f"wfrun-{run.id[:20]}",
+            tenant_id=run.org_id,
+            workflow_id=run.workflow_id,
+            agent_id="workflow_orchestrator",
+            connector_id="project_api",
+            execution_mode=run.execution_mode,
+            input_payload=run.input_payload,
+            output_payload=run.output_summary,
+            provider_request_id=f"wf-run-{run.id}",
+            fallback_used=(run.execution_mode == "SIMULATION"),
+            approval_id=run.approval_id,
+            status="BLOCKED",
+            failure_reason=run.failure_reason,
+            credits_consumed=run.credits_consumed,
+            started_at=run.started_at or run.created_at,
+            completed_at=run.completed_at,
+            version=defn.version,
+        )
+        db.commit()
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+
 def _execute_steps_from_current_index(
     db: Session,
     *,
@@ -285,6 +353,7 @@ def _execute_steps_from_current_index(
     steps = list(defn.steps_json)
     step_results: list[dict[str, Any]] = list(run.step_results_json or [])
     context: dict[str, Any] = dict(run.input_payload or {})
+    newly_consumed_credits = 0
     for sr in step_results:
         if isinstance(sr, dict) and sr.get("step_key") and "result" in sr:
             context[sr["step_key"]] = sr["result"]
@@ -478,6 +547,7 @@ def _execute_steps_from_current_index(
         # Step succeeded
         consumed = int(agent_res.get("credits_consumed", 0)) if agent_res else 0
         run.credits_consumed += consumed
+        newly_consumed_credits += consumed
         step_output = agent_res.get("result", {}) if agent_res else {}
         context[s_key] = step_output
         step_results.append(
@@ -497,6 +567,15 @@ def _execute_steps_from_current_index(
         run.step_results_json = step_results
         run.current_step_index += 1
         db.flush()
+
+    _accrue_workflow_cost_if_budgeted(
+        db,
+        defn=defn,
+        run=run,
+        step_results=step_results,
+        credits_delta=newly_consumed_credits,
+        actor=principal.subject,
+    )
 
     if run.status == "RUNNING" and run.current_step_index >= len(steps):
         # Double-check invariant: never mark COMPLETED if any required step failed or blocked

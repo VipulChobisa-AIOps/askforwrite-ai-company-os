@@ -238,6 +238,8 @@ def add_ticket_message(
         raise PermissionError("Cross-tenant support ticket access denied")
 
     clean_vis = visibility.strip().lower()
+    if clean_vis == "internal_only":
+        clean_vis = "internal_note"
     if clean_vis not in ("customer_visible", "internal_note"):
         raise ValueError("visibility must be 'customer_visible' or 'internal_note'")
 

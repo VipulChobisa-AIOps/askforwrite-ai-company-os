@@ -436,6 +436,9 @@ def change_subscription_plan(
     currency: str = "INR",
     extra_seats: int = 0,
     extra_agents: int = 0,
+    credit_packs: int = 0,
+    integration_addons: list[str] | None = None,
+    customization_level: str = "standard",
     actor: str = "owner",
 ) -> dict[str, Any]:
     """Upgrade, downgrade, cancel, or renew via billing_ledger + record P3 subscription history."""
@@ -454,6 +457,9 @@ def change_subscription_plan(
         currency=currency,
         extra_seats=extra_seats,
         extra_agents=extra_agents,
+        credit_packs=credit_packs,
+        integration_addons=integration_addons,
+        customization_level=customization_level,
         cancel_at_period_end=(clean_act == "cancel"),
     )
     sub_data = res.get("subscription", {})

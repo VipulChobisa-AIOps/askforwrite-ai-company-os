@@ -78,6 +78,7 @@ def publish_seo_draft_to_wordpress(
     draft_id: int | str,
     correlation_id: str | None = None,
     published_by: str = "seo-wordpress-publisher",
+    http_client: Any | None = None,
 ) -> dict[str, Any]:
     """Publish an approved SeoDraftRecord to the target WordPress network.
     
@@ -148,17 +149,20 @@ def publish_seo_draft_to_wordpress(
             try:
                 import httpx
                 endpoint = f"{wp_site_url.rstrip('/')}/wp-json/wp/v2/posts"
-                resp = httpx.post(
-                    endpoint,
-                    auth=(wp_username, wp_app_password),
-                    json={
+                post_kwargs = {
+                    "auth": (wp_username, wp_app_password),
+                    "json": {
                         "title": title,
                         "content": draft.content,
                         "status": "publish",
                         "slug": slug,
                     },
-                    timeout=10.0,
-                )
+                    "timeout": 10.0,
+                }
+                if http_client is not None:
+                    resp = http_client.post(endpoint, **post_kwargs)
+                else:
+                    resp = httpx.post(endpoint, **post_kwargs)
                 if resp.status_code in (200, 201):
                     data = resp.json()
                     mode = "WORDPRESS_REST_LIVE"

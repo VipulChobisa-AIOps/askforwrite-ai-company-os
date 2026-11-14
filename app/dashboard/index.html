@@ -1062,7 +1062,7 @@
           </div>
           <div class="card-body" style="padding:16px 20px">
             <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-              <input type="text" id="portal-gemini-key-input" class="settings-input masked-secret-input" placeholder="Enter Gemini API Key (e.g. AIzaSy... or leave empty to clear)" style="flex:1;min-width:280px" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" spellcheck="false">
+              <input type="text" id="portal-gemini-key-input" class="settings-input masked-secret-input" placeholder="Enter Gemini API Key (e.g. AIzaSy... or leave empty to clear)" style="flex:1;min-width:min(280px, 100%)" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" spellcheck="false">
               <button class="primary-btn" id="btn-save-portal-gemini-key" style="padding:10px 18px">
                 💾 Save Gemini Key
               </button>
@@ -1103,10 +1103,10 @@
               <button type="button" class="portal-quick-tool-btn" data-portal-service="ask4_academic_order">📚 ASK4 Academic</button>
               <button type="button" class="portal-quick-tool-btn" data-portal-service="trust_engine">🛡️ Trust Ledger</button>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:12px;align-items:flex-end;margin-bottom:14px">
-              <div>
+            <div class="portal-run-grid" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:12px;align-items:flex-end;margin-bottom:14px">
+              <div style="min-width:0">
                 <label class="modal-label" for="portal-service-selector">Select Service</label>
-                <select id="portal-service-selector" class="settings-select" style="width:100%">
+                <select id="portal-service-selector" class="settings-select" style="width:100%;max-width:100%">
                   <option value="managed_seo_content_pilot">Managed SEO &amp; Content Pilot (₹4,999 SKU)</option>
                   <option value="seo_blog_copilot">SEO / GEO Blog Copilot</option>
                   <option value="wordpress_publisher">WordPress 4-Site Publishing Bridge</option>
@@ -1158,12 +1158,7 @@
               </thead>
               <tbody id="portal-invoices-tbody">
                 <tr>
-                  <td><code>INV-2026-001</code></td>
-                  <td>Modular Field Force Ops Suite</td>
-                  <td>₹12,000 / $149</td>
-                  <td>Razorpay (rzp_live)</td>
-                  <td><span class="status-pill approved">PAID</span></td>
-                  <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
+                  <td colspan="6" style="text-align:center;color:var(--text-muted)">Loading verified billing invoices...</td>
                 </tr>
               </tbody>
             </table>
@@ -1274,6 +1269,28 @@
                 <button type="button" class="primary-btn" id="btn-portal-create-ticket">Submit Support Ticket</button>
               </div>
               <div id="portal-p3-tickets-list"><div class="empty-state"><p>No support tickets raised yet</p></div></div>
+            </div>
+
+            <div style="border-top:1px solid var(--glass-border);padding-top:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+              <div>
+                <strong style="display:block;font-size:0.9rem;margin-bottom:8px">4. Privacy Consent &amp; DPDP Data Portability</strong>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;font-size:0.82rem">
+                  <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="portal-consent-marketing"> Product updates &amp; onboarding reminders</label>
+                  <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="portal-consent-ai" checked> Allow AI assistant triage on support requests</label>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                  <button type="button" class="secondary-btn" id="btn-portal-save-consent" style="padding:6px 12px;font-size:0.78rem">Save Consent</button>
+                  <button type="button" class="secondary-btn" id="btn-portal-export-data" style="padding:6px 12px;font-size:0.78rem">Export My Data (DPDP)</button>
+                </div>
+                <div id="portal-privacy-output" style="font-size:0.78rem;color:var(--text-muted)"></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+                  <strong style="font-size:0.9rem">5. Google Search Console Connection</strong>
+                  <button type="button" class="secondary-btn" id="btn-portal-refresh-gsc" style="padding:4px 10px;font-size:0.75rem">Check GSC</button>
+                </div>
+                <div id="portal-gsc-status" style="font-size:0.8rem;color:var(--text-muted)">Checking Search Console integration status...</div>
+              </div>
             </div>
           </div>
         </div>
@@ -2600,9 +2617,21 @@
               </div>
             </div>
             <div class="cw-card">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
                 <h3 style="margin:0;">Onboarding &amp; Readiness Gate</h3>
                 <button type="button" class="primary-btn" id="btn-p3-confirm-activation">Confirm ACTIVE</button>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+                <select id="p3-lifecycle-target" class="settings-select" style="width:170px;">
+                  <option value="ONBOARDING">ONBOARDING</option>
+                  <option value="ACTIVATION_PENDING">ACTIVATION_PENDING</option>
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="AT_RISK">AT_RISK</option>
+                  <option value="SUSPENDED">SUSPENDED</option>
+                  <option value="CHURNED">CHURNED</option>
+                </select>
+                <input type="text" id="p3-lifecycle-reason" class="settings-input" placeholder="Lifecycle transition reason" style="flex:1;min-width:140px;">
+                <button type="button" class="secondary-btn" id="btn-p3-transition-lifecycle">Update State</button>
               </div>
               <div id="p3-onboarding-tasks" style="font-size:0.84rem;">Select an organization to inspect onboarding tasks &amp; blockers.</div>
             </div>
@@ -2656,6 +2685,15 @@
                   <tbody id="p3-tickets-tbody"><tr><td colspan="6">No support tickets</td></tr></tbody>
                 </table>
               </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+                <input type="text" id="p3-tkt-reply-id" class="settings-input" placeholder="Ticket ID" style="width:150px;">
+                <select id="p3-tkt-reply-vis" class="settings-select" style="width:155px;">
+                  <option value="customer_visible">Customer Visible</option>
+                  <option value="internal_only">Internal Note</option>
+                </select>
+                <input type="text" id="p3-tkt-reply-body" class="settings-input" placeholder="Reply or internal note..." style="flex:1;min-width:180px;">
+                <button type="button" class="secondary-btn" id="btn-p3-reply-ticket">Post Message</button>
+              </div>
             </div>
           </div>
           <div class="cw-card">
@@ -2665,8 +2703,8 @@
             </div>
             <div class="table-container" style="max-height:220px;overflow:auto;">
               <table class="data-table">
-                <thead><tr><th>Category</th><th>Issue Summary</th><th>Score</th><th>Freq</th><th>Status</th></tr></thead>
-                <tbody id="p3-improvements-tbody"><tr><td colspan="5">No improvement clusters yet</td></tr></tbody>
+                <thead><tr><th>Category</th><th>Issue Summary</th><th>Score</th><th>Freq</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody id="p3-improvements-tbody"><tr><td colspan="6">No improvement clusters yet</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -2716,9 +2754,12 @@
         <div class="p3-subtab-panel" id="p3-panel-ops-compliance" style="display:none;">
           <div class="dashboard-grid" style="grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
             <div class="cw-card">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
                 <h3 style="margin:0;">Multi-Tenant Ops Readiness &amp; DLQ Recovery</h3>
-                <button type="button" class="secondary-btn" id="btn-p3-scan-timeouts">Scan Timeouts</button>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <button type="button" class="secondary-btn" id="btn-p3-scan-timeouts">Scan Timeouts</button>
+                  <button type="button" class="secondary-btn" id="btn-p3-run-maintenance">Run Maintenance</button>
+                </div>
               </div>
               <div id="p3-ops-summary" style="font-size:0.84rem;margin-bottom:10px;">Loading operational readiness...</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
@@ -2740,6 +2781,10 @@
               </div>
               <div id="p3-compliance-output" style="font-size:0.84rem;color:var(--text-muted);">Select an organization to export its DPDP/GDPR data portability bundle or inspect legal-hold status.</div>
             </div>
+          </div>
+          <div class="cw-card" style="margin-bottom:14px;">
+            <h3 style="margin:0 0 8px;">P3.1 Release Readiness &amp; External Launch Gates</h3>
+            <div id="p3-release-readiness-summary" style="font-size:0.84rem;color:var(--text-muted);">Loading release readiness gate summary...</div>
           </div>
           <div class="cw-card">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">

@@ -38,6 +38,7 @@ from app.services.p3_ops_compliance_cc import (
     record_backup_verification_drill,
     request_customer_deletion_or_offboarding,
     retry_dlq_workflow_run,
+    run_scheduled_p3_maintenance,
     scan_and_recover_stale_workflows,
     seed_and_get_p3_acceptance_checklist,
     update_consent_and_retention,
@@ -198,7 +199,7 @@ class TicketTransitionRequest(BaseModel):
 
 class TicketMessageRequest(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
-    visibility: Literal["customer_visible", "internal_only"] = "customer_visible"
+    visibility: Literal["customer_visible", "internal_only", "internal_note"] = "customer_visible"
     sender_type: Literal["staff", "customer", "ai_assistant"] = "staff"
     approval_id: str | None = Field(default=None, max_length=64)
 
@@ -252,13 +253,16 @@ class RefundWorkflowRequest(BaseModel):
 
 
 class PlanChangeRequest(BaseModel):
-    action: Literal["upgrade", "downgrade", "configure"] = "upgrade"
+    action: Literal["upgrade", "downgrade", "configure", "cancel", "renew"] = "upgrade"
     new_sku_key: str = Field(min_length=2, max_length=100)
     selected_modules: list[str] | None = None
     billing_interval: str = Field(default="monthly", max_length=32)
     currency: str = Field(default="INR", max_length=10)
     extra_seats: int = Field(default=0, ge=0)
     extra_agents: int = Field(default=0, ge=0)
+    credit_packs: int = Field(default=0, ge=0)
+    integration_addons: list[str] | None = None
+    customization_level: str = Field(default="standard", max_length=32)
 
 
 class ShareGrowthOpportunityRequest(BaseModel):
@@ -835,6 +839,9 @@ def cs_plan_change(
             currency=body.currency,
             extra_seats=body.extra_seats,
             extra_agents=body.extra_agents,
+            credit_packs=body.credit_packs,
+            integration_addons=body.integration_addons,
+            customization_level=body.customization_level,
             actor=principal.subject,
         )
     except Exception as exc:
@@ -1087,6 +1094,21 @@ def cs_record_backup_drill(
         recovery_time_seconds=body.recovery_time_seconds,
         evidence_ref=body.evidence_ref,
         notes=body.notes,
+    )
+
+
+@router.post("/ops/run-maintenance", summary="Run scheduled P3 maintenance sweep (grace, timeouts, health alerts)")
+def cs_run_scheduled_maintenance(
+    org_id: str | None = None,
+    stale_timeout_seconds: int = Query(default=600, ge=10, le=86400),
+    principal: APIPrincipal = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return run_scheduled_p3_maintenance(
+        db,
+        org_id=org_id,
+        stale_timeout_seconds=stale_timeout_seconds,
+        actor=principal.subject,
     )
 
 

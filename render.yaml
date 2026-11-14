@@ -99,6 +99,32 @@ services:
         value: "info@askforwrite.in"
       - key: WP_APP_PASSWORD
         sync: false
+      # Google Search Console OAuth 2.0 Integration (set in Render Dashboard)
+      - key: GSC_CLIENT_ID
+        sync: false
+      - key: GSC_CLIENT_SECRET
+        sync: false
+      - key: GSC_REDIRECT_URI
+        sync: false
+      - key: GSC_TOKEN_ENCRYPTION_KEY
+        sync: false
+      # Payment Gateway Runtime Configuration (set secrets in Render Dashboard)
+      - key: PAYMENT_MODE
+        value: live
+      - key: SMTP_MODE
+        value: smtp
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
 
   # ── Isolated Staging & Sandbox Environment (Zero Production Side-Effects) ──
   - type: web
@@ -117,9 +143,33 @@ services:
         value: "false"
       - key: PAYMENT_MODE
         value: sandbox
+      - key: PAYPAL_MODE
+        value: sandbox
       - key: SMTP_MODE
         value: sandbox_sink
+      - key: PAYMENT_PROVIDER
+        value: sovereign_direct
       - key: DATABASE_URL
+        sync: false
+      - key: NEON_DATABASE_URL
+        sync: false
+      - key: GSC_CLIENT_ID
+        sync: false
+      - key: GSC_CLIENT_SECRET
+        sync: false
+      - key: GSC_REDIRECT_URI
+        sync: false
+      - key: GSC_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
         sync: false
       - key: MANAGER_API_KEY
         generateValue: true

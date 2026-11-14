@@ -627,3 +627,166 @@ def test_mobile_viewport_navigation_and_cs_workflows_e2e(
         assert "Acme Digital Agency" in page.locator("#portal-org-name").inner_text()
 
         _assert_clean_telemetry(telemetry)
+
+
+def test_tablet_viewport_overflow_manager_cw_billing_estop_and_checkout_e2e(
+    live_e2e_server: dict[str, str],
+    browser_instance: Browser,
+) -> None:
+    """Verify Register tab, Scan tab, /v1/pay/checkout HTML, Manager role rejection flow, CW Run Console + Evidence Drawer, Billing mutations, E-Stop, and zero horizontal overflow on Desktop/Tablet/Mobile."""
+    base_url = live_e2e_server["base_url"]
+
+    # 1. Verify /v1/pay/checkout renders cleanly with synthetic package (HTML surface)
+    with _recorded_page(browser_instance, width=768, height=1024) as (ctx, page, telemetry):
+        def _nav_click(selector: str) -> None:
+            if page.locator("#menu-toggle").is_visible() and not page.locator("#sidebar").evaluate("el => el.classList.contains('open')"):
+                page.click("#menu-toggle")
+            page.click(selector)
+
+        page.goto(f"{base_url}/v1/pay/checkout?package=growth_all_in_one&company=TabletTest+Co", wait_until="domcontentloaded")
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2")
+        page.goto(f"{base_url}/services", wait_until="domcontentloaded")
+        assert "Verified Service" in page.content()
+
+        # 2. Verify Register tab + Free 60s Scan tab on dashboard auth gate (Tablet 768x1024)
+        page.goto(f"{base_url}/dashboard/", wait_until="domcontentloaded")
+        page.locator("#auth-gate-overlay").wait_for(state="visible")
+
+        # Register tab switches cleanly and creates a workspace
+        page.click("#auth-tab-btn-register")
+        page.fill("#reg-name", "Tablet Synth")
+        page.fill("#reg-company", "Tablet Synth Co")
+        page.fill("#reg-email", f"tablet-{uuid.uuid4().hex[:6]}@acme-synthetic.test")
+        page.fill("#reg-password", "SyntheticPass!123")
+        page.select_option("#reg-package", "free_trial")
+        page.click("#btn-customer-register")
+        page.locator("#auth-gate-overlay").wait_for(state="hidden")
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2")
+        org_id = page.locator("#portal-org-id").inner_text().strip()
+        tenant_jwt = page.evaluate("() => localStorage.getItem('afw_customer_jwt') || localStorage.getItem('afw_jwt') || localStorage.getItem('afw_access_token') || ''")
+
+        # DPDP Data Export + Consent save + GSC status on Portal
+        page.locator("#portal-p3-cs-card").wait_for(state="visible")
+        page.click("#btn-portal-save-consent")
+        page.locator("#portal-privacy-output:has-text('Consent saved')").wait_for(state="visible")
+        page.click("#btn-portal-export-data")
+        page.locator("#portal-privacy-output:has-text('Redacted export ready')").wait_for(state="visible")
+        assert "INV-2026-001" not in page.locator("#portal-invoices-tbody").inner_text()
+
+        # CW Billing upgrade first so tenant is entitled for Run Console execution
+        _nav_click("#nav-cw-billing")
+        page.locator("#page-cw-billing.active").wait_for(state="visible")
+        page.select_option("#cw-bill-tier", "growth")
+        page.fill("#cw-bill-credits", "1")
+        page.click("#btn-cw-apply-subscription")
+        page.locator("#cw-credit-ledger-list:has-text('SUBSCRIPTION')").wait_for(state="visible")
+
+        # CW Run Console -> select entitled Growth agent -> execute in SIMULATION -> Evidence Drawer
+        _nav_click("#nav-cw-run-console")
+        page.locator("#page-cw-run-console.active").wait_for(state="visible")
+        page.locator("#cw-run-agent-select option[value='discovery_sdr_agent']").wait_for(state="attached")
+        page.select_option("#cw-run-agent-select", "discovery_sdr_agent")
+        page.select_option("#cw-run-mode-select", "SIMULATION")
+        page.click("#btn-cw-execute-agent")
+        page.locator("#btn-cw-inspect-last-evidence").wait_for(state="visible")
+        page.click("#btn-cw-inspect-last-evidence")
+        page.locator("#cw-evidence-drawer").wait_for(state="visible")
+        page.click("#btn-cw-close-evidence")
+        page.locator("#cw-evidence-drawer").wait_for(state="hidden")
+
+        # 4-Level Emergency Stop -> blocks execution -> Release Stop restores execution
+        _nav_click("#nav-cw-settings")
+        page.locator("#page-cw-settings.active").wait_for(state="visible")
+        page.select_option("#cw-estop-scope", "tenant")
+        page.fill("#cw-estop-reason", "Playwright E2E safety test")
+        page.click("#btn-cw-trigger-estop")
+        page.locator("#cw-estop-active-list:has-text('EMERGENCY_STOPPED')").wait_for(state="visible")
+        page.click("#btn-cw-release-estop")
+
+        # Logout (inside responsive sidebar drawer on tablet) and test Scan tab + Manager API Key login + Approval Reject button
+        _nav_click("#btn-logout")
+        page.locator("#auth-gate-overlay").wait_for(state="visible")
+        # Scan tab: loopback URL must be rejected cleanly by SSRF guard without unhandled crash
+        page.click("#auth-tab-btn-scan")
+        page.fill("#scan-modal-url", f"{base_url}/services")
+        page.fill("#scan-modal-company", "Scan Co")
+        page.fill("#scan-modal-email", "scan@acme-synthetic.test")
+        page.click("#btn-modal-run-scan")
+        page.locator("#scan-modal-result:has-text('Failed to audit URL')").wait_for(state="visible")
+
+        # Manager unlock
+        page.click("#auth-tab-btn-owner")
+        page.fill("#auth-owner-key", MANAGER_KEY)
+        page.click("#btn-owner-unlock")
+        page.locator("#auth-gate-overlay").wait_for(state="hidden")
+        page.locator("#nav-customer-success").wait_for(state="visible")
+
+        # P3 Staff Delivery QA Fail + Internal Note Non-Leak + Maintenance Sweep
+        _nav_click("#nav-customer-success")
+        page.locator("#page-customer-success.active").wait_for(state="visible")
+        page.fill("#p3-active-org-id", org_id)
+
+        page.click('[data-p3tab="customers-delivery"]')
+        page.fill("#p3-deliv-title", "Tablet E2E Deliverable")
+        page.fill("#p3-deliv-req", "E2E QA fail & verification check")
+        page.click("#btn-p3-create-delivery")
+        page.locator("#p3-deliveries-tbody:has-text('Tablet E2E Deliverable')").wait_for(state="visible")
+        page.locator("#p3-deliveries-tbody button:has-text('QA Fail')").first.click()
+        page.locator("#p3-deliveries-tbody:has-text('REVISION_REQUESTED')").wait_for(state="visible")
+
+        page.click('[data-p3tab="health-support"]')
+        page.fill("#p3-tkt-subject", "Tablet E2E Support")
+        page.fill("#p3-tkt-desc", "Need internal note isolation check")
+        page.click("#btn-p3-create-ticket")
+        page.locator("#p3-tickets-tbody:has-text('Tablet E2E Support')").wait_for(state="visible")
+        page.locator("#p3-tickets-tbody button:has-text('Reply')").first.click()
+        page.select_option("#p3-tkt-reply-vis", "internal_only")
+        page.fill("#p3-tkt-reply-body", "CONFIDENTIAL_INTERNAL_E2E_NOTE")
+        page.click("#btn-p3-reply-ticket")
+        page.locator(".toast:has-text('Posted internal note')").wait_for(state="visible")
+        if tenant_jwt:
+            me_tkt = ctx.request.get(
+                f"{base_url}/v1/me/support/tickets",
+                headers={"Authorization": f"Bearer {tenant_jwt}"},
+            )
+            assert me_tkt.status == 200
+            assert "CONFIDENTIAL_INTERNAL_E2E_NOTE" not in me_tkt.text()
+
+        page.click('[data-p3tab="ops-compliance"]')
+        page.locator("#p3-release-readiness-summary:has-text('Overall Gate:')").wait_for(state="visible")
+        page.click("#btn-p3-run-maintenance")
+        page.locator(".toast:has-text('Maintenance complete')").wait_for(state="visible")
+
+        # Seed an Owner HITL refund approval, switch back to Owner, test mobile 390x844 + #btn-reject
+        wf_seed = ctx.request.post(
+            f"{base_url}/v1/cs/subscriptions/{org_id}/refund",
+            headers={"X-API-Key": OWNER_KEY},
+            data={"amount_inr": 100.0, "currency": "INR", "reason": "Playwright E2E reject button test"},
+        )
+        assert wf_seed.status == 200, wf_seed.text()
+
+        _nav_click("#btn-logout")
+        page.locator("#auth-gate-overlay").wait_for(state="visible")
+        page.click("#auth-tab-btn-owner")
+        page.fill("#auth-owner-key", OWNER_KEY)
+        page.click("#btn-owner-unlock")
+        page.locator("#auth-gate-overlay").wait_for(state="hidden")
+
+        # Verify Mobile viewport (390x844) also renders without horizontal overflow
+        page.set_viewport_size({"width": 390, "height": 844})
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2")
+
+        # Navigate to Approvals via mobile drawer and exercise #btn-reject end-to-end
+        _nav_click("#nav-approvals")
+        page.locator("#page-approvals.active").wait_for(state="visible")
+        page.locator("#approvals-grid .action-btn.reject").first.click()
+        page.locator("#modal-overlay").wait_for(state="visible")
+        page.fill("#decision-note", "Rejected in Playwright E2E")
+        page.click("#btn-reject")
+        page.locator("#modal-overlay").wait_for(state="hidden")
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 2")
+
+        _assert_clean_telemetry(
+            telemetry,
+            allow_console_error_substrings=("status of 403", "status of 400"),
+        )

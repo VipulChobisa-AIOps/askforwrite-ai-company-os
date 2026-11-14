@@ -97,7 +97,7 @@ def _inspect_browser_e2e() -> dict[str, Any]:
         "state": state,
         "suite_present": has_suite,
         "playwright_installed": has_playwright,
-        "viewports_covered": ["1440x900", "390x844"] if has_suite else [],
+        "viewports_covered": ["1440x900", "768x1024", "390x844"] if has_suite else [],
         "ready_for_production": False,
         "notes": (
             "Playwright desktop/mobile E2E suite covers synthetic seeded local environment; staging/live smoke still NOT_TESTED."

@@ -671,7 +671,11 @@ def export_customer_data_bundle(
                 "subject": t.subject,
                 "status": t.status,
                 "messages": (
-                    [m for m in (t.messages_json or []) if m.get("visibility") != "internal_only"]
+                    [
+                        m
+                        for m in (t.messages_json or [])
+                        if (m.get("visibility") or "").lower() not in ("internal_only", "internal_note")
+                    ]
                     if customer_safe_only
                     else (t.messages_json or [])
                 ),
@@ -1042,7 +1046,7 @@ def get_p3_customer_ops_control_centre(
     verified_recurring_mrr_inr = 0.0
     failed_payments_count = 0
     for ev in sub_events:
-        if ev.event_type == "payment_failed":
+        if (ev.event_type or "").strip().lower() == "payment_failed":
             failed_payments_count += 1
     for ev in latest_sub_by_org.values():
         if (
@@ -1231,6 +1235,51 @@ def update_p3_acceptance_step(
     db.commit()
     db.refresh(rec)
     return serialize_p3_acceptance_step(rec)
+
+
+def run_scheduled_p3_maintenance(
+    db: Session,
+    *,
+    org_id: str | None = None,
+    stale_timeout_seconds: int | None = None,
+    timeout_seconds: int | None = None,
+    actor: str = "scheduler",
+) -> dict[str, Any]:
+    """Run periodic CS maintenance: stale workflow timeout DLQ scan, grace expiry enforcement, and health alerts."""
+    from app.services.p3_delivery_health import generate_internal_health_alerts
+    from app.services.p3_revenue_growth import enforce_grace_period_expirations
+
+    eff_timeout = stale_timeout_seconds if stale_timeout_seconds is not None else timeout_seconds
+    timeout_scan = scan_and_recover_stale_workflows(
+        db,
+        timeout_seconds=eff_timeout,
+        org_id=org_id,
+        actor=actor,
+    )
+    grace_res = enforce_grace_period_expirations(db, org_id=org_id)
+    acct_q = db.query(P3CustomerAccountRecord).filter(
+        P3CustomerAccountRecord.lifecycle_state.in_(("ONBOARDING", "ACTIVATION_PENDING", "ACTIVE", "AT_RISK"))
+    )
+    if org_id:
+        acct_q = acct_q.filter(P3CustomerAccountRecord.org_id == org_id)
+    accounts = acct_q.all()
+    alerts_generated = 0
+    for acc in accounts:
+        res = generate_internal_health_alerts(db, org_id=acc.org_id)
+        if isinstance(res, list):
+            alerts_generated += len(res)
+        elif isinstance(res, dict):
+            alerts_generated += int(res.get("count", 0))
+    return {
+        "status": "MAINTENANCE_COMPLETED",
+        "org_id": org_id,
+        "executed_at": datetime.now(UTC).isoformat(),
+        "actor": actor,
+        "stale_workflow_scan": timeout_scan,
+        "grace_enforcement": grace_res,
+        "health_alerts_accounts_scanned": len(accounts),
+        "health_alerts_generated": alerts_generated,
+    }
 
 
 def serialize_p3_acceptance_step(rec: P3AcceptanceStepRecord) -> dict[str, Any]:

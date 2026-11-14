@@ -44,7 +44,9 @@ if _is_sqlite:
     }
 else:
     # Production PostgreSQL settings
-    _connect_args = {}
+    _connect_args = {
+        "connect_timeout": int(os.environ.get("DB_CONNECT_TIMEOUT_SECONDS", "5")),
+    }
     # Enforce SSL in production
     if APP_ENV != "development":
         if "-pooler" not in DATABASE_URL:

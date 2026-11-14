@@ -199,7 +199,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if redis_url:
             try:
                 import redis
-                self._redis_client = redis.from_url(redis_url, decode_responses=True)
+                self._redis_client = redis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=2,
+                    socket_timeout=2,
+                )
             except Exception:
                 self._redis_client = None
 

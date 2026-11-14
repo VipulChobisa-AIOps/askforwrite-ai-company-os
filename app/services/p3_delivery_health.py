@@ -259,7 +259,7 @@ def submit_delivery_quality_check(
     }
     flag_modified(delivery, "quality_checks_json")
 
-    if delivery.quality_state in ("IN_PROGRESS", "WAITING_FOR_APPROVAL", "REVISION_REQUESTED"):
+    if delivery.quality_state in ("NOT_STARTED", "IN_PROGRESS", "WAITING_FOR_APPROVAL", "QUALITY_REVIEW", "REVISION_REQUESTED"):
         delivery.quality_state = "QUALITY_REVIEW" if passed else "REVISION_REQUESTED"
     delivery.updated_at = now
     db.add(delivery)

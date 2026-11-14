@@ -141,7 +141,7 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
         purpose="Publishes SEO/GEO/AIO drafts and articles to target WordPress sites.",
         authentication_type="basic_app_password",
         required_permissions=("posts:write",),
-        required_env_vars=("WORDPRESS_SITE_URL", "WORDPRESS_USERNAME", "WORDPRESS_APP_PASSWORD"),
+        required_env_vars=("WP_SITE_URL", "WP_USERNAME", "WP_APP_PASSWORD"),
         configuration_schema={
             "type": "object",
             "properties": {
@@ -293,10 +293,26 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
 }
 
 
+_ENV_VAR_ALIASES: dict[str, tuple[str, ...]] = {
+    "WP_SITE_URL": ("WP_SITE_URL", "WP_BASE_URL", "WORDPRESS_SITE_URL"),
+    "WP_USERNAME": ("WP_USERNAME", "WORDPRESS_USERNAME"),
+    "WP_APP_PASSWORD": ("WP_APP_PASSWORD", "WORDPRESS_APP_PASSWORD"),
+    "SMTP_USERNAME": ("SMTP_USERNAME", "SMTP_USER"),
+}
+
+
+def _env_value_for(var_name: str) -> str:
+    for candidate in _ENV_VAR_ALIASES.get(var_name, (var_name,)):
+        val = os.environ.get(candidate, "").strip()
+        if val and not val.startswith("mock-"):
+            return val
+    return ""
+
+
 def _env_vars_present(required_vars: tuple[str, ...]) -> tuple[bool, list[str]]:
     if not required_vars:
         return True, []
-    missing = [v for v in required_vars if not os.environ.get(v, "").strip() or os.environ.get(v, "").strip().startswith("mock-")]
+    missing = [v for v in required_vars if not _env_value_for(v)]
     return len(missing) == 0, missing
 
 
@@ -557,4 +573,123 @@ def check_connector_execution_allowed(
         "capability_state": cap_state,
         "reason": None if allowed else (serialized.get("last_error") or f"{connector_id} connector is {cap_state}"),
     }
+
+
+def _run_http_probe(
+    method: str,
+    url: str,
+    *,
+    http_client: Any | None = None,
+    **kwargs: Any,
+) -> tuple[int, str]:
+    import httpx
+
+    if http_client is not None:
+        resp = http_client.request(method, url, **kwargs)
+        return int(resp.status_code), str(resp.text or "")[:300]
+    with httpx.Client(timeout=8.0) as client:
+        resp = client.request(method, url, **kwargs)
+        return int(resp.status_code), str(resp.text or "")[:300]
+
+
+def build_connector_probe_adapter(
+    connector_id: str,
+    *,
+    http_client: Any | None = None,
+) -> Callable[[ConnectorSpec], dict[str, Any]]:
+    """Build a non-mutating live handshake probe callable for a connector without fabricating LIVE_VERIFIED."""
+    from app.services.execution_guard import validate_external_url
+
+    def _probe(spec: ConnectorSpec) -> dict[str, Any]:
+        if http_client is None and is_external_side_effect_blocked():
+            return {
+                "ok": False,
+                "error": "Live connector probe blocked under ENABLE_EXTERNAL_SIDE_EFFECTS=false.",
+            }
+        env_ok, missing = _env_vars_present(spec.required_env_vars)
+        if not env_ok:
+            return {"ok": False, "error": f"Missing required credentials: {', '.join(missing)}"}
+
+        probe_req_id = f"probe-{connector_id}-{uuid.uuid4().hex[:10]}"
+        try:
+            if connector_id == "wordpress_rest":
+                site_url = _env_value_for("WP_SITE_URL")
+                validate_external_url(site_url)
+                code, text_body = _run_http_probe(
+                    "GET",
+                    f"{site_url.rstrip('/')}/wp-json/wp/v2/users/me",
+                    http_client=http_client,
+                    auth=(_env_value_for("WP_USERNAME"), _env_value_for("WP_APP_PASSWORD")),
+                )
+            elif connector_id == "razorpay":
+                code, text_body = _run_http_probe(
+                    "GET",
+                    "https://api.razorpay.com/v1/plans?count=1",
+                    http_client=http_client,
+                    auth=(_env_value_for("RAZORPAY_KEY_ID"), _env_value_for("RAZORPAY_KEY_SECRET")),
+                )
+            elif connector_id == "paypal":
+                paypal_mode = os.environ.get("PAYPAL_MODE", "sandbox").strip().lower()
+                base = "https://api-m.paypal.com" if paypal_mode == "live" else "https://api-m.sandbox.paypal.com"
+                code, text_body = _run_http_probe(
+                    "POST",
+                    f"{base}/v1/oauth2/token",
+                    http_client=http_client,
+                    auth=(_env_value_for("PAYPAL_CLIENT_ID"), _env_value_for("PAYPAL_CLIENT_SECRET")),
+                    data={"grant_type": "client_credentials"},
+                )
+            elif connector_id == "gemini_api":
+                code, text_body = _run_http_probe(
+                    "GET",
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    http_client=http_client,
+                    params={"key": _env_value_for("GEMINI_API_KEY")},
+                )
+            elif connector_id == "serper_search":
+                code, text_body = _run_http_probe(
+                    "POST",
+                    "https://google.serper.dev/search",
+                    http_client=http_client,
+                    headers={"X-API-KEY": _env_value_for("SERPER_API_KEY"), "Content-Type": "application/json"},
+                    json={"q": "askforwrite", "num": 1},
+                )
+            elif connector_id == "google_places":
+                code, text_body = _run_http_probe(
+                    "GET",
+                    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+                    http_client=http_client,
+                    params={"query": "askforwrite", "key": _env_value_for("GOOGLE_PLACES_API_KEY")},
+                )
+            elif connector_id == "hostinger_smtp":
+                import smtplib
+
+                host = _env_value_for("SMTP_HOST")
+                port = int(_env_value_for("SMTP_PORT") or "465")
+                user = _env_value_for("SMTP_USERNAME")
+                pwd = _env_value_for("SMTP_PASSWORD")
+                if port == 465:
+                    with smtplib.SMTP_SSL(host, port, timeout=6.0) as srv:
+                        srv.ehlo()
+                        if user and pwd:
+                            srv.login(user, pwd)
+                else:
+                    with smtplib.SMTP(host, port, timeout=6.0) as srv:
+                        srv.ehlo()
+                        srv.starttls()
+                        if user and pwd:
+                            srv.login(user, pwd)
+                return {"ok": True, "request_id": probe_req_id}
+            else:
+                return {
+                    "ok": False,
+                    "error": f"Connector '{connector_id}' requires its dedicated verification flow instead of generic probe.",
+                }
+        except Exception as exc:
+            return {"ok": False, "error": f"{connector_id} live probe error: {exc}"}
+
+        if 200 <= code < 300:
+            return {"ok": True, "request_id": probe_req_id}
+        return {"ok": False, "error": f"{connector_id} HTTP {code}: {text_body}"}
+
+    return _probe
 

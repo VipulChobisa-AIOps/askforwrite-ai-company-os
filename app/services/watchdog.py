@@ -1311,19 +1311,40 @@ CAPABILITY_STATUS_MODEL: dict[str, dict[str, str]] = {
 }
 
 
+def _resolve_verified_connector_status(
+    connector_id: str,
+    *,
+    credentials_present: bool,
+    persisted_states: dict[str, str],
+    no_creds_status: str,
+    unprobed_with_creds_status: str,
+) -> str:
+    """Resolve connector status strictly: key presence alone NEVER fabricates LIVE_VERIFIED."""
+    if not credentials_present:
+        return no_creds_status
+    if persisted_states.get(connector_id) == "LIVE_VERIFIED":
+        return "LIVE_VERIFIED"
+    return unprobed_with_creds_status
+
+
 def get_connector_inventory(db: Session) -> dict[str, Any]:
     """Inspect all 10 platform connectors and return their honest capability status
     under the 7-state CAPABILITY_STATUS_MODEL without ever faking LIVE_VERIFIED."""
     import os
+    from app.db.models import ConnectorStateRecord
 
     gemini_key = bool(os.getenv("GEMINI_API_KEY", "").strip())
     serper_key = bool(os.getenv("SERPER_API_KEY", "").strip())
     places_key = bool(os.getenv("GOOGLE_PLACES_API_KEY", "").strip())
     smtp_pass = bool(os.getenv("SMTP_PASSWORD", "").strip())
-    wp_pass = bool(os.getenv("WP_APP_PASSWORD", "").strip())
+    wp_pass = bool(os.getenv("WP_APP_PASSWORD", "").strip() or os.getenv("WORDPRESS_APP_PASSWORD", "").strip())
     rzp_secret = bool(os.getenv("RAZORPAY_KEY_SECRET", "").strip() or os.getenv("RAZORPAY_WEBHOOK_SECRET", "").strip())
     paypal_id = bool(os.getenv("PAYPAL_CLIENT_ID", "").strip() or os.getenv("PAYPAL_PAYMENT_LINK", "").strip())
     whatsapp_token = bool(os.getenv("WHATSAPP_ACCESS_TOKEN", "").strip())
+
+    persisted_states: dict[str, str] = {}
+    for row in db.query(ConnectorStateRecord).filter(ConnectorStateRecord.capability_state == "LIVE_VERIFIED").all():
+        persisted_states[row.connector_id] = row.capability_state
 
     chain_res = verify_chain(db)
     ledger_ok = bool(chain_res.get("chain_valid", chain_res.get("valid", True)))
@@ -1334,7 +1355,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "Google Gemini AI Inference",
             "purpose": "Multimodal & text LLM inference (BYOK or platform key)",
             "credentials_present": gemini_key,
-            "status": "LIVE_VERIFIED" if gemini_key else "LOCAL_ENGINE_VERIFIED",
+            "status": _resolve_verified_connector_status(
+                "gemini_api",
+                credentials_present=gemini_key,
+                persisted_states=persisted_states,
+                no_creds_status="LOCAL_ENGINE_VERIFIED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "Deterministic structured GEO/ad engine (never claims LIVE_VERIFIED when fallback_used=True)",
         },
         {
@@ -1342,7 +1369,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "Serper / Live Web Search",
             "purpose": "Live SMB prospect discovery & SERP research",
             "credentials_present": serper_key,
-            "status": "LIVE_VERIFIED" if serper_key else "SANDBOX_VERIFIED",
+            "status": _resolve_verified_connector_status(
+                "serper_search",
+                credentials_present=serper_key,
+                persisted_states=persisted_states,
+                no_creds_status="SANDBOX_VERIFIED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "Curated verified SMB directory & simulation source provider",
         },
         {
@@ -1350,15 +1383,27 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "Google Places Business Enrichment",
             "purpose": "Regional SME firmographic & geo-coordinate enrichment",
             "credentials_present": places_key,
-            "status": "LIVE_VERIFIED" if places_key else "BLOCKED",
-            "fallback_behavior": "Action unavailable until GOOGLE_PLACES_API_KEY is configured",
+            "status": _resolve_verified_connector_status(
+                "google_places",
+                credentials_present=places_key,
+                persisted_states=persisted_states,
+                no_creds_status="BLOCKED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
+            "fallback_behavior": "Action unavailable until GOOGLE_PLACES_API_KEY is configured and live-probed",
         },
         {
             "connector_id": "hostinger_smtp",
             "name": "Hostinger SMTP Transactional & Outreach Email",
             "purpose": "Outbound sales proposals & tenant onboarding emails",
             "credentials_present": smtp_pass,
-            "status": "LIVE_VERIFIED" if smtp_pass else "SANDBOX_VERIFIED",
+            "status": _resolve_verified_connector_status(
+                "hostinger_smtp",
+                credentials_present=smtp_pass,
+                persisted_states=persisted_states,
+                no_creds_status="SANDBOX_VERIFIED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "Isolated sandbox email sink when ENABLE_EXTERNAL_SIDE_EFFECTS=false or SMTP_PASSWORD unset",
         },
         {
@@ -1366,7 +1411,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "4-Site WordPress REST API Publisher",
             "purpose": "Automated SEO/GEO article staging & publishing",
             "credentials_present": wp_pass,
-            "status": "LIVE_VERIFIED" if wp_pass else "HUMAN_ASSISTED",
+            "status": _resolve_verified_connector_status(
+                "wordpress_rest",
+                credentials_present=wp_pass,
+                persisted_states=persisted_states,
+                no_creds_status="HUMAN_ASSISTED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "Draft staged in DB with HITL approval gate before external WordPress push",
         },
         {
@@ -1374,7 +1425,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "Razorpay Payment & Subscription Gateway (INR)",
             "purpose": "INR checkout, HMAC webhook reconciliation & subscription renewals",
             "credentials_present": rzp_secret,
-            "status": "SANDBOX_VERIFIED" if rzp_secret else "HUMAN_ASSISTED",
+            "status": _resolve_verified_connector_status(
+                "razorpay",
+                credentials_present=rzp_secret,
+                persisted_states=persisted_states,
+                no_creds_status="HUMAN_ASSISTED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "HMAC-SHA256 webhook verification ready; live settlement requires production keys",
         },
         {
@@ -1382,7 +1439,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "PayPal International Billing Gateway (USD)",
             "purpose": "International USD checkout & billing lifecycle",
             "credentials_present": paypal_id,
-            "status": "SANDBOX_VERIFIED" if paypal_id else "HUMAN_ASSISTED",
+            "status": _resolve_verified_connector_status(
+                "paypal",
+                credentials_present=paypal_id,
+                persisted_states=persisted_states,
+                no_creds_status="HUMAN_ASSISTED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "PayPal payment link builder active; webhook reconciliation in sandbox mode",
         },
         {
@@ -1398,7 +1461,13 @@ def get_connector_inventory(db: Session) -> dict[str, Any]:
             "name": "WhatsApp & Omnichannel Social Publishing Bridge",
             "purpose": "External WhatsApp message dispatch & social ad publishing",
             "credentials_present": whatsapp_token,
-            "status": "LIVE_VERIFIED" if whatsapp_token else "HUMAN_ASSISTED",
+            "status": _resolve_verified_connector_status(
+                "whatsapp_social_bridge",
+                credentials_present=whatsapp_token,
+                persisted_states=persisted_states,
+                no_creds_status="HUMAN_ASSISTED",
+                unprobed_with_creds_status="SANDBOX_VERIFIED",
+            ),
             "fallback_behavior": "Generates conversion copy & chat responses locally; external push gated until token connected",
         },
         {

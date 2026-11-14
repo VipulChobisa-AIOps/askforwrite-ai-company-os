@@ -638,7 +638,11 @@ def _search_duckduckgo_live(query: str, limit: int = 10) -> list[dict[str, Any]]
     return []
 
 
-def _search_serper_live(query: str, limit: int = 10) -> list[dict[str, Any]]:
+def _search_serper_live(
+    query: str,
+    limit: int = 10,
+    http_client: httpx.Client | None = None,
+) -> list[dict[str, Any]]:
     """Live search query enrichment via Serper Google Search API."""
     api_key = os.getenv("SERPER_API_KEY", "").strip()
     if not api_key:
@@ -648,68 +652,108 @@ def _search_serper_live(query: str, limit: int = 10) -> list[dict[str, Any]]:
         url = "https://google.serper.dev/search"
         headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
         payload = {"q": query, "num": limit}
-        with httpx.Client(timeout=4.0) as client:
-            resp = client.post(url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                results: list[dict[str, Any]] = []
-                for item in data.get("organic", [])[:limit]:
-                    link = item.get("link", "")
-                    title = item.get("title", "")
-                    snippet = item.get("snippet", "")
-                    domain = normalize_domain(link)
-                    if domain and is_valid_commercial_domain(domain):
-                        clean_company = re.sub(r"\s*[-|–].*", "", title).strip() or domain
-                        results.append({
-                            "company": clean_company[:100],
-                            "website": link,
-                            "domain": domain,
-                            "industry": "Discovered Business",
-                            "geography": "Enriched Search Region",
-                            "signals": [snippet[:160]],
-                            "public_contact_channel": f"contact@{domain}",
-                            "fit_score": 0.88,
-                            "confidence": 0.85,
-                            "source": "serper_live_search",
-                        })
-                return results
+        if http_client is not None:
+            resp = http_client.post(url, headers=headers, json=payload)
+        else:
+            with httpx.Client(timeout=4.0) as client:
+                resp = client.post(url, headers=headers, json=payload)
+        if resp.status_code == 200:
+            data = resp.json()
+            results: list[dict[str, Any]] = []
+            for item in data.get("organic", [])[:limit]:
+                link = item.get("link", "")
+                title = item.get("title", "")
+                snippet = item.get("snippet", "")
+                domain = normalize_domain(link)
+                if domain and is_valid_commercial_domain(domain):
+                    clean_company = re.sub(r"\s*[-|–].*", "", title).strip() or domain
+                    results.append({
+                        "company": clean_company[:100],
+                        "website": link,
+                        "domain": domain,
+                        "industry": "Discovered Business",
+                        "geography": "Enriched Search Region",
+                        "signals": [snippet[:160]],
+                        "public_contact_channel": f"contact@{domain}",
+                        "fit_score": 0.88,
+                        "confidence": 0.85,
+                        "source": "serper_live_search",
+                    })
+            return results
     except Exception as exc:
         logger.warning(f"Serper API call failed, falling back: {exc}")
     return []
 
 
-def _search_google_places_live(query: str, limit: int = 10) -> list[dict[str, Any]]:
-    """Live place search enrichment via Google Places API."""
+def _fetch_google_place_website(
+    client: httpx.Client,
+    place_id: str,
+    api_key: str,
+) -> str:
+    """Resolve real business website via Google Places Details without inventing domains."""
+    if not place_id:
+        return ""
+    try:
+        resp = client.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={"place_id": place_id, "fields": "website", "key": api_key},
+        )
+        if resp.status_code == 200:
+            result = resp.json().get("result") or {}
+            return str(result.get("website") or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def _search_google_places_live(
+    query: str,
+    limit: int = 10,
+    http_client: httpx.Client | None = None,
+) -> list[dict[str, Any]]:
+    """Live place search enrichment via Google Places API without fabricating unverified domains."""
     api_key = os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
     if not api_key:
         return []
 
-    try:
+    def _run_with_client(client: httpx.Client) -> list[dict[str, Any]]:
         url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
         params = {"query": query, "key": api_key}
+        resp = client.get(url, params=params)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        results: list[dict[str, Any]] = []
+        for item in data.get("results", [])[:limit]:
+            name = item.get("name", "")
+            address = item.get("formatted_address", "")
+            place_id = str(item.get("place_id") or "").strip()
+            website = str(item.get("website") or "").strip()
+            if not website and place_id:
+                website = _fetch_google_place_website(client, place_id, api_key)
+            domain = normalize_domain(website) if website else ""
+            if domain and not is_valid_commercial_domain(domain):
+                domain = ""
+            results.append({
+                "company": name[:100],
+                "website": website or None,
+                "domain": domain or None,
+                "place_id": place_id or None,
+                "industry": "Regional Enterprise",
+                "geography": address,
+                "signals": [f"Operating at {address}", f"Rating: {item.get('rating', 'N/A')}"],
+                "public_contact_channel": f"info@{domain}" if domain else None,
+                "fit_score": 0.86 if domain else 0.72,
+                "confidence": 0.84 if domain else 0.65,
+                "source": "google_places_live",
+            })
+        return results
+
+    try:
+        if http_client is not None:
+            return _run_with_client(http_client)
         with httpx.Client(timeout=4.0) as client:
-            resp = client.get(url, params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                results: list[dict[str, Any]] = []
-                for item in data.get("results", [])[:limit]:
-                    name = item.get("name", "")
-                    address = item.get("formatted_address", "")
-                    domain = f"{re.sub(r'[^a-zA-Z0-9]', '', name).lower()}.com"
-                    if is_valid_commercial_domain(domain):
-                        results.append({
-                            "company": name[:100],
-                            "website": f"https://{domain}",
-                            "domain": domain,
-                            "industry": "Regional Enterprise",
-                            "geography": address,
-                            "signals": [f"Operating at {address}", f"Rating: {item.get('rating', 'N/A')}"],
-                            "public_contact_channel": f"info@{domain}",
-                            "fit_score": 0.86,
-                            "confidence": 0.84,
-                            "source": "google_places_live",
-                        })
-                return results
+            return _run_with_client(client)
     except Exception as exc:
         logger.warning(f"Google Places API call failed, falling back: {exc}")
     return []
@@ -877,9 +921,10 @@ def discover_smb_leads(
     valid_candidates: list[dict[str, Any]] = []
     seen_domains: set[str] = set()
     for cand in combined_pool:
-        domain = cand.get("domain") or normalize_domain(cand.get("website", ""))
+        domain = cand.get("domain") or normalize_domain(cand.get("website") or "")
         if (
-            is_valid_commercial_domain(domain)
+            domain
+            and is_valid_commercial_domain(domain)
             and domain.lower() not in COMPETITOR_DOMAINS
             and domain not in seen_domains
         ):

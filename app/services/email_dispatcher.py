@@ -114,7 +114,8 @@ class SmtpEmailDispatcher:
         app_env = os.getenv("APP_ENV", "development").strip().lower()
         ext_disabled = os.getenv("ENABLE_EXTERNAL_SIDE_EFFECTS", "").strip().lower() in ("0", "false", "no")
         sim_only = os.getenv("SIMULATION_ONLY", "").strip().lower() in ("1", "true", "yes")
-        if ext_disabled or sim_only or app_env in ("staging", "simulation"):
+        smtp_mode = os.getenv("SMTP_MODE", "").strip().lower()
+        if ext_disabled or sim_only or app_env in ("staging", "simulation") or smtp_mode in ("sandbox", "sandbox_sink", "sink", "mock"):
             from app.services.execution_guard import record_simulated_dispatch
 
             rec = record_simulated_dispatch(
@@ -170,8 +171,9 @@ def get_email_dispatcher() -> EmailDispatcher:
     provider = os.getenv("OUTREACH_DISPATCH_PROVIDER", "smtp" if app_env == "production" else "mock").lower()
     ext_disabled = os.getenv("ENABLE_EXTERNAL_SIDE_EFFECTS", "").strip().lower() in ("0", "false", "no")
     sim_only = os.getenv("SIMULATION_ONLY", "").strip().lower() in ("1", "true", "yes")
+    smtp_mode = os.getenv("SMTP_MODE", "").strip().lower()
 
-    if ext_disabled or sim_only or app_env in ("staging", "simulation"):
+    if ext_disabled or sim_only or app_env in ("staging", "simulation") or smtp_mode in ("sandbox", "sandbox_sink", "sink", "mock"):
         return _default_mock_dispatcher
 
     if app_env == "production":

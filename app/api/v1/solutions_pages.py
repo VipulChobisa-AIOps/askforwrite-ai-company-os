@@ -180,7 +180,6 @@ def _verification_meta_tags() -> str:
 
 
 @router.get("/solutions", response_class=HTMLResponse)
-@router.get("/services", response_class=HTMLResponse)
 def solutions_hub_page() -> HTMLResponse:
     """Indexable SSR hub page for all AskforWrite AI Company OS vertical solutions."""
     base_url = "https://os.askforwrite.com"
@@ -281,7 +280,6 @@ def solutions_hub_page() -> HTMLResponse:
 
 
 @router.get("/solutions/{slug}", response_class=HTMLResponse)
-@router.get("/services/{slug}", response_class=HTMLResponse)
 def solution_detail_page(slug: str) -> HTMLResponse:
     """Dedicated SSR indexable landing page for a specific vertical SKU."""
     data = _resolve_sku_data(slug)
@@ -434,6 +432,21 @@ def solution_detail_page(slug: str) -> HTMLResponse:
     return HTMLResponse(content=html, status_code=200)
 
 
+def _get_alembic_expected_heads() -> list[str]:
+    """Inspect expected Alembic head revision(s) dynamically from migrations/."""
+    try:
+        from pathlib import Path
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        repo_root = Path(__file__).resolve().parents[3]
+        cfg = Config(str(repo_root / "alembic.ini"))
+        cfg.set_main_option("script_location", str(repo_root / "migrations"))
+        return list(ScriptDirectory.from_config(cfg).get_heads())
+    except Exception:
+        return []
+
+
 @router.get("/v1/ops/preflight", dependencies=[Depends(require_manager)])
 def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
@@ -441,7 +454,8 @@ def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
     Verifies database migration head, secret key lengths (>= 32 chars), payment gateway
     readiness, Web3 RPC configuration, and search indexing readiness without exposing secrets.
     """
-    alembic_version = "f6a1b2c3d4e5"
+    expected_heads = _get_alembic_expected_heads()
+    alembic_version = "not_stamped"
     db_healthy = False
     try:
         db.execute(text("SELECT 1")).fetchone()
@@ -451,7 +465,7 @@ def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
             if row and row[0]:
                 alembic_version = str(row[0])
         except Exception:
-            alembic_version = "f6a1b2c3d4e5"
+            alembic_version = "not_stamped"
     except Exception:
         db_healthy = False
 
@@ -475,15 +489,16 @@ def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "meets_32_char_minimum": is_strong,
         }
 
-    db_url = os.environ.get("DATABASE_URL", "sqlite:///./os_gateway.db")
-    is_postgres = db_url.startswith("postgresql")
+    db_url = os.environ.get("NEON_DATABASE_URL") or os.environ.get("DATABASE_URL", "sqlite:///./os_gateway.db")
+    is_postgres = db_url.startswith(("postgresql", "postgres"))
 
     integrations = {
-        "google_gemini_api": bool(os.environ.get("GOOGLE_API_KEY")),
-        "smtp_live_relay": bool(os.environ.get("SMTP_HOST") and os.environ.get("SMTP_USERNAME") and os.environ.get("SMTP_PASSWORD")),
+        "google_gemini_api": bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
+        "smtp_live_relay": bool(os.environ.get("SMTP_HOST") and (os.environ.get("SMTP_USERNAME") or os.environ.get("SMTP_USER")) and os.environ.get("SMTP_PASSWORD")),
         "razorpay_live_keys": bool(os.environ.get("RAZORPAY_KEY_ID") and os.environ.get("RAZORPAY_KEY_SECRET")),
         "razorpay_webhook_secret": bool(os.environ.get("RAZORPAY_WEBHOOK_SECRET")),
         "paypal_configured": bool(os.environ.get("PAYPAL_CLIENT_ID") and os.environ.get("PAYPAL_CLIENT_SECRET")),
+        "gsc_oauth_configured": bool(os.environ.get("GSC_CLIENT_ID") and os.environ.get("GSC_CLIENT_SECRET") and os.environ.get("GSC_REDIRECT_URI")),
         "web3_rpc_configured": bool(os.environ.get("WEB3_RPC_URL")),
         "afw_directpay_upi_configured": True,
     }
@@ -495,7 +510,8 @@ def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
             "healthy": db_healthy,
             "engine": "postgresql" if is_postgres else "sqlite",
             "alembic_revision": alembic_version,
-            "is_head_revision": alembic_version == "f6a1b2c3d4e5",
+            "expected_heads": expected_heads,
+            "is_head_revision": alembic_version in expected_heads if expected_heads else False,
         },
         "secrets_compliance": {
             "all_secrets_meet_32_char_policy": all_secrets_strong,
