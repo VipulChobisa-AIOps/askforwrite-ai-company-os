@@ -1877,3 +1877,136 @@ class P7AgentEvalRunRecord(Base):
     __table_args__ = (
         Index("ix_p7_eval_org_agent", "org_id", "agent_id", "passed"),
     )
+
+
+class P8DeveloperProfileRecord(Base):
+    """P8 third-party marketplace developer entity with KYB verification gating."""
+
+    __tablename__ = "p8_developer_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    developer_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    contact_email: Mapped[str] = mapped_column(String(160), index=True, nullable=False)
+    legal_entity_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    tax_or_gst_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kyb_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="PENDING")
+    kyb_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payout_account_masked: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verified_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p8_dev_kyb_status", "kyb_status", "contact_email"),
+    )
+
+
+class P8MarketplaceListingRecord(Base):
+    """P8 signed third-party agent/connector marketplace package listing."""
+
+    __tablename__ = "p8_marketplace_listings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    developer_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    listing_slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    package_type: Mapped[str] = mapped_column(String(48), index=True, nullable=False, default="AGENT_PLUGIN")
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    version: Mapped[str] = mapped_column(String(32), nullable=False, default="1.0.0")
+    requested_permissions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    endpoint_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    manifest_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ecdsa_signature_hex: Mapped[str] = mapped_column(Text, nullable=False)
+    signing_public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    price_inr_monthly: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    commission_bps: Mapped[int] = mapped_column(Integer, nullable=False, default=1500)
+    security_review_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="PENDING_REVIEW")
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="DRAFT")
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p8_list_dev_pub", "developer_id", "published_status", "security_review_status"),
+    )
+
+
+class P8TenantInstallRecord(Base):
+    """P8 tenant-isolated installation of a marketplace package with credential redaction."""
+
+    __tablename__ = "p8_tenant_installs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    listing_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="ACTIVE")
+    granted_permissions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    secret_digests_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    installed_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p8_inst_org_listing", "org_id", "listing_id", "status"),
+    )
+
+
+class P8MarketplaceReviewRecord(Base):
+    """P8 verified-installer marketplace review and abuse moderation record."""
+
+    __tablename__ = "p8_marketplace_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    listing_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    install_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    abuse_flagged: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
+    abuse_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moderation_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="PUBLISHED")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p8_rev_listing_mod", "listing_id", "moderation_status"),
+    )
+
+
+class P8RevenueShareLedgerRecord(Base):
+    """P8 marketplace commission and developer payout ledger separating ACTUAL vs SANDBOX origin."""
+
+    __tablename__ = "p8_revenue_share_ledger"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    install_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    listing_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    developer_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    gross_amount_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    commission_bps: Mapped[int] = mapped_column(Integer, nullable=False)
+    platform_commission_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    developer_payout_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    settlement_status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="ACCRUED")
+    evidence_status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="SANDBOX")
+    recorded_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_p8_rev_dev_origin", "developer_id", "evidence_status", "settlement_status"),
+    )

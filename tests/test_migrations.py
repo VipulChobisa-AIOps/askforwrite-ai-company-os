@@ -29,15 +29,15 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
         self.script_directory = ScriptDirectory.from_config(self.config)
 
     def test_migration_chain_has_single_head_and_correct_revisions(self):
-        """Verify the migration chain ends at m3b8c9d0e1f2 with down_revision l2a7b8c9d0e1."""
+        """Verify the migration chain ends at n4c9d0e1f2a3 with down_revision m3b8c9d0e1f2."""
         heads = self.script_directory.get_heads()
         self.assertEqual(len(heads), 1, f"Expected exactly 1 migration head, got: {heads}")
         head_rev = heads[0]
-        self.assertEqual(head_rev, "m3b8c9d0e1f2")
+        self.assertEqual(head_rev, "n4c9d0e1f2a3")
 
         head_script = self.script_directory.get_revision(head_rev)
         self.assertIsNotNone(head_script)
-        self.assertEqual(head_script.down_revision, "l2a7b8c9d0e1")
+        self.assertEqual(head_script.down_revision, "m3b8c9d0e1f2")
 
         prev_script = self.script_directory.get_revision("f6a1b2c3d4e5")
         self.assertIsNotNone(prev_script)

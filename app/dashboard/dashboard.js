@@ -4384,6 +4384,7 @@
       if (page === 'p5-scale') p5LoadControlCentre();
       if (page === 'p6-packs') p6LoadControlCentre();
       if (page === 'p7-autonomy') p7LoadControlCentre();
+      if (page === 'p8-marketplace') p8LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
@@ -4392,6 +4393,7 @@
     p5BindEvents();
     p6BindEvents();
     p7BindEvents();
+    p8BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -5574,6 +5576,98 @@
     });
   }
 
+  // ── P8 Marketplace Ecosystem & Master Scorecard ──────────
+  async function p8LoadControlCentre() {
+    try {
+      const [mktRes, scoreRes] = await Promise.all([
+        api('GET', '/v1/p8/marketplace/overview'),
+        api('GET', '/v1/ops/roadmap-scorecard'),
+      ]);
+      const sum = mktRes.summary || {};
+      if ($('#p8-kpi-devs')) $('#p8-kpi-devs').textContent = String(sum.verified_developer_count || 0);
+      if ($('#p8-kpi-listings')) $('#p8-kpi-listings').textContent = String(sum.published_listing_count || 0);
+      if ($('#p8-kpi-installs')) $('#p8-kpi-installs').textContent = String(sum.install_count || 0);
+      if ($('#p8-kpi-readiness')) $('#p8-kpi-readiness').textContent = String(scoreRes.overall_release_readiness || 'BLOCKED');
+
+      if ($('#p8-listings-tbody')) {
+        const rows = mktRes.listings || [];
+        $('#p8-listings-tbody').innerHTML = rows.length
+          ? rows.map(l => `<tr>
+              <td><strong>${escapeHtml(l.name)}</strong><br><small>${escapeHtml(l.listing_slug)}</small></td>
+              <td>${escapeHtml(l.package_type)}</td>
+              <td><span class="badge">${escapeHtml(l.security_review_status)}</span></td>
+              <td><span class="badge">${escapeHtml(l.published_status)}</span></td>
+              <td>
+                <button type="button" class="secondary-btn" onclick="window.app.p8VerifySignature('${escapeHtml(l.listing_id)}')">Verify ECDSA</button>
+                ${l.published_status === 'PUBLISHED' ? `<button type="button" class="primary-btn" onclick="window.app.p8InstallListing('${escapeHtml(l.listing_id)}')">Install</button>` : ''}
+              </td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No marketplace packages submitted</td></tr>';
+      }
+
+      if ($('#p8-scorecard-tbody')) {
+        const phases = scoreRes.phases || [];
+        $('#p8-scorecard-tbody').innerHTML = phases.length
+          ? phases.map(p => `<tr>
+              <td><strong>${escapeHtml(p.phase)}</strong></td>
+              <td>${escapeHtml(p.title)}</td>
+              <td><span class="badge">${escapeHtml(p.implementation_status)}</span></td>
+              <td><span class="badge">${escapeHtml(p.verification_status)}</span></td>
+            </tr>`).join('')
+          : '<tr><td colspan="4">Scorecard unavailable</td></tr>';
+      }
+    } catch (e) {
+      toast(`Failed to load P8 Marketplace: ${e.message}`, 'error');
+    }
+  }
+
+  function p8BindEvents() {
+    $('#btn-p8-refresh-all')?.addEventListener('click', p8LoadControlCentre);
+    $('#btn-p8-reg-dev')?.addEventListener('click', async () => {
+      const developer_name = ($('#p8-dev-name')?.value || '').trim();
+      const contact_email = ($('#p8-dev-email')?.value || '').trim();
+      const legal_entity_name = ($('#p8-dev-entity')?.value || '').trim();
+      if (!developer_name || !contact_email || !legal_entity_name) {
+        toast('Developer name, email, and legal entity are required', 'warning');
+        return;
+      }
+      try {
+        const dev = await api('POST', '/v1/p8/marketplace/developers', {
+          developer_name,
+          contact_email,
+          legal_entity_name,
+        });
+        if ($('#p8-list-dev-id')) $('#p8-list-dev-id').value = dev.developer_id || '';
+        toast(`Developer registered (${dev.kyb_status})`, 'success');
+        await p8LoadControlCentre();
+      } catch (e) {
+        toast(`Developer registration failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p8-submit-listing')?.addEventListener('click', async () => {
+      const developer_id = ($('#p8-list-dev-id')?.value || '').trim();
+      const listing_slug = ($('#p8-list-slug')?.value || '').trim();
+      const name = ($('#p8-list-name')?.value || '').trim();
+      if (!developer_id || !listing_slug || !name) {
+        toast('Developer ID, listing slug, and name are required', 'warning');
+        return;
+      }
+      try {
+        await api('POST', '/v1/p8/marketplace/listings', {
+          developer_id,
+          listing_slug,
+          name,
+          package_type: 'AGENT_PLUGIN',
+          requested_permissions: ['read_metrics'],
+        });
+        toast('Signed listing submitted for security review', 'success');
+        await p8LoadControlCentre();
+      } catch (e) {
+        toast(`Listing submission failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -5827,6 +5921,24 @@
         await p7LoadControlCentre();
       } catch (e) {
         toast(`DAG execution blocked: ${e.message}`, 'error');
+      }
+    },
+    p8LoadAll: p8LoadControlCentre,
+    p8VerifySignature: async (listingId) => {
+      try {
+        const res = await api('GET', `/v1/p8/marketplace/listings/${encodeURIComponent(listingId)}/verify-signature`);
+        toast(`Signature check: verified=${Boolean(res.verified)}`, res.verified ? 'success' : 'error');
+      } catch (e) {
+        toast(`Signature check failed: ${e.message}`, 'error');
+      }
+    },
+    p8InstallListing: async (listingId) => {
+      try {
+        await api('POST', '/v1/p8/marketplace/installs', { listing_id: listingId, config: { source: 'dashboard' } });
+        toast('Marketplace package installed cleanly', 'success');
+        await p8LoadControlCentre();
+      } catch (e) {
+        toast(`Install failed: ${e.message}`, 'error');
       }
     },
     setApiKey: (key) => {

@@ -176,6 +176,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
         <span>P7 Autonomous Workforce</span>
       </a>
+      <a href="#" class="nav-item" data-page="p8-marketplace" id="nav-p8-marketplace">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>P8 Marketplace &amp; Scorecard</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -3066,6 +3070,62 @@
             <table class="cw-table">
               <thead><tr><th>Agent</th><th>Level</th><th>Paused</th><th>Threshold</th></tr></thead>
               <tbody id="p7-policies-tbody"><tr><td colspan="4">No autonomy policies configured</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P8 Marketplace Ecosystem & Master Scorecard ────────── -->
+      <section class="page" id="page-p8-marketplace">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P8 Marketplace Ecosystem &amp; Roadmap Scorecard</h2>
+            <p class="subtitle" style="margin:4px 0 0;">KYB Developer Portal, ECDSA P-256 Package Signing, Tenant Secret Isolation, Revenue Ledger &amp; P0–P8 Readiness Gate</p>
+          </div>
+          <button type="button" class="primary-btn" id="btn-p8-refresh-all">Refresh P8 Marketplace &amp; Scorecard</button>
+        </div>
+
+        <div class="cw-kpi-row" id="p8-kpis">
+          <div class="cw-kpi"><div class="cw-kpi-label">Verified Developers</div><div class="cw-kpi-val" id="p8-kpi-devs">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Published Packages</div><div class="cw-kpi-val" id="p8-kpi-listings">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Active Installs</div><div class="cw-kpi-val" id="p8-kpi-installs">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Cutover Gate</div><div class="cw-kpi-val" id="p8-kpi-readiness">BLOCKED</div></div>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card">
+            <h3>Register Third-Party Developer (KYB)</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p8-dev-name" class="cw-input" placeholder="Developer / Partner Name"/>
+              <input id="p8-dev-email" class="cw-input" placeholder="developer@partner.in"/>
+              <input id="p8-dev-entity" class="cw-input" placeholder="Registered Legal Entity Name"/>
+              <button type="button" class="primary-btn" id="btn-p8-reg-dev">Submit Developer KYB Profile</button>
+            </div>
+          </div>
+          <div class="cw-card">
+            <h3>Submit Signed Package Listing</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p8-list-dev-id" class="cw-input" placeholder="Verified Developer ID"/>
+              <input id="p8-list-slug" class="cw-input" placeholder="package-slug (e.g. tally-gst-sync)"/>
+              <input id="p8-list-name" class="cw-input" placeholder="Package Display Name"/>
+              <button type="button" class="primary-btn" id="btn-p8-submit-listing">Sign &amp; Submit Listing</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Marketplace Listings &amp; Signature Checks</h3>
+            <table class="cw-table">
+              <thead><tr><th>Package</th><th>Type</th><th>Review</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="p8-listings-tbody"><tr><td colspan="5">No marketplace packages submitted</td></tr></tbody>
+            </table>
+          </div>
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Authoritative P0–P8 Master Roadmap Scorecard</h3>
+            <table class="cw-table">
+              <thead><tr><th>Phase</th><th>Capability</th><th>Code</th><th>Verification</th></tr></thead>
+              <tbody id="p8-scorecard-tbody"><tr><td colspan="4">Loading scorecard...</td></tr></tbody>
             </table>
           </div>
         </div>

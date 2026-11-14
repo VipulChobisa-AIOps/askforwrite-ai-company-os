@@ -41,6 +41,7 @@ from app.api.v1.p4_growth import router as p4_growth_router
 from app.api.v1.p5_scale import router as p5_scale_router
 from app.api.v1.p6_packs import router as p6_packs_router
 from app.api.v1.p7_workforce import router as p7_workforce_router
+from app.api.v1.p8_marketplace import ops_scorecard_router, router as p8_marketplace_router
 from app.api.v1.neon_api import router as neon_router
 from app.api.v1.subscriptions import router as subscriptions_router
 from app.api.v1.watchdog import router as watchdog_router
@@ -219,6 +220,8 @@ app.include_router(p4_growth_router)
 app.include_router(p5_scale_router)
 app.include_router(p6_packs_router)
 app.include_router(p7_workforce_router)
+app.include_router(p8_marketplace_router)
+app.include_router(ops_scorecard_router)
 app.include_router(neon_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
