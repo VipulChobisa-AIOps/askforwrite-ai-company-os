@@ -168,6 +168,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         <span>P5 Productization &amp; Scale</span>
       </a>
+      <a href="#" class="nav-item" data-page="p6-packs" id="nav-p6-packs">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+        <span>P6 Industry SME Packs</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2952,6 +2956,51 @@
             <table class="cw-table">
               <thead><tr><th>Title</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead>
               <tbody id="p5-incidents-tbody"><tr><td colspan="4">No incidents logged</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P6 Multi-Industry SME Packs & India SEO ──────────────────── -->
+      <section class="page" id="page-p6-packs">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P6 Multi-Industry SME Packs &amp; India SEO Baseline</h2>
+            <p class="subtitle" style="margin:4px 0 0;">5 Config-Driven Sector Packs (SANDBOX / ROADMAP Labeled), Vertical Analytics Diagnostics &amp; Catalog-Grounded Local SEO</p>
+          </div>
+          <button type="button" class="primary-btn" id="btn-p6-refresh-all">Refresh P6 Packs</button>
+        </div>
+
+        <div class="cw-kpi-row" id="p6-kpis">
+          <div class="cw-kpi"><div class="cw-kpi-label">Industry Packs</div><div class="cw-kpi-val" id="p6-kpi-packs">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Sandbox / Roadmap</div><div class="cw-kpi-val" id="p6-kpi-sandbox">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Deployments</div><div class="cw-kpi-val" id="p6-kpi-deployments">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">India SEO Baselines</div><div class="cw-kpi-val" id="p6-kpi-seo">0</div></div>
+        </div>
+
+        <div class="cw-card" style="margin-top:14px;overflow-x:auto;">
+          <h3>Industry SME Packs (Catalog &amp; Vertical Analytics Bound)</h3>
+          <table class="cw-table">
+            <thead><tr><th>Pack</th><th>Sector</th><th>Readiness</th><th>Monthly INR</th><th>Capabilities</th></tr></thead>
+            <tbody id="p6-packs-tbody"><tr><td colspan="5">No packs loaded</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card">
+            <h3>Generate India Local SEO Baseline</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p6-seo-city" class="cw-input" value="Bengaluru" placeholder="City / Cluster"/>
+              <input id="p6-seo-vertical" class="cw-input" value="distribution_wholesale" placeholder="Industry Vertical"/>
+              <input id="p6-seo-sku" class="cw-input" value="seo_blog_copilot" placeholder="Catalog SKU (e.g. seo_blog_copilot)"/>
+              <button type="button" class="primary-btn" id="btn-p6-create-seo">Create SEO Baseline</button>
+            </div>
+          </div>
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Tenant Pack Deployments</h3>
+            <table class="cw-table">
+              <thead><tr><th>Pack</th><th>Status</th><th>Origin Label</th><th>Action</th></tr></thead>
+              <tbody id="p6-deployments-tbody"><tr><td colspan="4">No pack deployments</td></tr></tbody>
             </table>
           </div>
         </div>

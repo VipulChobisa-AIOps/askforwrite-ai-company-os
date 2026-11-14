@@ -4382,12 +4382,14 @@
       if (page === 'customer-success') p3LoadControlCentre();
       if (page === 'p4-growth') p4LoadControlCentre();
       if (page === 'p5-scale') p5LoadControlCentre();
+      if (page === 'p6-packs') p6LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
     p3BindEvents();
     p4BindEvents();
     p5BindEvents();
+    p6BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -5432,6 +5434,68 @@
     });
   }
 
+  // ── P6 Multi-Industry SME Packs & India SEO Controller ────
+  async function p6LoadControlCentre() {
+    if (!$('#page-p6-packs')) return;
+    try {
+      const res = await api('GET', '/v1/p6/packs/overview');
+      const sum = res.summary || {};
+      if ($('#p6-kpi-packs')) $('#p6-kpi-packs').textContent = String(sum.pack_count || 0);
+      if ($('#p6-kpi-sandbox')) {
+        $('#p6-kpi-sandbox').textContent = String((sum.sandbox_pack_count || 0) + (sum.roadmap_pack_count || 0));
+      }
+      if ($('#p6-kpi-deployments')) $('#p6-kpi-deployments').textContent = String(sum.deployment_count || 0);
+      if ($('#p6-kpi-seo')) $('#p6-kpi-seo').textContent = String(sum.seo_baseline_count || 0);
+
+      if ($('#p6-packs-tbody')) {
+        const packs = res.packs || [];
+        $('#p6-packs-tbody').innerHTML = packs.length
+          ? packs.map(p => `<tr>
+              <td><strong>${escapeHtml(p.pack_key)}</strong></td>
+              <td>${escapeHtml(p.sector)}</td>
+              <td><span class="badge">${escapeHtml(p.readiness_status)}</span></td>
+              <td>₹${Number(p.monthly_price_inr || 0).toLocaleString()}</td>
+              <td>${escapeHtml((p.analytics_capabilities || []).join(', '))}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No packs loaded</td></tr>';
+      }
+
+      if ($('#p6-deployments-tbody')) {
+        const deps = res.deployments || [];
+        $('#p6-deployments-tbody').innerHTML = deps.length
+          ? deps.map(d => `<tr>
+              <td>${escapeHtml(d.pack_key)}</td>
+              <td><span class="badge">${escapeHtml(d.status)}</span></td>
+              <td>${escapeHtml(d.readiness_label)}</td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p6RunDiagnostics('${escapeHtml(d.deployment_id)}')">Run Diagnostics</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="4">No pack deployments</td></tr>';
+      }
+    } catch (e) {
+      toast(`Failed to load P6 Packs overview: ${e.message}`, 'error');
+    }
+  }
+
+  function p6BindEvents() {
+    $('#btn-p6-refresh-all')?.addEventListener('click', p6LoadControlCentre);
+    $('#btn-p6-create-seo')?.addEventListener('click', async () => {
+      const city = ($('#p6-seo-city')?.value || 'Bengaluru').trim();
+      const vertical = ($('#p6-seo-vertical')?.value || 'distribution_wholesale').trim();
+      const sku = ($('#p6-seo-sku')?.value || 'seo_blog_copilot').trim();
+      try {
+        await api('POST', '/v1/p6/packs/seo-baselines', {
+          city_or_cluster: city,
+          industry_vertical: vertical,
+          primary_catalog_sku: sku,
+        });
+        toast('India local SEO baseline created', 'success');
+        await p6LoadControlCentre();
+      } catch (e) {
+        toast(`SEO baseline failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -5665,6 +5729,16 @@
         await p5LoadControlCentre();
       } catch (e) {
         toast(`Incident update failed: ${e.message}`, 'error');
+      }
+    },
+    p6LoadAll: p6LoadControlCentre,
+    p6RunDiagnostics: async (deploymentId) => {
+      try {
+        await api('POST', `/v1/p6/packs/deployments/${encodeURIComponent(deploymentId)}/diagnostics`, {});
+        toast('Pack sandbox diagnostics completed', 'success');
+        await p6LoadControlCentre();
+      } catch (e) {
+        toast(`Diagnostics failed: ${e.message}`, 'error');
       }
     },
     setApiKey: (key) => {

@@ -926,6 +926,24 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=0,
     ),
+    "industry_pack_architect_agent": RegisteredAgent(
+        agent_id="industry_pack_architect_agent",
+        agent_name="P6 Multi-Industry Pack & India SEO Agent",
+        description="Configures vertical SME packs across wholesale, logistics, manufacturing, retail, and agencies using live analytics and India SEO baselines.",
+        business_function="industry_solutions",
+        capabilities=("industry_pack_configuration", "vertical_diagnostics", "india_local_seo_baseline"),
+        supported_tools=("stocksense_analytics", "mobility_rebalance", "quality_vision", "seo_baseline_builder"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"summary": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Classify unverified customer vertical packs as SANDBOX or ROADMAP and bind pricing strictly to CATALOG.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="growth_all_in_one",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
 }
 
 
@@ -1804,6 +1822,19 @@ def _dispatch_domain_agent(
             "uses_external_provider": False,
             "fallback_used": False,
             "provider_request_id": f"p5-sla-{len(incidents)}",
+        }
+
+    if agent_id == "industry_pack_architect_agent":
+        from app.services.p6_industry_packs import compute_p6_overview
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        overview = compute_p6_overview(db, org_id=org_filter)
+        return {
+            "output": overview,
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p6-packs-{overview['summary']['pack_count']}",
         }
 
     # Default ceo_manager_agent orchestrator

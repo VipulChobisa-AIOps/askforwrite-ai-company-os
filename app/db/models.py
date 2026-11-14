@@ -1688,3 +1688,86 @@ class P5OperationalIncidentRecord(Base):
     __table_args__ = (
         Index("ix_p5_incident_org_status", "org_id", "status", "severity"),
     )
+
+
+class P6IndustryPackRecord(Base):
+    """P6 configuration-driven SME industry pack bound to real catalog modules and vertical analytics."""
+
+    __tablename__ = "p6_industry_packs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    pack_key: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    sector: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tier_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    selected_modules_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    catalog_service_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    agent_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    analytics_capabilities_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    kpi_definitions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_config_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    monthly_price_inr: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    readiness_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="SANDBOX")
+    verified_live_customers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p6_pack_sector_readiness", "sector", "readiness_status"),
+    )
+
+
+class P6TenantPackDeploymentRecord(Base):
+    """P6 tenant deployment of an industry pack plus vertical analytics simulation/diagnostics state."""
+
+    __tablename__ = "p6_tenant_pack_deployments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    pack_key: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="CONFIGURED")
+    execution_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="SIMULATION")
+    configuration_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    last_analytics_output_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    readiness_label: Mapped[str] = mapped_column(String(32), nullable=False, default="SANDBOX")
+    deployed_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p6_dep_org_pack", "org_id", "pack_key", "status"),
+    )
+
+
+class P6SeoBaselineRecord(Base):
+    """P6 India agency / local SME SEO baseline grounded strictly in real catalog SKUs."""
+
+    __tablename__ = "p6_seo_baselines"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    region_code: Mapped[str] = mapped_column(String(16), nullable=False, default="IN")
+    city_or_cluster: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    industry_vertical: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    primary_catalog_sku: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    target_keywords_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    localized_pages_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    schema_markup_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    baseline_status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="SANDBOX_DRAFT")
+    approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p6_seo_org_vertical", "org_id", "industry_vertical"),
+    )
