@@ -1,0 +1,47 @@
+# P3.1 Release Readiness Report — AskforWrite AI Company OS
+
+**Branch:** `feat/p3.1-production-verification-readiness`  
+**Service Registry Module:** `app/services/p3_1_verification_registry.py` (`get_release_readiness_summary`)  
+**API Endpoint:** `GET /v1/cs/release-readiness` (enforced via `require_platform_manager`)  
+**Overall Release Readiness:** **`BLOCKED`** (`production_cutover_approved: false`)
+
+---
+
+## 1. Strict Verification State Taxonomy
+
+All subsystems use only these explicit states:
+
+| State | Meaning |
+|---|---|
+| `NOT_TESTED` | Capability/flow exists or keys exist, but execution has not been tested in that environment |
+| `LOCAL_VERIFIED` | Verified on local Python/SQLite/Playwright isolated synthetic harness |
+| `SANDBOX_VERIFIED` | Verified against provider sandbox API contracts (`MockTransport`) & signed webhook flows |
+| `STAGING_VERIFIED` | Verified on dedicated deployed staging environment with synthetic/test accounts |
+| `LIVE_VERIFIED` | Verified end-to-end against live deployed infrastructure or real provider responses |
+| `BLOCKED` | Required credentials, runtime binaries, host tooling, or network access are missing/unreachable |
+
+---
+
+## 2. Subsystem Readiness Matrix
+
+| Subsystem | Verification State | Live / Production State | Key Implementation & Verification Evidence | Active Blocker / Owner Requirement |
+|---|---|---|---|---|
+| **Auth, RBAC & Tenant Isolation** | `LOCAL_VERIFIED` | `NOT_TESTED` on live Render | Cross-tenant isolation enforced via `require_platform_manager`, `enforce_tenant_access`, `/v1/me/*` scoping | Requires live deployment verification |
+| **Browser E2E UI & Navigation (Playwright)** | `LOCAL_VERIFIED` | `NOT_TESTED` on live URL | `tests/e2e/test_dashboard_e2e.py` (3 Playwright Chromium tests across `1440x900` & `390x844`) | Staging/live smoke test not yet run on deployed URL |
+| **Google Search Console Attribution** | `BLOCKED` | `BLOCKED` (`ATTRIBUTION_REQUIRES_CONNECTED_GSC`) | `app/services/gsc_integration.py` + 4 integration tests (`test_p3_1_gsc_integration.py`) | `GSC_CLIENT_ID`, `GSC_CLIENT_SECRET`, `GSC_REDIRECT_URI` missing from `.env`; no authorized live Google property tested |
+| **Razorpay Payments** | `SANDBOX_VERIFIED` | `live_transaction_state: NOT_TESTED` | `RazorpayProvider` + `/v1/webhooks/payment` + `test_p3_1_payment_sandbox_verification.py`; capture (`CAPTURED_PENDING_SETTLEMENT`) strictly separated from payout settlement (`SETTLED_TO_MERCHANT`) | Requires explicit owner authorization for one low-value live transaction & settlement UTR verification |
+| **PayPal Payments** | `SANDBOX_VERIFIED` | `live_transaction_state: NOT_TESTED` | `PayPalProvider` + `/v1/webhooks/payment` major-unit refund normalization & payout separation | Requires explicit owner authorization for one low-value live checkout capture & payout verification |
+| **PostgreSQL Backup & Restore Drill** | `BLOCKED` | `BLOCKED` (`restore_tested: false`) | `scripts/pg_backup_restore_drill.py` + 5 drill harness tests (`test_p3_1_postgres_drill.py`) | Local Windows host lacks `pg_dump`, `pg_restore`, and `psql`; real Neon dump/restore not yet executed |
+| **Render Production Environment** | `BLOCKED` | `TimeoutError` at `>35s` | Read-only inspection of `render.yaml` (`askforwrite-ai-company-os`, `askforwrite-ai-company-os-staging`) & `.env` key names; live `/health` probes timed out | Live `/health` unreachable within `35s`; Render dashboard logs & live runtime env parity unavailable without Render API/dashboard access |
+
+---
+
+## 3. Automated Test & Static Analysis Summary
+
+*(Re-verified after final P3.1 implementation pass)*
+
+- `ruff check app tests scripts migrations` — passed (`0` lint errors)
+- `node --check app/dashboard/dashboard.js` — passed (`exit 0`)
+- Full suite `pytest tests -q --tb=short` — **474 passed** (including Playwright E2E, GSC, Payments, PostgreSQL drill, Verification Registry, and existing P0–P3 suites)
+
+No simulated, local, or `MockTransport` results are marked `LIVE_VERIFIED`. Production cutover remains **blocked** until all items in [`docs/P3_1_BLOCKERS_AND_OWNER_ACTIONS.md`](./P3_1_BLOCKERS_AND_OWNER_ACTIONS.md) are resolved by the platform owner.

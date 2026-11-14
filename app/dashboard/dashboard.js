@@ -208,8 +208,12 @@
 
   async function fetchApprovals() {
     try {
-      const data = await api('GET', '/v1/approvals');
-      const rawList = data.approvals || (Array.isArray(data) ? data : []);
+      const results = await Promise.all(
+        ['PENDING', 'APPROVED', 'REJECTED'].map(s =>
+          api('GET', `/v1/approvals?status=${s}`).catch(() => ({ approvals: [] }))
+        )
+      );
+      const rawList = results.flatMap(data => data.approvals || (Array.isArray(data) ? data : []));
       state.approvals = rawList.map(a => ({
         ...a,
         id: a.approval_id || a.id,
@@ -343,6 +347,7 @@
     } catch (e) {
       console.warn('Billing invoices fetch:', e.message);
     }
+    await fetchCustomerP3PortalData();
   }
 
   async function fetchAll() {
@@ -360,10 +365,159 @@
       fetchFieldForceData(),
       fetchWatchdogData(),
       fetchCeoBriefing(),
-      fetchCustomerPortalData(),
     ]);
   }
 
+
+  // ── P3 Customer Self-Service Portal Loader ──────────────
+  async function fetchCustomerP3PortalData() {
+    const statusPill = $('#portal-p3-status');
+    const errBox = $('#portal-p3-error');
+    const summaryEl = $('#portal-p3-onboarding-summary');
+    const tasksEl = $('#portal-p3-onboarding-tasks');
+    const delivEl = $('#portal-p3-deliveries-list');
+    const ticketsEl = $('#portal-p3-tickets-list');
+    if (!tasksEl || !delivEl || !ticketsEl) return;
+
+    if (statusPill) {
+      statusPill.textContent = 'Loading...';
+      statusPill.className = 'status-pill pending';
+    }
+    if (errBox) {
+      errBox.style.display = 'none';
+      errBox.textContent = '';
+    }
+
+    try {
+      const [onb, delivRes, tickRes] = await Promise.all([
+        api('GET', '/v1/me/onboarding'),
+        api('GET', '/v1/me/deliveries'),
+        api('GET', '/v1/me/support/tickets'),
+      ]);
+
+      const pct = Number(onb.completion_pct ?? 0);
+      if (summaryEl) {
+        summaryEl.textContent = `${pct}% Complete • ${onb.readiness_state || 'PENDING'}`;
+      }
+      const tasks = Array.isArray(onb.tasks) ? onb.tasks : [];
+      tasksEl.innerHTML = tasks.length ? tasks.map(t => `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
+          <div>
+            <strong>${esc(t.title || t.task_key)}</strong>
+            <div style="font-size:0.74rem;color:var(--text-muted)">Owner: ${esc(t.owner || 'customer')} • Status: ${esc(t.status || 'pending')}</div>
+          </div>
+          ${t.status === 'completed'
+            ? '<span class="status-pill approved">Completed</span>'
+            : `<button type="button" class="secondary-btn portal-task-complete-btn" onclick="app.portalCompleteTask('${esc(t.task_key)}')" style="padding:5px 10px;font-size:0.75rem">Mark Done</button>`
+          }
+        </div>
+      `).join('') : '<div class="empty-state"><p>No onboarding tasks configured.</p></div>';
+
+      const deliveries = Array.isArray(delivRes.deliveries) ? delivRes.deliveries : [];
+      delivEl.innerHTML = deliveries.length ? deliveries.map(d => {
+        const qs = String(d.quality_state || 'NOT_STARTED');
+        const canRespond = qs === 'DELIVERED' || qs === 'QUALITY_REVIEW';
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
+            <div>
+              <strong>${esc(d.title || d.sku_key || d.delivery_id)}</strong>
+              <span class="status-pill ${qs === 'ACCEPTED' ? 'approved' : qs === 'REVISION_REQUESTED' ? 'rejected' : 'pending'}" style="margin-left:6px">${esc(qs)}</span>
+              <div style="font-size:0.74rem;color:var(--text-muted)">Scope: ${esc(d.approved_scope || d.customer_requirement || 'Standard delivery')}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${canRespond ? `
+                <button type="button" class="success-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','ACCEPTED')" style="padding:5px 10px;font-size:0.75rem">Accept</button>
+                <button type="button" class="danger-btn" onclick="app.portalRespondDelivery('${esc(d.delivery_id)}','REVISION_REQUESTED')" style="padding:5px 10px;font-size:0.75rem">Request Revision</button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('') : '<div class="empty-state"><p>No service deliverables assigned yet.</p></div>';
+
+      const tickets = Array.isArray(tickRes.tickets) ? tickRes.tickets : [];
+      ticketsEl.innerHTML = tickets.length ? tickets.map(t => `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--glass-border);font-size:0.82rem;flex-wrap:wrap">
+          <div>
+            <strong>${esc(t.subject)}</strong>
+            <span class="status-pill ${t.status === 'RESOLVED' || t.status === 'CLOSED' ? 'approved' : 'pending'}" style="margin-left:6px">${esc(t.status)}</span>
+            <div style="font-size:0.74rem;color:var(--text-muted)">${esc(t.category || 'general')} • Priority: ${esc(t.priority || 'medium')}</div>
+          </div>
+          <code style="font-size:0.72rem;color:var(--text-muted)">${esc(t.ticket_id)}</code>
+        </div>
+      `).join('') : '<div class="empty-state"><p>No support tickets raised yet.</p></div>';
+
+      if (statusPill) {
+        statusPill.textContent = 'Synced';
+        statusPill.className = 'status-pill approved';
+      }
+    } catch (e) {
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = `Unable to load customer portal data: ${e.message || 'Network or server error'}`;
+      }
+      if (statusPill) {
+        statusPill.textContent = 'Error';
+        statusPill.className = 'status-pill rejected';
+      }
+    }
+  }
+
+  async function portalCompleteTask(taskKey) {
+    try {
+      await api('PATCH', `/v1/me/onboarding/tasks/${encodeURIComponent(taskKey)}`, {
+        completed: true,
+        evidence_summary: 'Completed from customer workspace portal',
+      });
+      toast('Onboarding step marked complete', 'success');
+      await fetchCustomerP3PortalData();
+    } catch (e) {
+      toast(`Could not update onboarding step: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalRespondDelivery(deliveryId, action) {
+    try {
+      await api('POST', `/v1/me/deliveries/${encodeURIComponent(deliveryId)}/respond`, {
+        action,
+        note: action === 'ACCEPTED' ? 'Accepted by customer in portal' : 'Revision requested from customer portal',
+      });
+      toast(`Deliverable updated to ${action}`, 'success');
+      await fetchCustomerP3PortalData();
+    } catch (e) {
+      toast(`Deliverable update failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function portalCreateTicket() {
+    const subject = ($('#portal-ticket-subject')?.value || '').trim();
+    const category = ($('#portal-ticket-category')?.value || 'onboarding').trim();
+    const priority = ($('#portal-ticket-priority')?.value || 'MEDIUM').trim().toUpperCase();
+    const description = ($('#portal-ticket-description')?.value || '').trim();
+    if (!subject || !description) {
+      toast('Enter both a ticket subject and description', 'error');
+      return;
+    }
+    const errBox = $('#portal-p3-error');
+    if (errBox) { errBox.style.display = 'none'; errBox.textContent = ''; }
+    try {
+      await api('POST', '/v1/me/support/tickets', {
+        subject,
+        category,
+        priority,
+        description,
+      });
+      if ($('#portal-ticket-subject')) $('#portal-ticket-subject').value = '';
+      if ($('#portal-ticket-description')) $('#portal-ticket-description').value = '';
+      toast('Support ticket submitted', 'success');
+      await fetchCustomerP3PortalData();
+    } catch (e) {
+      if (errBox) {
+        errBox.style.display = 'block';
+        errBox.textContent = `Ticket submission failed: ${e.message || 'Network or server error'}`;
+      }
+      toast(`Ticket submission failed: ${e.message}`, 'error');
+    }
+  }
 
   // ── Connection Status ────────────────────────────────────
   function setConnectionStatus(online) {
@@ -375,7 +529,29 @@
     }
     const dotContainer = $('#connection-dot');
     if (dotContainer) {
-      dotContainer.title = online ? 'API Connected' : 'API Offline — Using demo data';
+      dotContainer.title = online ? 'API Connected' : 'API Offline — Backend unreachable';
+    }
+    const dataBadge = $('#data-mode-badge');
+    if (!online && dataBadge) {
+      dataBadge.className = 'status-pill rejected';
+      dataBadge.textContent = 'BLOCKED • API OFFLINE';
+    }
+    const container = $('#page-container');
+    if (container) {
+      let banner = $('#offline-status-banner');
+      if (!online) {
+        if (!banner) {
+          banner = document.createElement('div');
+          banner.id = 'offline-status-banner';
+          banner.setAttribute('role', 'alert');
+          banner.style.cssText = 'margin-bottom:14px;padding:10px 14px;border-radius:8px;border:1px solid rgba(239,68,68,0.55);background:rgba(239,68,68,0.14);color:#fecaca;font-size:0.84rem;display:flex;justify-content:space-between;align-items:center;gap:10px;';
+          banner.textContent = '⚠️ Offline / Backend Unreachable — Live actions are paused and no synthetic success messages will be shown.';
+          container.prepend(banner);
+        }
+        banner.style.display = 'flex';
+      } else if (banner) {
+        banner.style.display = 'none';
+      }
     }
   }
 
@@ -634,18 +810,18 @@
           decision_note: note || `${decision} via Customer Control Center`,
         });
         toast(`Approval ${decision.toLowerCase()} successfully`, 'success');
-        closeModal();
         if (typeof cwFetchScopedApprovals === 'function') {
           await cwFetchScopedApprovals();
         }
+        closeModal();
       } else {
         await api('POST', `/v1/approvals/${pendingDecision.approvalId}/decision`, {
           decision: decision,
           reason: note || `${decision} via Owner Dashboard`,
         });
         toast(`Approval ${decision.toLowerCase()} successfully`, 'success');
-        closeModal();
         await fetchApprovals();
+        closeModal();
         await fetchLeads();
         await fetchDashboardData();
       }
@@ -756,6 +932,7 @@
     div.textContent = String(str);
     return div.innerHTML;
   }
+  const escapeHtml = esc;
 
   function formatAction(action) {
     return (action || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -1742,6 +1919,9 @@
     $('#btn-save-portal-gemini-key')?.addEventListener('click', handleSavePortalGeminiKey);
     $('#btn-run-tenant-service')?.addEventListener('click', handleRunTenantService);
     $('#btn-portal-refresh')?.addEventListener('click', fetchCustomerPortalData);
+    $('#btn-portal-create-ticket')?.addEventListener('click', portalCreateTicket);
+    window.addEventListener('offline', () => setConnectionStatus(false));
+    window.addEventListener('online', () => setConnectionStatus(true));
 
     // Quick-launch service tool icon buttons inside Customer Portal
     $$('.portal-quick-tool-btn').forEach(btn => {
@@ -4852,6 +5032,9 @@
     cwLoadBilling,
     cwLoadEmergencyStops,
     cwFetchScopedApprovals,
+    fetchCustomerP3PortalData,
+    portalCompleteTask,
+    portalRespondDelivery,
     p2LoadAll: p2LoadControlCentre,
     p2SelectLead: p2FillLeadForms,
     p2ShowBrief: async (leadId) => {

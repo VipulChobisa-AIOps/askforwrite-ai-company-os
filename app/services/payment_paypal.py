@@ -62,6 +62,10 @@ _PAYPAL_EVENT_MAP: dict[str, str] = {
     "PAYMENT.SALE.COMPLETED": "payment.captured",
     "PAYMENT.SALE.DENIED": "payment.failed",
     "PAYMENT.SALE.REFUNDED": "payment.refunded",
+    "PAYMENT.CAPTURE.COMPLETED": "payment.captured",
+    "PAYMENT.CAPTURE.DENIED": "payment.failed",
+    "PAYMENT.CAPTURE.REFUNDED": "payment.refunded",
+    "PAYMENT.PAYOUTS-ITEM.SUCCEEDED": "settlement.processed",
 }
 
 # ── Interval mapping ────────────────────────────────────────────────
@@ -81,10 +85,11 @@ class PayPalProvider(PaymentProviderInterface):
     SANDBOX_URL = "https://api-m.sandbox.paypal.com"
     LIVE_URL = "https://api-m.paypal.com"
 
-    def __init__(self) -> None:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._client_id = os.environ.get("PAYPAL_CLIENT_ID", "")
         self._client_secret = os.environ.get("PAYPAL_CLIENT_SECRET", "")
         self._webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "")
+        self._transport = transport
         mode = os.environ.get("PAYPAL_MODE", "live").lower()
         self._base_url = self.SANDBOX_URL if mode == "sandbox" else self.LIVE_URL
         self._access_token: str | None = None
@@ -103,7 +108,7 @@ class PayPalProvider(PaymentProviderInterface):
         if self._access_token:
             return self._access_token
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             try:
                 response = await client.post(
                     f"{self._base_url}/v1/oauth2/token",
@@ -131,7 +136,7 @@ class PayPalProvider(PaymentProviderInterface):
         token = await self._get_access_token()
         url = f"{self._base_url}{path}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             try:
                 response = await client.request(
                     method=method,
@@ -455,3 +460,47 @@ class PayPalProvider(PaymentProviderInterface):
             resource_type=resource_type,
             data=data,
         )
+
+    async def create_order(
+        self,
+        *,
+        amount: float,
+        currency: str = "USD",
+        reference_id: str = "",
+        return_url: str | None = None,
+        cancel_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a PayPal v2 Orders API checkout order with CAPTURE intent."""
+        purchase_unit: dict[str, Any] = {
+            "amount": {"currency_code": currency.upper(), "value": f"{amount:.2f}"},
+        }
+        if reference_id:
+            purchase_unit["reference_id"] = reference_id[:127]
+        payload: dict[str, Any] = {"intent": "CAPTURE", "purchase_units": [purchase_unit]}
+        if return_url and cancel_url:
+            payload["application_context"] = {"return_url": return_url, "cancel_url": cancel_url}
+        return await self._request("POST", "/v2/checkout/orders", json_data=payload)
+
+    async def capture_order(self, *, order_id: str) -> dict[str, Any]:
+        """Capture an approved PayPal v2 order."""
+        return await self._request("POST", f"/v2/checkout/orders/{order_id}/capture", json_data={})
+
+    async def refund_capture(
+        self,
+        *,
+        capture_id: str,
+        amount: float | None = None,
+        currency: str = "USD",
+        note_to_payer: str = "",
+    ) -> dict[str, Any]:
+        """Refund a PayPal captured payment (partial when amount supplied, full otherwise)."""
+        payload: dict[str, Any] = {}
+        if amount is not None:
+            payload["amount"] = {"value": f"{amount:.2f}", "currency_code": currency.upper()}
+        if note_to_payer:
+            payload["note_to_payer"] = note_to_payer[:255]
+        return await self._request("POST", f"/v2/payments/captures/{capture_id}/refund", json_data=payload)
+
+    async def fetch_payout_batch(self, payout_batch_id: str) -> dict[str, Any]:
+        """Fetch a PayPal merchant payout batch record (distinct from buyer order capture)."""
+        return await self._request("GET", f"/v1/payments/payouts/{payout_batch_id}")

@@ -1226,6 +1226,57 @@
             </div>
           </div>
         </div>
+
+        <!-- P3 Customer Self-Service: Onboarding, Deliverables & Support -->
+        <div class="card" id="portal-p3-cs-card" style="margin-top:20px">
+          <div class="card-header">
+            <div>
+              <h3>Customer Success: Onboarding, Deliverables &amp; Support</h3>
+              <span style="font-size:0.78rem;color:var(--text-muted)">Live account progress, service deliverables, and helpdesk tickets for your workspace</span>
+            </div>
+            <span class="status-pill pending" id="portal-p3-status">Idle</span>
+          </div>
+          <div class="card-body" style="padding:18px;display:grid;gap:18px">
+            <div id="portal-p3-error" style="display:none;padding:10px 14px;border-radius:var(--radius-sm);border:1px solid rgba(239,68,68,0.45);background:rgba(239,68,68,0.12);color:#fecaca;font-size:0.82rem"></div>
+
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+                <strong style="font-size:0.9rem">1. Onboarding Checklist</strong>
+                <span class="card-badge" id="portal-p3-onboarding-summary">Loading...</span>
+              </div>
+              <div id="portal-p3-onboarding-tasks"><div class="empty-state"><p>Loading onboarding checklist...</p></div></div>
+            </div>
+
+            <div style="border-top:1px solid var(--glass-border);padding-top:14px">
+              <strong style="display:block;font-size:0.9rem;margin-bottom:8px">2. Service Deliverables &amp; Outcomes</strong>
+              <div id="portal-p3-deliveries-list"><div class="empty-state"><p>No service deliverables yet</p></div></div>
+            </div>
+
+            <div style="border-top:1px solid var(--glass-border);padding-top:14px">
+              <strong style="display:block;font-size:0.9rem;margin-bottom:8px">3. Support Tickets &amp; Raise a Request</strong>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+                <input id="portal-ticket-subject" class="settings-input" placeholder="Issue summary (e.g. GSC OAuth help)">
+                <select id="portal-ticket-category" class="settings-select">
+                  <option value="onboarding">Onboarding</option>
+                  <option value="technical_issue">Technical Issue</option>
+                  <option value="service_delivery">Service Delivery</option>
+                  <option value="billing">Billing</option>
+                </select>
+                <select id="portal-ticket-priority" class="settings-select">
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM" selected>Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="URGENT">Urgent</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px">
+                <textarea id="portal-ticket-description" class="modal-textarea" rows="2" placeholder="Describe the blocker or support request..." style="flex:1;min-width:220px"></textarea>
+                <button type="button" class="primary-btn" id="btn-portal-create-ticket">Submit Support Ticket</button>
+              </div>
+              <div id="portal-p3-tickets-list"><div class="empty-state"><p>No support tickets raised yet</p></div></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- ══════ PIXEL AI MOBILE & PWA PAGE ══════ -->

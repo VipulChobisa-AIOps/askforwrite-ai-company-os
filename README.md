@@ -205,7 +205,8 @@ All protected endpoints require `X-API-Key` (Owner or Manager key). Requests sup
 | **Warehouse AI** | `POST /v1/inventory/audit` | Manager | Pareto ABC stock classification, dynamic EOQ, and dead-stock alerts |
 | **Customer Portal** | `GET /v1/me/profile`, `/onboarding`, `/deliveries`, `/support/tickets`, `/data-export` | Customer JWT | Profile, onboarding, deliveries, support tickets, CSAT, DPDP export & consent |
 | | `GET /v1/me/subscriptions`, `GET /v1/me/usage`, `POST /v1/me/use-service` | Customer JWT | Active catalog tier, credit consumption, and quota-gated capability execution |
-| **Customer Success (P3)** | `GET /v1/cs/control-centre`, `/customers/{org_id}`, `/ops/readiness`, `/acceptance` | Manager / Owner | P3 lifecycle, readiness gates, delivery QA, health alerts, HITL support/growth, unit economics & DLQ |
+| **Customer Success (P3)** | `GET /v1/cs/control-centre`, `/customers/{org_id}`, `/ops/readiness`, `/acceptance`, `/release-readiness` | Manager / Owner | P3 lifecycle, readiness gates, delivery QA, health alerts, HITL support/growth, unit economics, DLQ & P3.1 release-readiness summary |
+| **GSC Integration (P3.1)** | `GET/POST /v1/me/integrations/gsc/*`, `/v1/cs/integrations/gsc/{org_id}/*` | Customer JWT / Platform Manager | 5-state Search Console verification (`OAuth_CONNECTED` -> `ATTRIBUTION_READY` / `BLOCKED`) with Fernet vault encryption |
 | **Trust Ledger** | `GET /v1/trust/verify` | Public | Cryptographic verification of NIST P-256 Merkle chain integrity |
 | | `GET /v1/trust/blocks` | Manager | Export verified blocks and provenance metadata |
 | **System** | `GET /health` | None | Service liveness, database connectivity, and uptime telemetry |
@@ -243,9 +244,23 @@ python -m pytest -q
 # P1 Modular SME Workforce & P3 Customer Success suites
 python -m pytest tests/test_p1_modular_sme_workforce.py tests/test_p3_customer_success_engine.py -v
 
-# Ruff linting & style enforcement
-python -m ruff check app tests migrations
+# P3.1 Production Verification & Browser E2E (isolated local synthetic server)
+python -m pytest tests/test_p3_1_gsc_integration.py tests/test_p3_1_payment_sandbox_verification.py tests/test_p3_1_postgres_drill.py tests/test_p3_1_verification_registry.py tests/e2e/test_dashboard_e2e.py -v
+
+# PostgreSQL backup & restore drill preflight (non-destructive, redacted output)
+python scripts/pg_backup_restore_drill.py --check-only --json
+
+# Ruff linting & JS syntax verification
+python -m ruff check app tests scripts migrations
+node --check app/dashboard/dashboard.js
 ```
+
+### 3. Production Verification & Release Readiness Reports (P3.1)
+
+Release readiness is aggregated dynamically by [`GET /v1/cs/release-readiness`](app/services/p3_1_verification_registry.py) using explicit non-inflated states (`NOT_TESTED`, `LOCAL_VERIFIED`, `SANDBOX_VERIFIED`, `STAGING_VERIFIED`, `LIVE_VERIFIED`, `BLOCKED`). See:
+- [`docs/P3_1_RELEASE_READINESS_REPORT.md`](docs/P3_1_RELEASE_READINESS_REPORT.md)
+- [`docs/P3_1_BLOCKERS_AND_OWNER_ACTIONS.md`](docs/P3_1_BLOCKERS_AND_OWNER_ACTIONS.md)
+- [`docs/P3_1_ACCEPTANCE_CHECKLIST.md`](docs/P3_1_ACCEPTANCE_CHECKLIST.md)
 
 ### 3. Production Docker Deployment
 ```bash

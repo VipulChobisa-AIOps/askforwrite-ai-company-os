@@ -240,3 +240,36 @@ def get_payment_provider(provider: PaymentProvider | None = None) -> PaymentProv
 def get_all_providers() -> dict[PaymentProvider, PaymentProviderInterface]:
     """Return instances of all registered providers (used for multi-provider webhook handling)."""
     return {p: cls() for p, cls in _provider_registry.items()}
+
+
+def inspect_payment_provider_config() -> dict[str, Any]:
+    """Return non-secret payment provider configuration metadata (never reveals keys or secrets)."""
+    import os
+
+    rzp_id = os.environ.get("RAZORPAY_KEY_ID", "").strip()
+    rzp_sec = os.environ.get("RAZORPAY_KEY_SECRET", "").strip()
+    rzp_wh = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
+    if rzp_id.startswith("rzp_test_"):
+        rzp_mode = "sandbox_test"
+    elif rzp_id.startswith("rzp_live_"):
+        rzp_mode = "live"
+    else:
+        rzp_mode = "unconfigured"
+
+    pp_id = os.environ.get("PAYPAL_CLIENT_ID", "").strip()
+    pp_sec = os.environ.get("PAYPAL_CLIENT_SECRET", "").strip()
+    pp_wh = os.environ.get("PAYPAL_WEBHOOK_ID", "").strip()
+    pp_mode = os.environ.get("PAYPAL_MODE", "live").strip().lower() or "live"
+
+    return {
+        "razorpay": {
+            "credentials_present": bool(rzp_id and rzp_sec),
+            "webhook_secret_present": bool(rzp_wh or rzp_sec),
+            "mode": rzp_mode,
+        },
+        "paypal": {
+            "credentials_present": bool(pp_id and pp_sec),
+            "webhook_id_present": bool(pp_wh),
+            "mode": pp_mode,
+        },
+    }

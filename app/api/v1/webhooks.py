@@ -226,20 +226,54 @@ async def payment_webhook_endpoint(
             verification_mode="WEBHOOK_HMAC_VERIFIED",
         )
 
-    # Step 6b: Handle refund, dispute, settlement, and failed payment lifecycle transitions
+    # Step 6b: Handle capture vs settlement separation, refund normalization, dispute, and failed payment lifecycle
+    settlement_classification: str | None = None
     raw_ev = (event.raw_event_type or event.event_type or "").lower()
-    if any(k in raw_ev for k in ("refund", "dispute", "settlement", "failed", "denied")):
+    if any(
+        k in raw_ev
+        for k in (
+            "captured",
+            "sale.completed",
+            "capture.completed",
+            "refund",
+            "dispute",
+            "settlement",
+            "payout",
+            "failed",
+            "denied",
+        )
+    ):
         from sqlalchemy.orm.attributes import flag_modified
+        from app.db.models import P2PaymentReconciliationRecord
 
         inv = None
         payment_id = None
         payload_data = event.data.get("payload", {}) if isinstance(event.data, dict) else {}
+        res_obj = event.data.get("resource", {}) if isinstance(event.data, dict) else {}
         if "refund" in payload_data:
             payment_id = payload_data["refund"].get("entity", {}).get("payment_id")
         elif "payment" in payload_data:
             payment_id = payload_data["payment"].get("entity", {}).get("id")
+        elif "settlement" in payload_data:
+            s_ent = payload_data["settlement"].get("entity", {}) or {}
+            payment_id = s_ent.get("payment_id") or (s_ent.get("notes") or {}).get("payment_id")
 
-        query_ids = [i for i in (event.resource_id, payment_id) if i]
+        pp_sale_id = res_obj.get("sale_id") or res_obj.get("parent_payment")
+        pp_capture_id = (
+            (res_obj.get("supplementary_data") or {}).get("related_ids", {}).get("capture_id")
+            if isinstance(res_obj, dict)
+            else None
+        )
+        pp_payout_ref = (
+            (res_obj.get("payout_item") or {}).get("sender_item_id")
+            if isinstance(res_obj, dict)
+            else None
+        )
+        query_ids = [
+            str(i)
+            for i in dict.fromkeys((event.resource_id, payment_id, pp_sale_id, pp_capture_id, pp_payout_ref))
+            if i
+        ]
         if query_ids:
             inv = (
                 db.query(InvoiceRecord)
@@ -249,12 +283,25 @@ async def payment_webhook_endpoint(
                 )
                 .first()
             )
+
+        is_payout_settlement = "settlement" in raw_ev or "payout" in raw_ev
+        is_capture_event = (
+            event.event_type == "payment.captured"
+            or "sale.completed" in raw_ev
+            or "capture.completed" in raw_ev
+        ) and not is_payout_settlement
+
         if inv:
             meta = dict(inv.metadata_json or {})
             if "refund" in raw_ev:
                 refund_entity = payload_data.get("refund", {}).get("entity", {}) if payload_data else {}
-                raw_rfnd_amt = refund_entity.get("amount") or (event.data or {}).get("amount")
-                rfnd_amt = float(raw_rfnd_amt) if raw_rfnd_amt is not None else 0.0
+                if event.provider.value == "paypal":
+                    pp_amt = res_obj.get("amount", {}) if isinstance(res_obj, dict) else {}
+                    pp_val = pp_amt.get("value") if isinstance(pp_amt, dict) else None
+                    rfnd_amt = float(round(float(pp_val) * 100)) if pp_val is not None else 0.0
+                else:
+                    raw_rfnd_amt = refund_entity.get("amount") or (event.data or {}).get("amount")
+                    rfnd_amt = float(raw_rfnd_amt) if raw_rfnd_amt is not None else 0.0
                 inv_amt = float(inv.amount or 0.0)
 
                 # Guard against malformed or zero/missing refund amounts stripping tenant access
@@ -267,6 +314,7 @@ async def payment_webhook_endpoint(
                     meta["settlement_status"] = "REFUND_PENDING_VERIFICATION"
                     meta["refund_event_id"] = event.id
                     meta["refund_warning"] = "Missing or non-positive refund amount in webhook payload"
+                    settlement_classification = "REFUND_PENDING_VERIFICATION"
                 else:
                     # Cumulative refund tracking with replay protection
                     prev_refunded = float(meta.get("refunded_amount", 0.0))
@@ -287,6 +335,7 @@ async def payment_webhook_endpoint(
                         inv.status = "refunded"
                         meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
                         meta["refund_event_id"] = event.id
+                        settlement_classification = meta["settlement_status"]
                         # Downgrade organization and revoke paid entitlements on full cumulative refund
                         if inv.org_id:
                             org = db.get(OrganizationRecord, inv.org_id)
@@ -316,6 +365,7 @@ async def payment_webhook_endpoint(
                         inv.status = "partially_refunded"
                         meta["settlement_status"] = "PARTIALLY_REFUNDED"
                         meta["refund_event_id"] = event.id
+                        settlement_classification = "PARTIALLY_REFUNDED"
                         logger.info(
                             "Invoice %s marked partially refunded (cumulative %s/%s); tenant tier maintained",
                             inv.id,
@@ -325,12 +375,26 @@ async def payment_webhook_endpoint(
             elif "dispute" in raw_ev:
                 inv.status = "disputed"
                 meta["settlement_status"] = "DISPUTED"
-            elif "settlement" in raw_ev:
-                meta["settlement_status"] = "SETTLED"
+                meta["payout_settled"] = False
+                settlement_classification = "DISPUTED"
+            elif is_payout_settlement:
+                meta["settlement_status"] = "SETTLED_TO_MERCHANT"
+                meta["payout_settled"] = True
                 meta["settled_event_id"] = event.id
+                meta["settled_at"] = datetime.now(UTC).isoformat()
+                settlement_classification = "SETTLED_TO_MERCHANT"
+            elif is_capture_event:
+                if meta.get("settlement_status") not in ("SETTLED_TO_MERCHANT", "DISPUTED", "REFUND_COMPLETED"):
+                    meta["settlement_status"] = "CAPTURED_PENDING_SETTLEMENT"
+                    meta["payout_settled"] = False
+                meta["captured_event_id"] = event.id
+                meta.setdefault("captured_at", datetime.now(UTC).isoformat())
+                settlement_classification = meta.get("settlement_status", "CAPTURED_PENDING_SETTLEMENT")
             elif "failed" in raw_ev or "denied" in raw_ev:
                 inv.status = "failed"
                 meta["settlement_status"] = "PAYMENT_FAILED"
+                meta["payout_settled"] = False
+                settlement_classification = "PAYMENT_FAILED"
             inv.metadata_json = meta
             flag_modified(inv, "metadata_json")
 
@@ -346,6 +410,30 @@ async def payment_webhook_endpoint(
                     org_id=inv.org_id,
                     reason=f"Gateway webhook '{event.event_type}' set invoice {inv.id} to {inv.status}",
                 )
+
+        # Keep P2 reconciliation record explicit on capture vs merchant payout settlement
+        recon_match = None
+        if query_ids:
+            recon_match = (
+                db.query(P2PaymentReconciliationRecord)
+                .filter(P2PaymentReconciliationRecord.checkout_reference.in_(query_ids))
+                .first()
+            )
+        if recon_match and (is_payout_settlement or is_capture_event):
+            rmeta = dict(recon_match.metadata_json or {})
+            if is_payout_settlement:
+                rmeta["settlement_status"] = "SETTLED_TO_MERCHANT"
+                rmeta["payout_settled"] = True
+                rmeta["settled_event_id"] = event.id
+                rmeta["settled_at"] = datetime.now(UTC).isoformat()
+                settlement_classification = "SETTLED_TO_MERCHANT"
+            elif is_capture_event and rmeta.get("settlement_status") != "SETTLED_TO_MERCHANT":
+                rmeta["settlement_status"] = "CAPTURED_PENDING_SETTLEMENT"
+                rmeta["payout_settled"] = False
+                rmeta["captured_event_id"] = event.id
+                settlement_classification = "CAPTURED_PENDING_SETTLEMENT"
+            recon_match.metadata_json = rmeta
+            flag_modified(recon_match, "metadata_json")
 
     # Step 6c: Subscription renewal cycle credit replenishment, P3 lifecycle sync, or cancellation revoking
     p3_subscription_sync = None
@@ -442,6 +530,8 @@ async def payment_webhook_endpoint(
         resp_payload["p2_reconciliation"] = p2_reconciliation
     if p3_subscription_sync:
         resp_payload["p3_subscription_sync"] = p3_subscription_sync
+    if settlement_classification:
+        resp_payload["settlement_classification"] = settlement_classification
 
     return resp_payload
 

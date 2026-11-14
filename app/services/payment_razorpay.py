@@ -70,6 +70,10 @@ _RAZORPAY_EVENT_MAP: dict[str, str] = {
     "payment.authorized": "payment.authorized",
     "payment.captured": "payment.captured",
     "payment.failed": "payment.failed",
+    "refund.created": "payment.refunded",
+    "refund.processed": "payment.refunded",
+    "settlement.processed": "settlement.processed",
+    "payment.dispute.created": "payment.disputed",
 }
 
 
@@ -79,10 +83,11 @@ class RazorpayProvider(PaymentProviderInterface):
 
     BASE_URL = "https://api.razorpay.com/v1"
 
-    def __init__(self) -> None:
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._key_id = os.environ.get("RAZORPAY_KEY_ID", "")
         self._key_secret = os.environ.get("RAZORPAY_KEY_SECRET", "")
         self._webhook_secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET") or self._key_secret
+        self._transport = transport
         if not self._key_id:
             logger.warning("RAZORPAY_KEY_ID is not configured")
 
@@ -103,7 +108,7 @@ class RazorpayProvider(PaymentProviderInterface):
         params: dict | None = None,
     ) -> dict[str, Any]:
         url = f"{self.BASE_URL}/{path.lstrip('/')}"
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             try:
                 response = await client.request(
                     method=method,
@@ -357,6 +362,10 @@ class RazorpayProvider(PaymentProviderInterface):
             resource_type = "refund"
             entity = entity_data["refund"].get("entity", {})
             resource_id = entity.get("id", "")
+        elif "settlement" in entity_data:
+            resource_type = "settlement"
+            entity = entity_data["settlement"].get("entity", {})
+            resource_id = entity.get("id", "")
         elif "order" in entity_data:
             resource_type = "order"
             entity = entity_data["order"].get("entity", {})
@@ -387,3 +396,56 @@ class RazorpayProvider(PaymentProviderInterface):
             resource_type=resource_type,
             data=data,
         )
+
+    async def create_order(
+        self,
+        *,
+        amount_minor: int,
+        currency: str = "INR",
+        receipt: str = "",
+        notes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a Razorpay Order in minor currency units (paise/cents)."""
+        payload: dict[str, Any] = {
+            "amount": int(amount_minor),
+            "currency": currency.upper(),
+            "payment_capture": 0,
+        }
+        if receipt:
+            payload["receipt"] = receipt[:40]
+        if notes:
+            payload["notes"] = notes
+        return await self._request("POST", "/orders", json_data=payload)
+
+    async def capture_payment(
+        self,
+        *,
+        payment_id: str,
+        amount_minor: int,
+        currency: str = "INR",
+    ) -> dict[str, Any]:
+        """Capture an authorized Razorpay payment."""
+        return await self._request(
+            "POST",
+            f"/payments/{payment_id}/capture",
+            json_data={"amount": int(amount_minor), "currency": currency.upper()},
+        )
+
+    async def refund_payment(
+        self,
+        *,
+        payment_id: str,
+        amount_minor: int | None = None,
+        notes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Initiate a full or partial Razorpay refund."""
+        payload: dict[str, Any] = {}
+        if amount_minor is not None:
+            payload["amount"] = int(amount_minor)
+        if notes:
+            payload["notes"] = notes
+        return await self._request("POST", f"/payments/{payment_id}/refund", json_data=payload)
+
+    async def fetch_settlement(self, settlement_id: str) -> dict[str, Any]:
+        """Fetch an actual merchant settlement record (distinct from buyer payment capture)."""
+        return await self._request("GET", f"/settlements/{settlement_id}")

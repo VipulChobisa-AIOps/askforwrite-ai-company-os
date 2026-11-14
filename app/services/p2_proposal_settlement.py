@@ -520,7 +520,14 @@ def reconcile_verified_payment(
             received_amount=received_amount,
             currency=currency.upper(),
             verification_state="WEBHOOK_VERIFIED",
-            metadata_json={"verification_mode": verification_mode, "email": email, "company_name": company_name},
+            metadata_json={
+                "verification_mode": verification_mode,
+                "settlement_status": "CAPTURED_PENDING_SETTLEMENT",
+                "payout_settled": False,
+                "captured_event_id": provider_event_id,
+                "email": email,
+                "company_name": company_name,
+            },
         )
         db.add(recon)
     else:
@@ -528,6 +535,9 @@ def reconcile_verified_payment(
         recon.received_amount = received_amount
         meta = dict(recon.metadata_json or {})
         meta["verification_mode"] = verification_mode
+        meta.setdefault("settlement_status", "CAPTURED_PENDING_SETTLEMENT")
+        meta.setdefault("payout_settled", False)
+        meta["captured_event_id"] = provider_event_id
         if email:
             meta["email"] = email
         if company_name:

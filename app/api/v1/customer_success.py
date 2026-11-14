@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import P3GrowthOpportunityRecord, P3ImprovementItemRecord
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, require_manager, require_owner, require_platform_manager
 from app.services.p3_customer_success import (
     confirm_customer_activation,
     create_or_get_onboarding_workflow,
@@ -59,6 +59,7 @@ from app.services.p3_revenue_growth import (
     serialize_growth_opportunity,
     set_customer_cost_budget,
 )
+from app.services.p3_1_verification_registry import get_release_readiness_summary
 from app.services.p3_support_improvements import (
     add_ticket_message,
     create_support_ticket,
@@ -69,11 +70,22 @@ from app.services.p3_support_improvements import (
     synthesize_improvement_loop,
     transition_ticket_state,
 )
+from app.services.gsc_integration import (
+    GscIntegrationError,
+    build_gsc_oauth_authorization_url,
+    disconnect_gsc_account,
+    exchange_gsc_oauth_code,
+    fetch_gsc_search_analytics,
+    get_gsc_status,
+    verify_and_select_gsc_property,
+)
 
 router = APIRouter(prefix="/v1/cs", tags=["P3 Customer Success & Growth Engine"])
 
 
 def _handle_service_err(exc: Exception) -> HTTPException:
+    if isinstance(exc, GscIntegrationError):
+        return HTTPException(status_code=exc.status_code, detail=f"{exc.code}: {exc.message}")
     if isinstance(exc, CostBudgetExceededError):
         return HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc))
     if isinstance(exc, PermissionError):
@@ -1112,3 +1124,142 @@ def cs_update_acceptance(
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
+
+
+# ── P3.1 Google Search Console Integration & Attribution ────────────────────
+
+
+class GscOAuthUrlRequest(BaseModel):
+    redirect_uri: str | None = Field(default=None, max_length=500)
+    scopes: list[str] | None = None
+
+
+class GscOAuthExchangeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+    state: str = Field(min_length=1, max_length=500)
+    redirect_uri: str | None = Field(default=None, max_length=500)
+
+
+class GscPropertyVerifyRequest(BaseModel):
+    site_url: str = Field(min_length=3, max_length=500)
+
+
+class GscAnalyticsQueryRequest(BaseModel):
+    start_date: str = Field(min_length=10, max_length=10)
+    end_date: str = Field(min_length=10, max_length=10)
+    dimensions: list[str] | None = None
+    row_limit: int = Field(default=250, ge=1, le=5000)
+    baseline_start_date: str | None = Field(default=None, max_length=10)
+    baseline_end_date: str | None = Field(default=None, max_length=10)
+    delivery_id: str | None = Field(default=None, max_length=64)
+    claimed_askforwrite_caused: bool = False
+
+
+@router.get("/integrations/gsc/{org_id}/status", summary="Inspect GSC integration verification state")
+def cs_gsc_status(
+    org_id: str,
+    _principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return get_gsc_status(db, org_id=org_id)
+
+
+@router.post("/integrations/gsc/{org_id}/oauth/url", summary="Generate GSC OAuth 2.0 consent URL with CSRF state")
+def cs_gsc_oauth_url(
+    org_id: str,
+    body: GscOAuthUrlRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return build_gsc_oauth_authorization_url(
+            db,
+            org_id=org_id,
+            redirect_uri=body.redirect_uri,
+            scopes=body.scopes,
+            actor=principal.subject,
+        )
+    except Exception as exc:
+        raise _handle_service_err(exc) from exc
+
+
+@router.post("/integrations/gsc/{org_id}/oauth/exchange", summary="Exchange GSC OAuth code and encrypt tokens")
+def cs_gsc_oauth_exchange(
+    org_id: str,
+    body: GscOAuthExchangeRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return exchange_gsc_oauth_code(
+            db,
+            org_id=org_id,
+            code=body.code,
+            state=body.state,
+            redirect_uri=body.redirect_uri,
+            actor=principal.subject,
+        )
+    except Exception as exc:
+        raise _handle_service_err(exc) from exc
+
+
+@router.post("/integrations/gsc/{org_id}/properties/verify", summary="Verify and bind a GSC property to organization")
+def cs_gsc_verify_property(
+    org_id: str,
+    body: GscPropertyVerifyRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return verify_and_select_gsc_property(
+            db,
+            org_id=org_id,
+            site_url=body.site_url,
+            actor=principal.subject,
+        )
+    except Exception as exc:
+        raise _handle_service_err(exc) from exc
+
+
+@router.post("/integrations/gsc/{org_id}/analytics/query", summary="Fetch GSC searchAnalytics and persist attribution evidence")
+def cs_gsc_analytics_query(
+    org_id: str,
+    body: GscAnalyticsQueryRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return fetch_gsc_search_analytics(
+            db,
+            org_id=org_id,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            dimensions=body.dimensions,
+            row_limit=body.row_limit,
+            baseline_start_date=body.baseline_start_date,
+            baseline_end_date=body.baseline_end_date,
+            delivery_id=body.delivery_id,
+            claimed_askforwrite_caused=body.claimed_askforwrite_caused,
+            actor=principal.subject,
+        )
+    except Exception as exc:
+        raise _handle_service_err(exc) from exc
+
+
+@router.post("/integrations/gsc/{org_id}/disconnect", summary="Revoke/remove GSC OAuth tokens and mark BLOCKED")
+def cs_gsc_disconnect(
+    org_id: str,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return disconnect_gsc_account(db, org_id=org_id, actor=principal.subject)
+
+
+@router.get("/release-readiness", summary="Aggregate honest P3.1 production verification & release-readiness summary")
+def cs_release_readiness(
+    org_id: str | None = None,
+    probe_live_health: bool = False,
+    _principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    return get_release_readiness_summary(db, org_id=org_id, probe_live_health=probe_live_health)

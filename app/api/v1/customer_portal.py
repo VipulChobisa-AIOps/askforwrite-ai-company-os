@@ -39,6 +39,12 @@ from app.security.auth import (
     verify_password,
 )
 from app.services.catalog import CATALOG, build_payment_link, get_all_packages, get_package
+from app.api.v1.customer_success import (
+    GscAnalyticsQueryRequest,
+    GscOAuthExchangeRequest,
+    GscOAuthUrlRequest,
+    GscPropertyVerifyRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1967,4 +1973,127 @@ def update_tenant_consent_preferences(
         retention_policy=None,
         actor=principal.subject,
     )
+
+
+def _require_tenant_org(principal: APIPrincipal) -> str:
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return principal.org_id
+
+
+def _run_portal_gsc(fn: Any) -> dict[str, Any]:
+    from app.services.gsc_integration import GscIntegrationError
+
+    try:
+        return fn()
+    except GscIntegrationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=f"{exc.code}: {exc.message}") from exc
+
+
+@router.get("/integrations/gsc/status", summary="Get tenant Google Search Console verification state")
+def tenant_gsc_status(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import get_gsc_status
+
+    org_id = _require_tenant_org(principal)
+    return get_gsc_status(db, org_id=org_id)
+
+
+@router.post("/integrations/gsc/oauth/url", summary="Generate tenant GSC OAuth 2.0 consent URL")
+def tenant_gsc_oauth_url(
+    body: GscOAuthUrlRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import build_gsc_oauth_authorization_url
+
+    org_id = _require_tenant_org(principal)
+    return _run_portal_gsc(
+        lambda: build_gsc_oauth_authorization_url(
+            db,
+            org_id=org_id,
+            redirect_uri=body.redirect_uri,
+            scopes=body.scopes,
+            actor=principal.subject,
+        )
+    )
+
+
+@router.post("/integrations/gsc/oauth/exchange", summary="Exchange tenant GSC OAuth authorization code")
+def tenant_gsc_oauth_exchange(
+    body: GscOAuthExchangeRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import exchange_gsc_oauth_code
+
+    org_id = _require_tenant_org(principal)
+    return _run_portal_gsc(
+        lambda: exchange_gsc_oauth_code(
+            db,
+            org_id=org_id,
+            code=body.code,
+            state=body.state,
+            redirect_uri=body.redirect_uri,
+            actor=principal.subject,
+        )
+    )
+
+
+@router.post("/integrations/gsc/properties/verify", summary="Verify tenant Search Console property access")
+def tenant_gsc_verify_property(
+    body: GscPropertyVerifyRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import verify_and_select_gsc_property
+
+    org_id = _require_tenant_org(principal)
+    return _run_portal_gsc(
+        lambda: verify_and_select_gsc_property(
+            db,
+            org_id=org_id,
+            site_url=body.site_url,
+            actor=principal.subject,
+        )
+    )
+
+
+@router.post("/integrations/gsc/analytics/query", summary="Query verified GSC analytics for tenant organization")
+def tenant_gsc_analytics_query(
+    body: GscAnalyticsQueryRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import fetch_gsc_search_analytics
+
+    org_id = _require_tenant_org(principal)
+    return _run_portal_gsc(
+        lambda: fetch_gsc_search_analytics(
+            db,
+            org_id=org_id,
+            start_date=body.start_date,
+            end_date=body.end_date,
+            dimensions=body.dimensions,
+            row_limit=body.row_limit,
+            baseline_start_date=body.baseline_start_date,
+            baseline_end_date=body.baseline_end_date,
+            delivery_id=body.delivery_id,
+            claimed_askforwrite_caused=body.claimed_askforwrite_caused,
+            actor=principal.subject,
+        )
+    )
+
+
+@router.post("/integrations/gsc/disconnect", summary="Disconnect tenant Google Search Console integration")
+def tenant_gsc_disconnect(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.gsc_integration import disconnect_gsc_account
+
+    org_id = _require_tenant_org(principal)
+    return disconnect_gsc_account(db, org_id=org_id, actor=principal.subject)
 

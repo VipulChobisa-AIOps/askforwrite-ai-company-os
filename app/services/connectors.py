@@ -268,6 +268,28 @@ CONNECTOR_SPECS: dict[str, ConnectorSpec] = {
         limitations="None for local analytical computations; requires tenant entitlement and credits.",
         verification_method="In-process self-test & ECDSA P-256 ledger verification.",
     ),
+    "google_search_console": ConnectorSpec(
+        connector_id="google_search_console",
+        provider="Google Search Console API v3",
+        display_name="Google Search Console (OAuth 2.0 + Attribution)",
+        service_category="marketing_seo",
+        purpose="Verified OAuth 2.0 property ownership, Search Analytics queries, and organic attribution.",
+        authentication_type="oauth2",
+        required_permissions=("webmasters.readonly",),
+        required_env_vars=("GSC_CLIENT_ID", "GSC_CLIENT_SECRET", "GSC_REDIRECT_URI"),
+        configuration_schema={
+            "type": "object",
+            "properties": {
+                "selected_property": {"type": "string"},
+                "redirect_uri": {"type": "string"},
+                "granted_scopes": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        default_capability_state="BLOCKED",
+        fallback_behavior="Blocks attribution claims until OAuth_CONNECTED -> PROPERTY_VERIFIED -> DATA_FETCH_VERIFIED -> ATTRIBUTION_READY.",
+        limitations="Requires OAuth consent, verified property access (siteOwner/siteFullUser/siteRestrictedUser), and baseline searchAnalytics window.",
+        verification_method="OAuth 2.0 code exchange + webmasters/v3/sites permission check + searchAnalytics/query test.",
+    ),
 }
 
 
@@ -294,7 +316,10 @@ def serialize_connector(spec: ConnectorSpec, db_state: ConnectorStateRecord | No
         cap_state = db_state.capability_state
         last_verified_at = db_state.last_verified_at.isoformat() if db_state.last_verified_at else None
         last_error = db_state.last_error
-        config_summary = redact_secrets(db_state.config_summary or {})
+        clean_summary = dict(db_state.config_summary or {})
+        clean_summary.pop("vault_cipher_payload", None)
+        clean_summary.pop("oauth_state_hash", None)
+        config_summary = redact_secrets(clean_summary)
         env_label = db_state.environment
     else:
         # Critical truthfulness rule: key presence NEVER auto-sets LIVE_VERIFIED!
