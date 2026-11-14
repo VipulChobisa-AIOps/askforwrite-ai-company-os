@@ -1771,3 +1771,109 @@ class P6SeoBaselineRecord(Base):
     __table_args__ = (
         Index("ix_p6_seo_org_vertical", "org_id", "industry_vertical"),
     )
+
+
+class P7DelegationPlanRecord(Base):
+    """P7 multi-agent delegation DAG with cycle, depth, and credit budget enforcement."""
+
+    __tablename__ = "p7_delegation_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    nodes_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    max_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
+    computed_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    credit_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    credits_consumed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="PLANNED")
+    execution_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="SIMULATION")
+    execution_results_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p7_dag_org_status", "org_id", "status"),
+    )
+
+
+class P7TenantMemoryRecord(Base):
+    """P7 tenant-isolated persistent agent memory with provenance, TTL, and DPDP purge support."""
+
+    __tablename__ = "p7_tenant_memories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    namespace: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    memory_key: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(48), nullable=False, default="USER_CONFIG")
+    source_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p7_mem_org_ns", "org_id", "namespace", "is_deleted"),
+    )
+
+
+class P7AutonomyPolicyRecord(Base):
+    """P7 5-level governed agent autonomy policy (LEVEL_0..LEVEL_4 only; HITL enforced)."""
+
+    __tablename__ = "p7_autonomy_policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    agent_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    autonomy_level: Mapped[str] = mapped_column(String(48), index=True, nullable=False, default="LEVEL_2_APPROVAL_GATED")
+    requires_hitl_for_external: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    max_daily_budget_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    is_paused: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
+    pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    min_eval_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
+    approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p7_autonomy_org_agent", "org_id", "agent_id", "is_paused"),
+    )
+
+
+class P7AgentEvalRunRecord(Base):
+    """P7 continuous agent evaluation record that triggers automatic pause on threshold breach."""
+
+    __tablename__ = "p7_agent_eval_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    agent_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    eval_suite_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False)
+    safety_score: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
+    passed: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=True)
+    auto_paused_triggered: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
+    metrics_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_p7_eval_org_agent", "org_id", "agent_id", "passed"),
+    )

@@ -4383,6 +4383,7 @@
       if (page === 'p4-growth') p4LoadControlCentre();
       if (page === 'p5-scale') p5LoadControlCentre();
       if (page === 'p6-packs') p6LoadControlCentre();
+      if (page === 'p7-autonomy') p7LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
@@ -4390,6 +4391,7 @@
     p4BindEvents();
     p5BindEvents();
     p6BindEvents();
+    p7BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -5496,6 +5498,82 @@
     });
   }
 
+  // ── P7 Controlled Autonomous Workforce Controller ─────────
+  async function p7LoadControlCentre() {
+    if (!$('#page-p7-autonomy')) return;
+    try {
+      const res = await api('GET', '/v1/p7/workforce/overview');
+      const sum = res.summary || {};
+      if ($('#p7-kpi-dags')) $('#p7-kpi-dags').textContent = String(sum.dag_plan_count || 0);
+      if ($('#p7-kpi-memories')) $('#p7-kpi-memories').textContent = String(sum.active_memory_count || 0);
+      if ($('#p7-kpi-paused')) $('#p7-kpi-paused').textContent = String(sum.paused_agent_count || 0);
+      if ($('#p7-kpi-eval-fails')) $('#p7-kpi-eval-fails').textContent = String(sum.failed_eval_count || 0);
+
+      if ($('#p7-dags-tbody')) {
+        const dags = res.dag_plans || [];
+        $('#p7-dags-tbody').innerHTML = dags.length
+          ? dags.map(d => `<tr>
+              <td><strong>${escapeHtml(d.name)}</strong></td>
+              <td>${d.computed_depth}/${d.max_depth}</td>
+              <td>${d.credits_consumed}/${d.credit_budget}</td>
+              <td><span class="badge">${escapeHtml(d.status)}</span></td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p7ExecuteDag('${escapeHtml(d.plan_id)}')">Execute Sandbox</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No delegation DAGs planned</td></tr>';
+      }
+
+      if ($('#p7-policies-tbody')) {
+        const pols = res.autonomy_policies || [];
+        $('#p7-policies-tbody').innerHTML = pols.length
+          ? pols.map(p => `<tr>
+              <td>${escapeHtml(p.agent_id)}</td>
+              <td><span class="badge">${escapeHtml(p.autonomy_level)}</span></td>
+              <td>${p.is_paused ? 'PAUSED' : 'Active'}</td>
+              <td>${Number(p.min_eval_threshold || 0.75).toFixed(2)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="4">No autonomy policies configured</td></tr>';
+      }
+    } catch (e) {
+      toast(`Failed to load P7 Autonomy overview: ${e.message}`, 'error');
+    }
+  }
+
+  function p7BindEvents() {
+    $('#btn-p7-refresh-all')?.addEventListener('click', p7LoadControlCentre);
+    $('#btn-p7-save-policy')?.addEventListener('click', async () => {
+      const agentId = ($('#p7-pol-agent')?.value || 'gtm_strategist_agent').trim();
+      const level = ($('#p7-pol-level')?.value || 'LEVEL_2_APPROVAL_GATED').trim();
+      try {
+        await api('PUT', `/v1/p7/workforce/autonomy-policies/${encodeURIComponent(agentId)}`, {
+          autonomy_level: level,
+          requires_hitl_for_external: true,
+          min_eval_threshold: level.startsWith('LEVEL_3') || level.startsWith('LEVEL_4') ? 0.85 : 0.75,
+        });
+        toast('Autonomy policy saved', 'success');
+        await p7LoadControlCentre();
+      } catch (e) {
+        toast(`Policy failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p7-run-eval')?.addEventListener('click', async () => {
+      const agentId = ($('#p7-eval-agent')?.value || 'gtm_strategist_agent').trim();
+      const quality = Number($('#p7-eval-quality')?.value || 0.9);
+      const safety = Number($('#p7-eval-safety')?.value || 0.95);
+      try {
+        await api('POST', '/v1/p7/workforce/evals', {
+          agent_id: agentId,
+          eval_suite_name: 'dashboard_spot_eval',
+          quality_score: quality,
+          safety_score: safety,
+        });
+        toast('Continuous evaluation recorded', 'success');
+        await p7LoadControlCentre();
+      } catch (e) {
+        toast(`Eval failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -5739,6 +5817,16 @@
         await p6LoadControlCentre();
       } catch (e) {
         toast(`Diagnostics failed: ${e.message}`, 'error');
+      }
+    },
+    p7LoadAll: p7LoadControlCentre,
+    p7ExecuteDag: async (planId) => {
+      try {
+        await api('POST', `/v1/p7/workforce/dag-plans/${encodeURIComponent(planId)}/execute`, { execution_mode: 'SIMULATION' });
+        toast('Delegation DAG executed in SIMULATION', 'success');
+        await p7LoadControlCentre();
+      } catch (e) {
+        toast(`DAG execution blocked: ${e.message}`, 'error');
       }
     },
     setApiKey: (key) => {

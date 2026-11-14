@@ -172,6 +172,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
         <span>P6 Industry SME Packs</span>
       </a>
+      <a href="#" class="nav-item" data-page="p7-autonomy" id="nav-p7-autonomy">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg>
+        <span>P7 Autonomous Workforce</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -3001,6 +3005,67 @@
             <table class="cw-table">
               <thead><tr><th>Pack</th><th>Status</th><th>Origin Label</th><th>Action</th></tr></thead>
               <tbody id="p6-deployments-tbody"><tr><td colspan="4">No pack deployments</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P7 Controlled Autonomous Workforce ──────────────────── -->
+      <section class="page" id="page-p7-autonomy">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P7 Controlled Autonomous Workforce</h2>
+            <p class="subtitle" style="margin:4px 0 0;">Delegation DAGs, Tenant-Isolated Memory (TTL/DPDP), 5-Level Autonomy &amp; Continuous Eval Auto-Pause</p>
+          </div>
+          <button type="button" class="primary-btn" id="btn-p7-refresh-all">Refresh P7 Autonomy</button>
+        </div>
+
+        <div class="cw-kpi-row" id="p7-kpis">
+          <div class="cw-kpi"><div class="cw-kpi-label">Delegation DAGs</div><div class="cw-kpi-val" id="p7-kpi-dags">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Active Memories</div><div class="cw-kpi-val" id="p7-kpi-memories">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Paused Agents</div><div class="cw-kpi-val" id="p7-kpi-paused">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Eval Breaches</div><div class="cw-kpi-val" id="p7-kpi-eval-fails">0</div></div>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card">
+            <h3>Configure Bounded Autonomy Level</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p7-pol-agent" class="cw-input" value="gtm_strategist_agent" placeholder="Agent ID"/>
+              <select id="p7-pol-level" class="cw-input">
+                <option value="LEVEL_2_APPROVAL_GATED">LEVEL_2_APPROVAL_GATED</option>
+                <option value="LEVEL_1_ASSIST">LEVEL_1_ASSIST</option>
+                <option value="LEVEL_0_OBSERVE">LEVEL_0_OBSERVE</option>
+                <option value="LEVEL_3_BOUNDED_AUTONOMY">LEVEL_3_BOUNDED_AUTONOMY</option>
+                <option value="LEVEL_4_SUPERVISED_ORCHESTRATION">LEVEL_4_SUPERVISED_ORCHESTRATION</option>
+              </select>
+              <button type="button" class="primary-btn" id="btn-p7-save-policy">Save Autonomy Policy</button>
+            </div>
+          </div>
+          <div class="cw-card">
+            <h3>Run Continuous Agent Eval</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p7-eval-agent" class="cw-input" value="gtm_strategist_agent" placeholder="Agent ID"/>
+              <input id="p7-eval-quality" class="cw-input" type="number" step="0.05" min="0" max="1" value="0.90" placeholder="Quality Score (0-1)"/>
+              <input id="p7-eval-safety" class="cw-input" type="number" step="0.05" min="0" max="1" value="0.95" placeholder="Safety Score (0-1)"/>
+              <button type="button" class="primary-btn" id="btn-p7-run-eval">Record Eval Run</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Delegation DAG Plans</h3>
+            <table class="cw-table">
+              <thead><tr><th>Plan</th><th>Depth</th><th>Budget</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="p7-dags-tbody"><tr><td colspan="5">No delegation DAGs planned</td></tr></tbody>
+            </table>
+          </div>
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Autonomy Policies &amp; Auto-Pause</h3>
+            <table class="cw-table">
+              <thead><tr><th>Agent</th><th>Level</th><th>Paused</th><th>Threshold</th></tr></thead>
+              <tbody id="p7-policies-tbody"><tr><td colspan="4">No autonomy policies configured</td></tr></tbody>
             </table>
           </div>
         </div>

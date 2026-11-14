@@ -944,6 +944,42 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=0,
     ),
+    "autonomy_orchestrator_agent": RegisteredAgent(
+        agent_id="autonomy_orchestrator_agent",
+        agent_name="P7 Bounded Delegation DAG Orchestrator Agent",
+        description="Plans and audits cycle-checked, depth-bounded, credit-budgeted multi-agent delegation DAGs.",
+        business_function="orchestration",
+        capabilities=("dag_planning", "cycle_detection", "autonomy_bounds"),
+        supported_tools=("dag_validator", "registry_executor", "memory_namespace_guard"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"summary": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Enforce acyclicity, max_depth, credit budgets, and LEVEL_0..LEVEL_4 bounded autonomy.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "requires_hitl_for_external": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="trust_engine",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "eval_governance_agent": RegisteredAgent(
+        agent_id="eval_governance_agent",
+        agent_name="P7 Continuous Agent Eval & Auto-Pause Agent",
+        description="Evaluates quality and safety thresholds across tenants and pauses agents automatically on breach.",
+        business_function="trust_governance",
+        capabilities=("continuous_eval", "auto_pause_enforcement", "dpdp_memory_audit"),
+        supported_tools=("eval_scorer", "autonomy_pause_switch"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"evals": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Automatically pause autonomy policies when quality or safety eval drops below threshold.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="trust_engine",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
 }
 
 
@@ -1835,6 +1871,33 @@ def _dispatch_domain_agent(
             "uses_external_provider": False,
             "fallback_used": False,
             "provider_request_id": f"p6-packs-{overview['summary']['pack_count']}",
+        }
+
+    if agent_id == "autonomy_orchestrator_agent":
+        from app.services.p7_autonomy_workforce import compute_p7_overview
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        ov = compute_p7_overview(db, org_id=org_filter)
+        return {
+            "output": {"summary": ov["summary"], "dag_count": len(ov["dag_plans"])},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p7-dag-{ov['summary']['dag_plan_count']}",
+        }
+
+    if agent_id == "eval_governance_agent":
+        from app.services.p7_autonomy_workforce import list_agent_evaluations, list_autonomy_policies
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        evals = list_agent_evaluations(db, org_id=org_filter)
+        policies = list_autonomy_policies(db, org_id=org_filter)
+        return {
+            "output": {"eval_count": len(evals), "evals": evals, "paused_policies": sum(1 for p in policies if p["is_paused"])},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p7-eval-{len(evals)}",
         }
 
     # Default ceo_manager_agent orchestrator
