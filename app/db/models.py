@@ -1444,3 +1444,118 @@ class P3AcceptanceStepRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
+
+
+class P4IcpProfileRecord(Base):
+    """P4 Ideal Customer Profile (ICP) definition scoped by tenant or platform GTM workspace."""
+
+    __tablename__ = "p4_icp_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    industry: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    geography: Mapped[str] = mapped_column(String(120), nullable=False, default="India")
+    company_size_range: Mapped[str] = mapped_column(String(80), nullable=False, default="10-200")
+    buyer_personas_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    pain_points_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    value_propositions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    disqualifiers_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE", index=True)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p4_icp_org_status", "org_id", "status"),
+    )
+
+
+class P4MarketIntelRecord(Base):
+    """P4 provenance-backed market, competitor, and keyword gap intelligence."""
+
+    __tablename__ = "p4_market_intel_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    intel_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    subject_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, default="public_web")
+    collected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    confidence_level: Mapped[str] = mapped_column(String(48), nullable=False, default="OBSERVATION", index=True)
+    verified_facts_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    inferences_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    metadata_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_p4_intel_org_type", "org_id", "intel_type"),
+    )
+
+
+class P4GrowthCampaignRecord(Base):
+    """P4 multi-channel repeatable GTM campaign with HITL approval gating and safety audit."""
+
+    __tablename__ = "p4_growth_campaigns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    channels_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(48), nullable=False, default="DRAFT", index=True)
+    execution_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="SIMULATION", index=True)
+    approval_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    variants_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    budget_cap_inr: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    spend_inr: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    safety_report_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p4_campaign_org_status", "org_id", "status"),
+    )
+
+
+class P4PipelineDealRecord(Base):
+    """P4 structured sales pipeline stage, attribution, and lost-reason tracking (ACTUAL vs SANDBOX)."""
+
+    __tablename__ = "p4_pipeline_deals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    lead_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    company_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    contact_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stage: Mapped[str] = mapped_column(String(48), nullable=False, default="DISCOVERED", index=True)
+    deal_value_inr: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="INR")
+    attribution_source: Mapped[str] = mapped_column(String(64), nullable=False, default="ORGANIC_INBOUND", index=True)
+    evidence_status: Mapped[str] = mapped_column(String(32), nullable=False, default="SANDBOX", index=True)
+    lost_reason: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    next_action: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    owner_actor: Mapped[str] = mapped_column(String(120), nullable=False, default="owner")
+    stage_history_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_p4_deal_org_stage_origin", "org_id", "stage", "evidence_status"),
+    )

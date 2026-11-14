@@ -79,7 +79,7 @@ def generate_creative_assets(
         prompt_recipe = (
             f"Commercial advertising visual for '{product_name}', targeted at {target_audience}. "
             f"Visual style: {visual_style}. Composition: clean center focal point, floating 3D glassmorphic "
-            f"data metrics card showing '+340% Revenue Growth', cinematic studio rim lighting in {color_palette['secondary']}, "
+            f"data metrics card showing 'Verified Pipeline Telemetry', cinematic studio rim lighting in {color_palette['secondary']}, "
             f"ultra-sharp detail, depth of field, premium luxury aesthetic, 8k resolution."
         )
 
@@ -225,7 +225,7 @@ def generate_and_stage_blog(
         f"- Inbound Sales Closer: 24/7 conversational closing on WhatsApp / Web with instant checkout\n\n"
         f"## Verified Performance Benchmarks\n"
         f"- Latency: < 3s real-time conversational response\n"
-        f"- Conversion Uplift: +340% average customer acquisition pipeline increase\n"
+        f"- Workflow Telemetry: Every run emits an 18-field ExecutionEvidence record\n"
         f"- Implementation: Zero-code onboarding in under 5 minutes\n"
     )
 
@@ -236,9 +236,9 @@ def generate_and_stage_blog(
             {"subject": product_name, "predicate": "integrates", "object": "Razorpay and PayPal Checkout"},
         ],
         "authoritative_statistics": [
-            {"metric": "Customer Acquisition Cost Reduction", "value": "80%", "source": "AskforWrite Enterprise Benchmarks 2026"},
+            {"metric": "Execution Auditability", "value": "18-field evidence + Merkle sealing", "source": "AskforWrite Core Architecture"},
             {"metric": "Average Creative Turnaround Time", "value": "< 5 seconds", "source": "Pixel AI Performance Metrics"},
-            {"metric": "Inbound Lead Response Rate", "value": "99.4% within 3s", "source": "Autonomous Closer Live Telemetry"},
+            {"metric": "External Outreach Governance", "value": "HITL approval required before live send", "source": "AskforWrite Governance Policy"},
         ],
         "direct_answer_snippets": [
             {
@@ -278,7 +278,7 @@ def generate_and_stage_blog(
         f"# {title}\n\n"
         f"**Target Audience:** {target_audience}  \n"
         f"**Primary Keyword:** `{primary_kw}` | **Secondary Keywords:** `{', '.join(secondary_kws)}`\n\n"
-        f"## The Bottleneck: Scaling Marketing and Sales Without 10x Headcount\n\n"
+        "## The Bottleneck: Scaling Marketing and Sales Without Fragmented Tools\n\n"
         f"For fast-growing companies and solo founders, managing disparate graphic design tools, freelance copywriters, "
         f"and manual WhatsApp customer inquiries creates costly operational friction. "
         f"**{product_name}** bridges creative generation, organic search authority, and instant sales conversion into an unified autonomous pipeline.\n\n"
@@ -369,7 +369,7 @@ def generate_omnichannel_social_campaign(
         {
             "slide_number": 1,
             "title": f"The Death of the Marketing Agency (And Why {product_name} is Replacing It)",
-            "subtitle": "Swipe to see how top B2B founders cut acquisition costs by 80% in 2026 ➡️",
+            "subtitle": "Swipe to see how B2B teams structure repeatable growth workflows in 2026 ➡️",
         },
         {
             "slide_number": 2,
@@ -378,7 +378,7 @@ def generate_omnichannel_social_campaign(
                 "Canva & Photoshop subscriptions: ₹3,000/mo",
                 "Copywriting & SEO agencies: ₹50,000/mo",
                 "SDR salary + commission: ₹40,000/mo",
-                "Total: ₹93,000+/mo with zero guaranteed revenue",
+                "Total: ₹93,000+/mo across disconnected tools with manual handoffs",
             ],
         },
         {
@@ -394,7 +394,7 @@ def generate_omnichannel_social_campaign(
             "slide_number": 4,
             "title": "Autonomous Conversion: Speed to Lead Wins",
             "points": [
-                "78% of B2B buyers buy from the vendor that responds first",
+                "Consistent inbound triage & HITL-reviewed follow-ups keep qualified opportunities moving.",
                 "Human SDR response time: 42 minutes average",
                 f"{product_name} WhatsApp Closer response time: < 3 seconds",
             ],
@@ -409,7 +409,7 @@ def generate_omnichannel_social_campaign(
 
     twitter_x_thread = [
         (
-            f"1/4 Most SMBs waste 70% of their marketing budget on bloated retainers.\n\n"
+            "1/4 Many SMEs juggle disconnected creative, SEO, and outreach tools with little auditability.\n\n"
             f"In 2026, an autonomous AI operating system can do the work of a graphic designer, SEO agency, and SDR team for a fraction of the cost.\n\n"
             f"Here is how {product_name} changes the game 🧵👇"
         ),
@@ -443,7 +443,7 @@ def generate_omnichannel_social_campaign(
             "Not at all. The engine uses your exact brand voice, understands Indian market nuances, and delivers human-grade closing with zero delays.\n\n"
             "👉 Tap here to view your live preview and get started: https://os.askforwrite.com/checkout?pkg=growth_all_in_one"
         ),
-        "objection_killer": "Guaranteed 14-day risk-free pilot. If it doesn't double your response speed, 100% refund.",
+        "objection_killer": "Start on a modular tier and validate outputs in sandbox simulation before any live external send.",
         "checkout_cta": "https://os.askforwrite.com/checkout?pkg=growth_all_in_one",
     }
 
@@ -466,8 +466,8 @@ def generate_omnichannel_social_campaign(
             "body": (
                 f"Managing 5 different tools for Canva designs, SEO blogs, Meta ads, and WhatsApp customer chats is draining founder focus.\n\n"
                 f"With {product_name}, our enterprise clients have observed:\n"
-                f"• 80% reduction in customer acquisition costs\n"
-                f"• 10x faster creative turnaround from hours to seconds\n"
+                "• Structured ad & SEO draft generation grounded in your brand brief\n"
+                "• Human-in-the-Loop approval gate before live publishing or outreach\n"
                 f"• Real-time lead response on WhatsApp within 3 seconds\n\n"
                 f"Explore the autonomous operating model: https://os.askforwrite.com/portal"
             ),
@@ -711,26 +711,26 @@ def handle_inbound_sales_chat(
             f"I completely understand budget is a key priority, {prospect_name}. "
             f"Traditional agencies charge ₹40,000 to ₹75,000 every month for basic creatives and copy. "
             f"With our Autonomous Growth Suite at just ₹{package.price_inr:,}/month, you get:\n"
-            f"• Unlimited Pixel AI image & ad designs\n"
+            f"• Plan-quota Pixel AI image & ad designs\n"
             f"• 4-Site SEO blog publishing\n"
             f"• 24/7 automated Inbound WhatsApp sales closer\n\n"
-            f"Most founders recover the entire monthly investment within their first 1-2 customer conversions! "
-            f"Would you like to start this week on our verified beta tier?"
+            f"You can validate every workflow in SIMULATION mode with full credit visibility! "
+            f"Would you like to review our starter or growth modular plan?"
         )
     elif is_objection_complexity:
         reply = (
             f"Not at all, {prospect_name}! There is zero technical or coding knowledge required. "
             f"Our system connects directly via WhatsApp and simple web dashboard. "
-            f"You simply tell the AI your product, and it automatically creates your ads, posts your blogs, "
-            f"and answers your inbound leads automatically. We can have your account live in under 5 minutes."
+            f"You simply tell the AI your product, and it stages your ads, drafts your blogs, "
+            f"and handles inbound qualification under your approval rules with guided onboarding."
         )
     elif is_ready_to_buy:
         checkout_link_attached = True
         reply = (
-            f"Fantastic decision, {prospect_name}! You're going to love having an autonomous growth team working for you 24/7. "
+            f"Fantastic decision, {prospect_name}! Your team can manage campaigns and approvals from one workspace. "
             f"Here is your direct secure onboarding link for the {package.name} (₹{package.price_inr:,}/mo):\n\n"
             f"👉 {checkout_url}\n\n"
-            f"As soon as payment completes, our system auto-provisions your organization workspace and sends your credentials instantly."
+            f"Once payment webhook verification completes, our provisioning workflow prepares your organization workspace and activation checklist."
         )
         lead.status = "QUALIFIED"
         lead.recommended_next_step = "awaiting_payment_capture"

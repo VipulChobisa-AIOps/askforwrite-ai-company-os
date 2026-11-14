@@ -122,6 +122,7 @@
       inventory: 'Warehouse StockSense AI — ABC-XYZ & Inventory Automation',
       'commercial-os': 'P2 Commercial Acquisition & Revenue OS (India Agencies Pilot)',
       'customer-success': 'P3 Customer Success, Retention & Repeatable Growth Engine',
+      'p4-growth': 'P4 Repeatable Growth & GTM Engine',
     };
     $('#page-title').textContent = titles[pageName] || pageName;
 
@@ -136,6 +137,8 @@
       p2LoadControlCentre();
     } else if (pageName === 'customer-success' && typeof p3LoadControlCentre === 'function') {
       p3LoadControlCentre();
+    } else if (pageName === 'p4-growth' && typeof p4LoadControlCentre === 'function') {
+      p4LoadControlCentre();
     }
 
     // Update URL hash
@@ -2560,7 +2563,7 @@
     const ownerTabs = [
       'dashboard', 'leads', 'outreach', 'organizations', 'revenue',
       'field-force', 'growth', 'mobile', 'trust-chain', 'quality', 'mobility', 'inventory',
-      'commercial-os', 'customer-success',
+      'commercial-os', 'customer-success', 'p4-growth',
     ];
     const customerTabs = [
       'portal', 'approvals', 'cw-profile', 'cw-marketplace', 'cw-workforce',
@@ -3535,6 +3538,7 @@
     'cw-settings': 'Settings & 4-Level Emergency Stop',
     'commercial-os': 'P2 Commercial Acquisition & Revenue OS',
     'customer-success': 'P3 Customer Success, Retention & Growth Engine',
+    'p4-growth': 'P4 Repeatable Growth & GTM Engine',
   };
 
   function cwIsCustomer() {
@@ -4376,10 +4380,12 @@
       if (page === 'cw-settings') cwLoadEmergencyStops();
       if (page === 'commercial-os') p2LoadControlCentre();
       if (page === 'customer-success') p3LoadControlCentre();
+      if (page === 'p4-growth') p4LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
     p3BindEvents();
+    p4BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -5194,6 +5200,151 @@
     });
   }
 
+  // ── P4 Growth & GTM Engine Controller ─────────────────────
+  async function p4LoadControlCentre() {
+    try {
+      const res = await api('GET', '/v1/p4/growth/overview');
+      const a = res.analytics || {};
+      const act = a.actual_verified || {};
+      const sbx = a.sandbox_and_simulation || {};
+
+      if ($('#p4-analytics-summary')) {
+        $('#p4-analytics-summary').innerHTML = `
+          <div class="cw-card"><div style="font-size:0.75rem;color:var(--text-muted);">ACTUAL VERIFIED PIPELINE</div><div style="font-size:1.35rem;font-weight:700;">${act.total_deals ?? 0} deals • ₹${(act.won_value_inr ?? 0).toLocaleString()}</div><div style="font-size:0.75rem;color:var(--cyan);">Win Rate: ${act.win_rate_pct === null || act.win_rate_pct === undefined ? 'N/A (0 closed)' : act.win_rate_pct + '%'}</div></div>
+          <div class="cw-card"><div style="font-size:0.75rem;color:var(--text-muted);">SANDBOX / SIMULATION PIPELINE</div><div style="font-size:1.35rem;font-weight:700;">${sbx.total_deals ?? 0} deals • ₹${(sbx.open_pipeline_inr ?? 0).toLocaleString()}</div><div style="font-size:0.75rem;color:var(--text-muted);">Strictly separated from ACTUAL</div></div>
+          <div class="cw-card"><div style="font-size:0.75rem;color:var(--text-muted);">GTM COVERAGE</div><div style="font-size:1.35rem;font-weight:700;">${a.icp_count ?? 0} ICPs • ${a.intel_count ?? 0} Intel • ${a.campaign_count ?? 0} Campaigns</div><div style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(a.analytics_integrity || '')}</div></div>
+        `;
+      }
+
+      if ($('#p4-icp-list')) {
+        const icps = res.icps || [];
+        $('#p4-icp-list').innerHTML = icps.length
+          ? icps.map(i => `<div><strong>${escapeHtml(i.name)}</strong> (${escapeHtml(i.industry)}, ${escapeHtml(i.geography)}) • Pains: ${escapeHtml((i.pain_points || []).join(', ') || '-')}</div>`).join('')
+          : 'No ICPs configured yet';
+      }
+
+      if ($('#p4-intel-list')) {
+        const intel = res.intel || [];
+        $('#p4-intel-list').innerHTML = intel.length
+          ? intel.map(r => `<div><strong>[${escapeHtml(r.intel_type)}]</strong> ${escapeHtml(r.subject_name)} — ${escapeHtml(r.summary)} <code>${escapeHtml(r.confidence_level)}</code>${r.evidence_ref ? ` (${escapeHtml(r.evidence_ref)})` : ''}</div>`).join('')
+          : 'No provenance-verified intel logged yet';
+      }
+
+      if ($('#p4-campaigns-tbody')) {
+        const camps = res.campaigns || [];
+        $('#p4-campaigns-tbody').innerHTML = camps.length
+          ? camps.map(c => `<tr>
+              <td>${escapeHtml(c.name)}</td>
+              <td>${escapeHtml((c.channels || []).join(', '))}</td>
+              <td><span class="badge">${escapeHtml(c.status)}</span></td>
+              <td>${escapeHtml(c.execution_mode)}</td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p4ExecuteCampaign('${escapeHtml(c.campaign_id)}')">Execute Sandbox</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No campaigns staged</td></tr>';
+      }
+
+      if ($('#p4-deals-tbody')) {
+        const deals = res.deals || [];
+        $('#p4-deals-tbody').innerHTML = deals.length
+          ? deals.map(d => `<tr>
+              <td>${escapeHtml(d.company_name)}</td>
+              <td><span class="badge">${escapeHtml(d.evidence_status)}</span></td>
+              <td>${escapeHtml(d.stage)}</td>
+              <td>₹${Number(d.deal_value_inr || 0).toLocaleString()}</td>
+              <td>${escapeHtml(d.attribution_source)}${d.lost_reason ? ` • Lost: ${escapeHtml(d.lost_reason)}` : ''}</td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                ${d.stage === 'DISCOVERED' ? `<button type="button" class="secondary-btn" onclick="window.app.p4TransitionDeal('${escapeHtml(d.deal_id)}', 'QUALIFIED')">Qualify</button>` : ''}
+                ${d.stage === 'QUALIFIED' ? `<button type="button" class="secondary-btn" onclick="window.app.p4TransitionDeal('${escapeHtml(d.deal_id)}', 'PROPOSAL_SENT')">Propose</button>` : ''}
+              </td>
+            </tr>`).join('')
+          : '<tr><td colspan="6">No deals tracked</td></tr>';
+      }
+    } catch (e) {
+      toast(`P4 GTM load error: ${e.message}`, 'error');
+    }
+  }
+
+  function p4BindEvents() {
+    $('#btn-p4-refresh-all')?.addEventListener('click', p4LoadControlCentre);
+    $('#btn-p4-create-icp')?.addEventListener('click', async () => {
+      const name = ($('#p4-icp-name')?.value || '').trim();
+      const industry = ($('#p4-icp-industry')?.value || '').trim();
+      if (!name || !industry) return toast('Provide ICP name and industry', 'error');
+      const painPoints = ($('#p4-icp-pain')?.value || '').split(',').map(s => s.trim()).filter(Boolean);
+      try {
+        await api('POST', '/v1/p4/growth/icps', {
+          name,
+          industry,
+          geography: ($('#p4-icp-geo')?.value || 'India').trim() || 'India',
+          pain_points: painPoints,
+        });
+        toast('ICP profile created', 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Create ICP failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-p4-add-intel')?.addEventListener('click', async () => {
+      const subject = ($('#p4-intel-subject')?.value || '').trim();
+      const summary = ($('#p4-intel-summary')?.value || '').trim();
+      const url = ($('#p4-intel-url')?.value || '').trim() || null;
+      const ref = ($('#p4-intel-ref')?.value || '').trim() || null;
+      if (!subject || !summary) return toast('Provide intel subject and summary', 'error');
+      try {
+        await api('POST', '/v1/p4/growth/intel', {
+          intel_type: $('#p4-intel-type')?.value || 'COMPETITOR',
+          subject_name: subject,
+          summary,
+          source_url: url,
+          evidence_ref: ref,
+          confidence_level: url && ref ? 'VERIFIED_SOURCE' : 'OBSERVATION',
+        });
+        toast('Market intelligence recorded', 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Log intel failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-p4-create-campaign')?.addEventListener('click', async () => {
+      const name = ($('#p4-camp-name')?.value || '').trim();
+      const product = ($('#p4-camp-product')?.value || '').trim() || 'AskforWrite Growth OS';
+      const audience = ($('#p4-camp-audience')?.value || '').trim() || 'Indian SME Founders';
+      if (!name) return toast('Provide campaign name', 'error');
+      try {
+        await api('POST', '/v1/p4/growth/campaigns', {
+          name,
+          objective: `GTM campaign for ${product}`,
+          product_name: product,
+          target_audience: audience,
+          keywords: [product, audience],
+        });
+        toast('Campaign staged for HITL approval', 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Stage campaign failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-p4-create-deal')?.addEventListener('click', async () => {
+      const company = ($('#p4-deal-company')?.value || '').trim();
+      if (!company) return toast('Provide company name', 'error');
+      try {
+        await api('POST', '/v1/p4/growth/deals', {
+          company_name: company,
+          deal_value_inr: Number($('#p4-deal-value')?.value || 0),
+          evidence_status: $('#p4-deal-origin')?.value || 'SANDBOX',
+          attribution_source: ($('#p4-deal-source')?.value || 'ORGANIC_INBOUND').trim(),
+        });
+        toast('Pipeline deal logged', 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Add deal failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -5389,6 +5540,25 @@
       const lead = state.leads.find(l => l.id === id);
       if (lead) {
         toast(`${lead.company} — ${lead.industry} — Score: ${((lead.fit_score || 0) * 100).toFixed(0)}%`, 'info');
+      }
+    },
+    p4LoadAll: p4LoadControlCentre,
+    p4ExecuteCampaign: async (campaignId) => {
+      try {
+        await api('POST', `/v1/p4/growth/campaigns/${encodeURIComponent(campaignId)}/execute`, { execution_mode: 'SIMULATION' });
+        toast('Campaign launched in SIMULATION mode', 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Campaign execution blocked: ${e.message}`, 'error');
+      }
+    },
+    p4TransitionDeal: async (dealId, targetStage) => {
+      try {
+        await api('POST', `/v1/p4/growth/deals/${encodeURIComponent(dealId)}/transition`, { target_stage: targetStage });
+        toast(`Deal moved to ${targetStage}`, 'success');
+        await p4LoadControlCentre();
+      } catch (e) {
+        toast(`Deal transition failed: ${e.message}`, 'error');
       }
     },
     setApiKey: (key) => {

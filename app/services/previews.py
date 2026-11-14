@@ -55,19 +55,19 @@ VERTICAL_BENCHMARKS: dict[str, dict[str, str]] = {
         "current_baseline": "Unscheduled stockouts of critical SKUs and 18-22% capital locked up in slow-moving dead stock (>90 days).",
         "company_os_sla": "99.8% on-shelf availability via dynamic EOQ safety buffers with automated stocktake verification.",
         "hours_saved_weekly": "30 manual audit & stock reconciliation hours weekly",
-        "efficiency_gain": "-22% holding costs; eliminates 95% of preventable stockouts",
+        "efficiency_gain": "Illustrative estimate: EOQ & ABC Pareto sizing flags holding-cost & stockout risks (requires verified ledger data)",
     },
     "field_force": {
         "current_baseline": "Proxy attendance, unverified client visits, and 30% disputed conveyance reimbursement claims.",
         "company_os_sla": "100% cryptographically verified GPS presence, anti-spoofing audit, and automated road mileage payout.",
         "hours_saved_weekly": "15+ supervisor coordination hours weekly",
-        "efficiency_gain": "Cuts conveyance fraud claims by 30%; 0 proxy attendance",
+        "efficiency_gain": "Illustrative workflow target: geofence timestamp verification & odometer anomaly flagging",
     },
     "seo_blog_copilot": {
         "current_baseline": "₹50,000 - ₹1,20,000/mo freelance writer spend; 5-7 days turnaround per article without Schema.org markup.",
         "company_os_sla": "Instant 4-site publishing with Schema.org JSON-LD and citation-ready GEO answer engine optimization.",
         "hours_saved_weekly": "25 copywriting and CMS formatting hours weekly",
-        "efficiency_gain": "8x ROI multiplier; guaranteed inclusion in ChatGPT and Perplexity citations",
+        "efficiency_gain": "Illustrative target: Schema.org JSON-LD & /llms.txt formatting readiness (live ranking requires connected GSC telemetry)",
     },
     "marketing_suite": {
         "current_baseline": "Fragmented ad creative production; expensive agency retainers; slow A/B testing turnaround.",
@@ -79,7 +79,7 @@ VERTICAL_BENCHMARKS: dict[str, dict[str, str]] = {
         "current_baseline": "Solo founder juggling graphics, slow blog writing, and losing leads on WhatsApp after hours.",
         "company_os_sla": "Full autonomous marketing studio + 24/7 inbound closer closing deals in <60 seconds.",
         "hours_saved_weekly": "40+ founder operational hours weekly",
-        "efficiency_gain": "10x ROI multiplier; zero customer inquiry drop-off",
+        "efficiency_gain": "Illustrative target: 24/7 HITL-gated inbound qualification & checkout link staging",
     },
     "trust_engine": {
         "current_baseline": "Tamperable central databases, disputed audit logs, and expensive SOC 2 / ISO compliance preparation.",
@@ -108,7 +108,7 @@ def _generate_sample_deliverable_snippet(
         f"### Customized Operational Deliverable for {company_name}\n"
         f"1. **Automated Workflow Audit**: Identified critical efficiency bottleneck on {domain}.\n"
         f"2. **Algorithmic Solution**: {pkg.name} deploys autonomous intelligence to eliminate manual error.\n"
-        f"3. **Target SLA**: Guaranteed transition from manual baseline to autonomous verification."
+        "3. **Target SLA (Illustrative Sandbox Baseline)**: Structured transition from manual intake to audited workflow execution."
     )
     ai_snippet = llm_generate(
         prompt=prompt,

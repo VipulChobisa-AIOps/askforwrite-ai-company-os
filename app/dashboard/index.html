@@ -160,6 +160,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
         <span>P3 Customer Success &amp; Growth</span>
       </a>
+      <a href="#" class="nav-item" data-page="p4-growth" id="nav-p4-growth">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><polyline points="14 7 21 7 21 14"/></svg>
+        <span>P4 Growth &amp; GTM Engine</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2792,6 +2796,91 @@
               <div id="p3-acceptance-summary" style="font-size:0.82rem;"></div>
             </div>
             <div id="p3-acceptance-steps-list">Loading 12-step P3 verification checklist...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P4 Repeatable Growth & GTM Engine ──────────────────────────────── -->
+      <section class="page" id="page-p4-growth">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P4 Repeatable Growth &amp; GTM Engine</h2>
+            <p class="subtitle" style="margin:4px 0 0;">ICP Management, Provenance-Backed Intel, HITL Campaigns &amp; ACTUAL vs SANDBOX Funnel Analytics</p>
+          </div>
+          <button type="button" class="primary-btn" id="btn-p4-refresh-all">Refresh P4 GTM</button>
+        </div>
+
+        <div id="p4-analytics-summary" class="cw-grid-3" style="margin-bottom:14px;"></div>
+
+        <div class="cw-grid-2" style="margin-bottom:14px;">
+          <div class="cw-card">
+            <h3>1. ICP Definition</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="text" id="p4-icp-name" class="settings-input" placeholder="ICP Name (e.g. India D2C Brands)" style="flex:1;min-width:160px;">
+              <input type="text" id="p4-icp-industry" class="settings-input" placeholder="Industry" style="flex:1;min-width:130px;">
+              <input type="text" id="p4-icp-geo" class="settings-input" value="India" placeholder="Geography" style="width:110px;">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <input type="text" id="p4-icp-pain" class="settings-input" placeholder="Pain points (comma separated)" style="flex:1;min-width:180px;">
+              <button type="button" class="primary-btn" id="btn-p4-create-icp">Create ICP</button>
+            </div>
+            <div id="p4-icp-list" style="margin-top:10px;font-size:0.82rem;color:var(--text-muted);">No ICPs loaded</div>
+          </div>
+
+          <div class="cw-card">
+            <h3>2. Provenance-Verified Market / Competitor Intel</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <select id="p4-intel-type" class="settings-select" style="width:140px;">
+                <option value="COMPETITOR">COMPETITOR</option>
+                <option value="MARKET_TREND">MARKET_TREND</option>
+                <option value="KEYWORD_GAP">KEYWORD_GAP</option>
+                <option value="WIN_LOSS">WIN_LOSS</option>
+              </select>
+              <input type="text" id="p4-intel-subject" class="settings-input" placeholder="Competitor or topic" style="flex:1;min-width:140px;">
+              <input type="url" id="p4-intel-url" class="settings-input" placeholder="https://source-url..." style="flex:1;min-width:160px;">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+              <input type="text" id="p4-intel-ref" class="settings-input" placeholder="Evidence ref (e.g. doc-01)" style="width:160px;">
+              <input type="text" id="p4-intel-summary" class="settings-input" placeholder="Observed factual summary" style="flex:1;min-width:180px;">
+              <button type="button" class="secondary-btn" id="btn-p4-add-intel">Log Intel</button>
+            </div>
+            <div id="p4-intel-list" style="margin-top:10px;font-size:0.82rem;color:var(--text-muted);">No intel records loaded</div>
+          </div>
+        </div>
+
+        <div class="cw-card" style="margin-bottom:14px;">
+          <h3>3. Claim-Checked Multi-Channel Campaigns (HITL Gated)</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+            <input type="text" id="p4-camp-name" class="settings-input" placeholder="Campaign name" style="flex:1;min-width:160px;">
+            <input type="text" id="p4-camp-product" class="settings-input" placeholder="Offer / SKU" style="flex:1;min-width:140px;">
+            <input type="text" id="p4-camp-audience" class="settings-input" placeholder="Target audience" style="flex:1;min-width:140px;">
+            <button type="button" class="primary-btn" id="btn-p4-create-campaign">Stage HITL Campaign</button>
+          </div>
+          <div class="cw-table-wrap">
+            <table class="cw-table">
+              <thead><tr><th>Campaign</th><th>Channels</th><th>Status</th><th>Mode</th><th>Action</th></tr></thead>
+              <tbody id="p4-campaigns-tbody"><tr><td colspan="5">No campaigns yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="cw-card">
+          <h3>4. Pipeline Stages, Attribution &amp; Lost Reason Tracking</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+            <input type="text" id="p4-deal-company" class="settings-input" placeholder="Company name" style="flex:1;min-width:160px;">
+            <input type="number" id="p4-deal-value" class="settings-input" value="15000" min="0" style="width:120px;">
+            <select id="p4-deal-origin" class="settings-select" style="width:120px;">
+              <option value="SANDBOX">SANDBOX</option>
+              <option value="ACTUAL">ACTUAL</option>
+            </select>
+            <input type="text" id="p4-deal-source" class="settings-input" value="ORGANIC_INBOUND" placeholder="Attribution source" style="width:150px;">
+            <button type="button" class="primary-btn" id="btn-p4-create-deal">Add Deal</button>
+          </div>
+          <div class="cw-table-wrap">
+            <table class="cw-table">
+              <thead><tr><th>Company</th><th>Origin</th><th>Stage</th><th>Value (INR)</th><th>Source / Lost Reason</th><th>Advance</th></tr></thead>
+              <tbody id="p4-deals-tbody"><tr><td colspan="6">No deals tracked</td></tr></tbody>
+            </table>
           </div>
         </div>
       </section>

@@ -854,6 +854,42 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=0,
     ),
+    "gtm_strategist_agent": RegisteredAgent(
+        agent_id="gtm_strategist_agent",
+        agent_name="P4 Repeatable GTM Strategist Agent",
+        description="Generates claim-safe multi-channel GTM campaigns and computes ACTUAL vs SANDBOX funnel attribution.",
+        business_function="marketing_campaigns",
+        capabilities=("gtm_strategy", "campaign_staging", "funnel_attribution"),
+        supported_tools=("icp_matcher", "claim_safety_filter", "hitl_campaign_stage", "funnel_analytics"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}, "name": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"analytics": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.2, "fallback": "local_deterministic"},
+        system_instructions="Stage all GTM campaigns behind Owner HITL ApprovalRequest and never mix SANDBOX into ACTUAL revenue funnel totals.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "requires_hitl_to_publish": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=("p4_gtm_campaign_launch",),
+        entitlement_key="marketing_suite",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "competitive_intel_agent": RegisteredAgent(
+        agent_id="competitive_intel_agent",
+        agent_name="P4 Market & Competitor Intelligence Agent",
+        description="Synthesizes provenance-backed market, competitor, and keyword gap insights with strict URL/evidence verification.",
+        business_function="research_intelligence",
+        capabilities=("market_intelligence", "competitor_benchmarking", "keyword_gap_analysis"),
+        supported_tools=("intel_provenance_validator", "icp_scorer"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}, "intel_type": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"intel": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Attach explicit source_url, collected_at, and evidence_ref before marking intelligence VERIFIED_SOURCE.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="evidence_research",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
 }
 
 
@@ -1678,6 +1714,32 @@ def _dispatch_domain_agent(
             "uses_external_provider": False,
             "fallback_used": False,
             "provider_request_id": f"cs-insights-{len(items)}",
+        }
+
+    if agent_id == "gtm_strategist_agent":
+        from app.services.p4_growth_gtm import compute_gtm_funnel_analytics
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        analytics = compute_gtm_funnel_analytics(db, org_id=org_filter)
+        return {
+            "output": analytics,
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p4-gtm-{analytics['campaign_count']}",
+        }
+
+    if agent_id == "competitive_intel_agent":
+        from app.services.p4_growth_gtm import list_market_intel
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        intel = list_market_intel(db, org_id=org_filter, intel_type=input_payload.get("intel_type"))
+        return {
+            "output": {"count": len(intel), "intel": intel},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p4-intel-{len(intel)}",
         }
 
     # Default ceo_manager_agent orchestrator
