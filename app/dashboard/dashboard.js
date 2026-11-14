@@ -120,6 +120,7 @@
       quality: 'Produce Quality AI — Computer Vision Ripeness & Grading',
       mobility: 'Urban Mobility AI — Fleet Demand & Station Rebalancing',
       inventory: 'Warehouse StockSense AI — ABC-XYZ & Inventory Automation',
+      'commercial-os': 'P2 Commercial Acquisition & Revenue OS (India Agencies Pilot)',
     };
     $('#page-title').textContent = titles[pageName] || pageName;
 
@@ -130,6 +131,8 @@
       initMobilityPage();
     } else if (pageName === 'inventory') {
       initInventoryPage();
+    } else if (pageName === 'commercial-os' && typeof p2LoadControlCentre === 'function') {
+      p2LoadControlCentre();
     }
 
     // Update URL hash
@@ -2258,6 +2261,7 @@
     const ownerTabs = [
       'dashboard', 'leads', 'outreach', 'organizations', 'revenue',
       'field-force', 'growth', 'mobile', 'trust-chain', 'quality', 'mobility', 'inventory',
+      'commercial-os',
     ];
     const customerTabs = [
       'portal', 'approvals', 'cw-profile', 'cw-marketplace', 'cw-workforce',
@@ -3230,6 +3234,7 @@
     'cw-analytics': 'Organization Analytics & Reports',
     'cw-billing': 'Subscription & Credit Ledger',
     'cw-settings': 'Settings & 4-Level Emergency Stop',
+    'commercial-os': 'P2 Commercial Acquisition & Revenue OS',
   };
 
   function cwIsCustomer() {
@@ -4069,7 +4074,364 @@
       if (page === 'cw-analytics') cwLoadAnalytics();
       if (page === 'cw-billing') cwLoadBilling();
       if (page === 'cw-settings') cwLoadEmergencyStops();
+      if (page === 'commercial-os') p2LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
+    });
+    p2BindEvents();
+  }
+
+  // ── P2 Commercial Revenue OS Controller ───────────────────
+  function p2SwitchSubtab(tabKey) {
+    $$('.p2-subtab-btn').forEach(btn => {
+      const isAct = btn.dataset.p2tab === tabKey;
+      btn.classList.toggle('active', isAct);
+      btn.classList.toggle('primary-btn', isAct);
+      btn.classList.toggle('secondary-btn', !isAct);
+    });
+    $$('.p2-subtab-panel').forEach(panel => {
+      panel.style.display = panel.id === `p2-panel-${tabKey}` ? 'block' : 'none';
+    });
+  }
+
+  function p2FillLeadForms(leadId, email, company) {
+    if ($('#p2-out-lead-id')) $('#p2-out-lead-id').value = leadId || '';
+    if ($('#p2-out-email') && email) $('#p2-out-email').value = email;
+    if ($('#p2-resp-lead-id')) $('#p2-resp-lead-id').value = leadId || '';
+    if ($('#p2-prop-lead-id')) $('#p2-prop-lead-id').value = leadId || '';
+    if ($('#p2-pipe-lead-id')) $('#p2-pipe-lead-id').value = leadId || '';
+    toast(`Selected ${company || leadId} across P2 forms`, 'info');
+  }
+
+  async function p2LoadControlCentre() {
+    if (cwIsCustomer()) return;
+    try {
+      const [ccRes, offerRes, prosRes, pipeRes, propRes, reconRes, engRes, accRes] = await Promise.all([
+        api('GET', '/v1/commercial/control-centre'),
+        api('GET', '/v1/commercial/offer/managed_seo_content_pilot'),
+        api('GET', '/v1/commercial/prospects'),
+        api('GET', '/v1/commercial/pipeline'),
+        api('GET', '/v1/commercial/proposals'),
+        api('GET', '/v1/commercial/reconciliation'),
+        api('GET', '/v1/commercial/engagements'),
+        api('GET', '/v1/commercial/acceptance-checklist'),
+      ]);
+
+      const vk = ccRes.verified_commercial_metrics || {};
+      const sm = ccRes.simulation_and_test_metrics || {};
+      const caps = ccRes.capability_status_summary || {};
+      if ($('#p2-verified-kpis')) {
+        $('#p2-verified-kpis').innerHTML = `
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+            <div><strong>${Number(vk.real_prospects_discovered || 0)}</strong><br><span style="color:var(--text-muted)">Real Prospects</span></div>
+            <div><strong>${Number(vk.outreach_sent || 0)}</strong><br><span style="color:var(--text-muted)">Live Sends</span></div>
+            <div><strong>${Number(vk.responses_received || 0)}</strong><br><span style="color:var(--text-muted)">Responses</span></div>
+            <div><strong>${Number(vk.proposals_sent || 0)} / ${Number(vk.pending_owner_approvals || 0)}</strong><br><span style="color:var(--text-muted)">Shared Props / Approvals</span></div>
+            <div><strong>${Number(vk.active_paying_customers || 0)}</strong><br><span style="color:var(--text-muted)">Paid Customers</span></div>
+            <div><strong>₹${Number(vk.verified_revenue_inr || 0).toLocaleString('en-IN')}</strong><br><span style="color:var(--text-muted)">Verified Revenue</span></div>
+          </div>
+          <div style="margin-top:8px;font-size:0.75rem;color:var(--text-muted);">
+            Qualified: ${Number(vk.qualified_leads || 0)} &bull; Checkouts: ${Number(vk.checkouts_initiated || 0)} &bull; Verified Payments: ${Number(vk.verified_payments || 0)} &bull; Deliveries Done: ${Number(vk.deliverables_completed || 0)}
+          </div>
+        `;
+      }
+
+      if ($('#p2-sim-and-caps')) {
+        const capHtml = Object.entries(caps).map(([stateKey, list]) => (
+          `<span class="cw-pill ${cwStateClass(stateKey)}" style="margin:2px;">${escapeHtml(stateKey)}: ${escapeHtml((list || []).join(', '))}</span>`
+        )).join('');
+        $('#p2-sim-and-caps').innerHTML = `
+          <div style="margin-bottom:8px;">
+            <span class="cw-pill simulated">Simulated Sends: ${Number(sm.simulated_outreach_sent || 0)}</span>
+            <span class="cw-pill simulated">Simulated Runs: ${Number(sm.simulated_workflow_runs || 0)}</span>
+            <span class="cw-pill blocked">Synthetic Excluded: ${Number(sm.synthetic_prospects_count || 0)}</span>
+            <span class="cw-pill blocked">Pending/Retry Recon: ${Number(sm.pending_or_retry_reconciliations || 0)}</span>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">${escapeHtml(sm.note || 'Strictly excluded from verified_commercial_metrics above.')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">${capHtml}</div>
+        `;
+      }
+
+      if ($('#p2-offer-contract')) {
+        $('#p2-offer-contract').innerHTML = `
+          <strong>${escapeHtml(offerRes.name)}</strong> &mdash; ₹${Number(offerRes.price_inr || 0).toLocaleString('en-IN')} INR / $${Number(offerRes.price_usd || 0)} USD
+          (${escapeHtml(offerRes.billing_type)}, interval: ${escapeHtml(offerRes.billing_interval)})<br>
+          <span style="color:var(--text-muted);">Deliverables: ${(offerRes.deliverables || []).map(escapeHtml).join(' &bull; ')}</span><br>
+          <span style="color:var(--amber,#f59e0b);">Non-guarantees: ${(offerRes.non_guarantees || []).map(escapeHtml).join(' | ')}</span>
+        `;
+      }
+
+      // Render Prospects
+      const prospects = prosRes.prospects || [];
+      if ($('#p2-prospects-tbody')) {
+        $('#p2-prospects-tbody').innerHTML = prospects.length ? prospects.map(p => {
+          const crit = (p.qualification_breakdown && p.qualification_breakdown.criteria) || {};
+          const critText = Object.entries(crit).map(([k, v]) => `${escapeHtml(k)}: ${v.score}/${v.max}`).join(' &bull; ');
+          const contact = (p.public_contacts && p.public_contacts[0]) || {};
+          return `
+            <tr>
+              <td><strong>${escapeHtml(p.company)}</strong><br><span style="font-size:0.75rem;color:var(--text-muted);">${escapeHtml(p.domain)} &bull; ${escapeHtml(p.location)}</span></td>
+              <td><span class="cw-pill ${cwStateClass(p.pipeline_status)}">${escapeHtml(p.pipeline_status)}</span></td>
+              <td><strong>${Number(p.qualification_score || 0).toFixed(1)}</strong>/100<br><span style="font-size:0.72rem;color:var(--text-muted);">${critText}</span></td>
+              <td style="font-size:0.74rem;"><a href="${escapeHtml(p.source_url)}" target="_blank" rel="noopener">${escapeHtml(p.source_type)}</a><br>${escapeHtml(contact.value || 'No public email')} (${contact.verified ? 'Verified' : 'Unverified'})</td>
+              <td style="display:flex;gap:4px;flex-wrap:wrap;">
+                <button type="button" class="secondary-btn" onclick="window.app.p2SelectLead('${escapeHtml(p.lead_id)}','${escapeHtml(contact.value || '')}','${escapeHtml(p.company)}')">Select</button>
+                <button type="button" class="secondary-btn" onclick="window.app.p2ShowBrief('${escapeHtml(p.lead_id)}')">Brief</button>
+                <button type="button" class="secondary-btn" onclick="window.app.p2Requalify('${escapeHtml(p.lead_id)}')">Score</button>
+              </td>
+            </tr>
+          `;
+        }).join('') : '<tr class="empty-row"><td colspan="5"><div class="empty-state"><p>No real agency prospects ingested yet.</p></div></td></tr>';
+      }
+
+      // Render Pipeline
+      const pipe = pipeRes.pipeline || [];
+      if ($('#p2-pipeline-tbody')) {
+        $('#p2-pipeline-tbody').innerHTML = pipe.length ? pipe.map(row => `
+          <tr>
+            <td><strong>${escapeHtml(row.company)}</strong><br><span style="font-size:0.73rem;color:var(--text-muted);">${escapeHtml(row.domain)}</span></td>
+            <td><span class="cw-pill ${cwStateClass(row.pipeline_status)}">${escapeHtml(row.pipeline_status)}</span></td>
+            <td>${Number(row.qualification_score || 0).toFixed(1)}</td>
+            <td style="font-size:0.76rem;">${escapeHtml(row.next_action || '')}</td>
+            <td style="font-size:0.74rem;">Props: ${row.latest_proposal ? escapeHtml(row.latest_proposal.status) : 'NONE'} &bull; Payment: ${escapeHtml(row.payment_status || 'UNPAID')}</td>
+          </tr>
+        `).join('') : '<tr class="empty-row"><td colspan="5"><div class="empty-state"><p>Pipeline is empty.</p></div></td></tr>';
+      }
+
+      // Render Proposals
+      const props = propRes.proposals || [];
+      if ($('#p2-proposals-list')) {
+        $('#p2-proposals-list').innerHTML = props.length ? props.map(pr => {
+          const pricing = pr.pricing || {};
+          return `
+            <div style="border-top:1px solid var(--border);padding:8px 0;">
+              <strong>${escapeHtml(pr.sku_key)}</strong> (${escapeHtml(pricing.currency || 'INR')} ${Number(pricing.total_amount || 0).toLocaleString()}) &mdash;
+              Status: <span class="cw-pill ${cwStateClass(pr.status)}">${escapeHtml(pr.status)}</span>
+              <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                <button type="button" class="secondary-btn" onclick="window.app.p2ShareProposal('${escapeHtml(pr.proposal_id)}')">Share Approved Proposal</button>
+                <button type="button" class="primary-btn" onclick="window.app.p2CreateCheckout('${escapeHtml(pr.proposal_id)}')">Generate DirectPay Link</button>
+                ${pr.checkout_url ? `<a href="${escapeHtml(pr.checkout_url)}" target="_blank" rel="noopener" style="font-size:0.76rem;color:var(--cyan);">Open Checkout ↗</a>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('') : '<div style="color:var(--text-muted);">No structured proposals generated yet.</div>';
+      }
+
+      // Render Reconciliation Queue
+      const recons = reconRes.reconciliations || [];
+      if ($('#p2-reconciliation-list')) {
+        $('#p2-reconciliation-list').innerHTML = recons.length ? recons.map(rc => `
+          <div style="border-top:1px solid var(--border);padding:6px 0;">
+            <span class="cw-pill ${cwStateClass(rc.verification_state)}">${escapeHtml(rc.verification_state)}</span>
+            <strong>${escapeHtml(rc.provider)}</strong> (${escapeHtml(rc.currency)} ${Number(rc.received_amount || 0)} / ${Number(rc.expected_amount || 0)})
+            <div style="font-size:0.74rem;color:var(--text-muted);">Ref: ${escapeHtml(rc.checkout_reference)} &bull; Retries: ${Number(rc.retry_count || 0)} ${rc.last_error ? `&bull; ${escapeHtml(rc.last_error)}` : ''}</div>
+            ${rc.verification_state !== 'ACTIVATION_COMPLETED' ? `<button type="button" class="secondary-btn" style="margin-top:4px;" onclick="window.app.p2RetryRecon('${escapeHtml(rc.reconciliation_id)}')">Retry</button>` : ''}
+          </div>
+        `).join('') : '<div style="color:var(--text-muted);">No checkout or payment events recorded yet.</div>';
+      }
+
+      // Render Engagements
+      const engs = engRes.engagements || [];
+      if ($('#p2-engagements-list')) {
+        $('#p2-engagements-list').innerHTML = engs.length ? engs.map(en => `
+          <div style="border-top:1px solid var(--border);padding:8px 0;">
+            <strong>${escapeHtml(en.org_id)}</strong> (${escapeHtml(en.sku_key)}) &mdash;
+            <span class="cw-pill ${cwStateClass(en.status)}">${escapeHtml(en.status)}</span>
+            <button type="button" class="secondary-btn" style="margin-left:8px;" onclick="window.app.p2SelectEngagement('${escapeHtml(en.engagement_id)}')">Select Engagement</button>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+              Workflow Run: ${escapeHtml(en.workflow_run_id || 'Pending')} &bull; Stage: ${escapeHtml((en.deliverables || {}).stage_status || 'NOT_STARTED')} &bull; Renewal Auto-Charge Disabled: YES
+            </div>
+          </div>
+        `).join('') : '<div style="color:var(--text-muted);">No paid customer engagements activated yet.</div>';
+      }
+
+      // Render 12-Step Acceptance Checklist
+      const steps = accRes.steps || [];
+      const sum = accRes.summary || {};
+      if ($('#p2-acceptance-summary')) {
+        $('#p2-acceptance-summary').innerHTML = `NOT_TESTED: <strong>${sum.NOT_TESTED || 0}</strong> &bull; SANDBOX_VERIFIED: <strong>${sum.SANDBOX_VERIFIED || 0}</strong> &bull; LIVE_VERIFIED: <strong>${sum.LIVE_VERIFIED || 0}</strong>`;
+      }
+      if ($('#p2-acceptance-steps-list')) {
+        $('#p2-acceptance-steps-list').innerHTML = steps.map(st => `
+          <div style="border-top:1px solid var(--border);padding:8px 0;display:grid;grid-template-columns:2fr 1fr 1.5fr auto;gap:8px;align-items:center;">
+            <div>
+              <strong>${escapeHtml(st.title)}</strong><br>
+              <span style="font-size:0.74rem;color:var(--text-muted);">${escapeHtml(st.description)}</span>
+            </div>
+            <select id="p2-step-status-${st.step_number}" class="settings-select">
+              <option value="NOT_TESTED" ${st.verification_status === 'NOT_TESTED' ? 'selected' : ''}>NOT_TESTED</option>
+              <option value="SANDBOX_VERIFIED" ${st.verification_status === 'SANDBOX_VERIFIED' ? 'selected' : ''}>SANDBOX_VERIFIED</option>
+              <option value="LIVE_VERIFIED" ${st.verification_status === 'LIVE_VERIFIED' ? 'selected' : ''}>LIVE_VERIFIED</option>
+            </select>
+            <input id="p2-step-evidence-${st.step_number}" class="settings-input" value="${escapeHtml(st.evidence_summary || '')}" placeholder="Verified evidence summary / ID">
+            <button type="button" class="secondary-btn" onclick="window.app.p2SaveStep(${st.step_number})">Save</button>
+          </div>
+        `).join('');
+      }
+    } catch (e) {
+      toast(`P2 Control Centre load failed: ${e.message}`, 'error');
+    }
+  }
+
+  function p2BindEvents() {
+    $$('#p2-subtabs-bar .p2-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => p2SwitchSubtab(btn.dataset.p2tab));
+    });
+    $('#btn-p2-refresh-all')?.addEventListener('click', p2LoadControlCentre);
+    $('#btn-p2-discover-live')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/commercial/prospects/discover', { query: 'digital marketing SEO agency India', limit: 5 });
+        toast(`Live Discovery: ${res.status} — ${res.reason || `${(res.discovered || []).length} discovered`}`, res.status === 'BLOCKED' ? 'warning' : 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Discovery failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-ingest-prospect')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/commercial/prospects/ingest', {
+          company: ($('#p2-in-company')?.value || '').trim(),
+          website: ($('#p2-in-website')?.value || '').trim(),
+          location: ($('#p2-in-location')?.value || 'India').trim(),
+          source_url: ($('#p2-in-source')?.value || '').trim(),
+          public_email: ($('#p2-in-email')?.value || '').trim() || null,
+          public_contact_verified: !!$('#p2-in-contact-verified')?.checked,
+          actual_services: cwSplitList($('#p2-in-services')?.value),
+          publicly_verifiable_needs: cwSplitList($('#p2-in-needs')?.value),
+          inspect_live_website: !!$('#p2-in-inspect-live')?.checked,
+        });
+        toast(`Prospect ingested: ${res.company} (${res.pipeline_status}, score ${res.qualification_score})`, 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Prospect intake failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-prepare-outreach')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/commercial/outreach/prepare', {
+          lead_id: ($('#p2-out-lead-id')?.value || '').trim(),
+          recipient_email: ($('#p2-out-email')?.value || '').trim() || null,
+          recipient_name: ($('#p2-out-name')?.value || '').trim() || null,
+          custom_notes: ($('#p2-out-notes')?.value || '').trim() || null,
+        });
+        if ($('#p2-last-outreach-id')) $('#p2-last-outreach-id').value = res.outreach_id || '';
+        if ($('#p2-outreach-result')) {
+          $('#p2-outreach-result').innerHTML = `
+            <div class="cw-pill sandbox">Draft Prepared (${escapeHtml(res.status)})</div>
+            <div style="margin-top:6px;">Outreach ID: <code>${escapeHtml(res.outreach_id)}</code> &bull; Approval ID: <code>${escapeHtml(res.approval_id)}</code></div>
+            <div style="margin-top:4px;color:var(--text-muted);">Approve in HITL Approvals tab before clicking Dispatch Approved Draft.</div>
+          `;
+        }
+        toast('Outreach draft created & waiting for Owner approval', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Prepare outreach failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-dispatch-outreach')?.addEventListener('click', async () => {
+      const oid = ($('#p2-last-outreach-id')?.value || '').trim();
+      if (!oid) { toast('Prepare or enter an Outreach ID first', 'warning'); return; }
+      try {
+        const res = await api('POST', `/v1/commercial/outreach/${encodeURIComponent(oid)}/dispatch`, {});
+        toast(`Dispatch finished: ${res.status} (${res.delivery_mode || (res.external_sent ? 'LIVE' : 'SIMULATED')})`, res.external_sent ? 'success' : 'warning');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Dispatch blocked: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-log-response')?.addEventListener('click', async () => {
+      const lid = ($('#p2-resp-lead-id')?.value || '').trim();
+      try {
+        await api('POST', `/v1/commercial/pipeline/${encodeURIComponent(lid)}/responses`, {
+          sentiment: $('#p2-resp-sentiment')?.value || 'interested',
+          summary: ($('#p2-resp-summary')?.value || '').trim(),
+          discovery_notes: ($('#p2-resp-discovery')?.value || '').trim() || null,
+        });
+        toast('Prospect response logged', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Log response failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-create-proposal')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/commercial/proposals', {
+          lead_id: ($('#p2-prop-lead-id')?.value || '').trim(),
+          sku_key: ($('#p2-prop-sku')?.value || 'managed_seo_content_pilot').trim(),
+          currency: $('#p2-prop-currency')?.value || 'INR',
+          custom_problem_statement: ($('#p2-prop-problem')?.value || '').trim() || null,
+        });
+        toast(`Proposal created (${res.status}) — approve in Approvals tab`, 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Create proposal failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-transition-status')?.addEventListener('click', async () => {
+      const lid = ($('#p2-pipe-lead-id')?.value || '').trim();
+      try {
+        await api('POST', `/v1/commercial/pipeline/${encodeURIComponent(lid)}/transition`, {
+          target_status: $('#p2-pipe-status')?.value || 'DISCOVERY',
+          next_action: ($('#p2-pipe-next')?.value || '').trim() || null,
+        });
+        toast('Pipeline status updated cleanly', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Transition failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-submit-onboarding')?.addEventListener('click', async () => {
+      const eid = ($('#p2-eng-id')?.value || '').trim();
+      try {
+        await api('POST', `/v1/commercial/engagements/${encodeURIComponent(eid)}/onboarding`, {
+          target_domain: ($('#p2-onb-domain')?.value || '').trim(),
+          cms_delivery_mode: $('#p2-onb-cms')?.value || 'markdown_html_export',
+          priority_topics: cwSplitList($('#p2-onb-topics')?.value),
+        });
+        toast('Customer onboarding inputs saved', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Onboarding failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-run-delivery')?.addEventListener('click', async () => {
+      const eid = ($('#p2-eng-id')?.value || '').trim();
+      try {
+        const res = await api('POST', `/v1/commercial/engagements/${encodeURIComponent(eid)}/deliver`, {});
+        toast(`Delivery workflow staged: ${res.status}`, 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Delivery workflow failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-complete-delivery')?.addEventListener('click', async () => {
+      const eid = ($('#p2-eng-id')?.value || '').trim();
+      try {
+        await api('POST', `/v1/commercial/engagements/${encodeURIComponent(eid)}/complete-delivery`, {
+          delivery_channel_proof: ($('#p2-deliv-proof')?.value || '').trim(),
+        });
+        toast('Engagement delivery confirmed completed', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Complete delivery failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p2-submit-feedback')?.addEventListener('click', async () => {
+      const eid = ($('#p2-eng-id')?.value || '').trim();
+      try {
+        const res = await api('POST', `/v1/commercial/engagements/${encodeURIComponent(eid)}/feedback-renewal`, {
+          rating: Number($('#p2-fb-rating')?.value || 5),
+          comments: ($('#p2-fb-comments')?.value || '').trim(),
+          interested_in_renewal: $('#p2-fb-renew')?.value === 'true',
+        });
+        if ($('#p2-feedback-result')) {
+          const rec = res.renewal_recommendation || {};
+          $('#p2-feedback-result').innerHTML = `Renewal Recommended: <strong>${escapeHtml(rec.recommended_plan_sku || '')}</strong> (auto_charge_disabled: ${!!rec.auto_charge_disabled})`;
+        }
+        toast('Feedback & renewal recommendation recorded', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Feedback failed: ${e.message}`, 'error');
+      }
     });
   }
 
@@ -4091,6 +4453,76 @@
     cwLoadBilling,
     cwLoadEmergencyStops,
     cwFetchScopedApprovals,
+    p2LoadAll: p2LoadControlCentre,
+    p2SelectLead: p2FillLeadForms,
+    p2ShowBrief: async (leadId) => {
+      try {
+        const b = await api('POST', `/v1/commercial/prospects/${encodeURIComponent(leadId)}/brief`, {});
+        if ($('#p2-brief-viewer')) {
+          $('#p2-brief-viewer').innerHTML = `
+            <strong>${escapeHtml(b.company || leadId)}</strong> (${escapeHtml(b.output_origin || '')})
+            <div style="margin-top:6px;"><strong>Verified Facts:</strong><ul>${(b.verified_facts || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+            <div><strong>Reasonable Inferences:</strong><ul>${(b.reasonable_inferences || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+            <div><strong>Unverified Assumptions (Verify on Call):</strong><ul>${(b.unverified_assumptions || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+            <div><strong>Discovery Questions:</strong><ul>${(b.suggested_discovery_questions || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>
+          `;
+        }
+        toast('Account intelligence brief loaded', 'success');
+      } catch (e) {
+        toast(`Brief generation failed: ${e.message}`, 'error');
+      }
+    },
+    p2Requalify: async (leadId) => {
+      try {
+        await api('POST', `/v1/commercial/prospects/${encodeURIComponent(leadId)}/requalify`, {});
+        toast('Qualification score recalculated', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Requalify failed: ${e.message}`, 'error');
+      }
+    },
+    p2ShareProposal: async (proposalId) => {
+      try {
+        await api('POST', `/v1/commercial/proposals/${encodeURIComponent(proposalId)}/share`, {});
+        toast('Approved proposal shared with buyer', 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Share blocked: ${e.message}`, 'error');
+      }
+    },
+    p2CreateCheckout: async (proposalId) => {
+      try {
+        const res = await api('POST', `/v1/commercial/proposals/${encodeURIComponent(proposalId)}/checkout`, { provider: 'afw_directpay', preferred_rail: 'upi_direct' });
+        toast(`Checkout created (${res.status}) — awaits verified settlement`, 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Checkout blocked: ${e.message}`, 'error');
+      }
+    },
+    p2RetryRecon: async (reconId) => {
+      try {
+        const res = await api('POST', `/v1/commercial/reconciliation/${encodeURIComponent(reconId)}/retry`, {});
+        toast(`Reconciliation retried: ${res.verification_state}`, 'info');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Retry failed: ${e.message}`, 'error');
+      }
+    },
+    p2SelectEngagement: (engagementId) => {
+      if ($('#p2-eng-id')) $('#p2-eng-id').value = engagementId;
+      toast(`Selected engagement ${engagementId}`, 'info');
+    },
+    p2SaveStep: async (stepNumber) => {
+      try {
+        const st = $(`#p2-step-status-${stepNumber}`)?.value || 'NOT_TESTED';
+        const ev = ($(`#p2-step-evidence-${stepNumber}`)?.value || '').trim();
+        await api('POST', `/v1/commercial/acceptance-checklist/${stepNumber}`, { verification_status: st, evidence_summary: ev || null });
+        toast(`Step ${stepNumber} updated to ${st}`, 'success');
+        await p2LoadControlCentre();
+      } catch (e) {
+        toast(`Step update failed: ${e.message}`, 'error');
+      }
+    },
     viewLead: (id) => {
       const lead = state.leads.find(l => l.id === id);
       if (lead) {

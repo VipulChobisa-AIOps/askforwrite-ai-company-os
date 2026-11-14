@@ -189,6 +189,43 @@ async def payment_webhook_endpoint(
     # Auto-provision tenant if confirmed payment or activated subscription
     provision_result = auto_provision_tenant_on_payment(db=db, event=event)
 
+    # P2 Commercial Settlement Reconciliation hook (only after signature + provisioning checks)
+    p2_reconciliation = None
+    if provision_result is not None:
+        from app.services.p2_proposal_settlement import reconcile_verified_payment
+
+        p2_email = str(provision_result.get("email") or "").strip() or None
+        p2_pkg = str(provision_result.get("package_key") or "managed_seo_content_pilot")
+        raw_payload = event.data if isinstance(event.data, dict) else {}
+        p2_amt = 0.0
+        p2_curr = "INR"
+        p2_co = None
+        if event.provider.value == "razorpay":
+            p_entity = (raw_payload.get("payload", {}).get("payment", {}).get("entity", {}) or {})
+            raw_a = p_entity.get("amount", 0)
+            p2_amt = float(raw_a) / 100.0 if raw_a else 0.0
+            p2_curr = str(p_entity.get("currency") or "INR")
+            p2_notes = p_entity.get("notes") or {}
+            p2_co = p2_notes.get("company_name") or p2_notes.get("notes_company") or p2_notes.get("company")
+        elif event.provider.value == "paypal":
+            res = raw_payload.get("resource", {}) or {}
+            amt_obj = res.get("amount", {}) or {}
+            p2_amt = float(amt_obj.get("value", 0.0) or 0.0)
+            p2_curr = str(amt_obj.get("currency_code") or "USD")
+        p2_reconciliation = reconcile_verified_payment(
+            db=db,
+            provider=event.provider.value,
+            provider_event_id=event.id,
+            checkout_reference=event.resource_id,
+            package_key=p2_pkg,
+            received_amount=p2_amt,
+            currency=p2_curr,
+            email=p2_email,
+            company_name=p2_co,
+            provisioning_result=provision_result,
+            verification_mode="WEBHOOK_HMAC_VERIFIED",
+        )
+
     # Step 6b: Handle refund, dispute, settlement, and failed payment lifecycle transitions
     raw_ev = (event.raw_event_type or event.event_type or "").lower()
     if any(k in raw_ev for k in ("refund", "dispute", "settlement", "failed", "denied")):
@@ -297,6 +334,19 @@ async def payment_webhook_endpoint(
             inv.metadata_json = meta
             flag_modified(inv, "metadata_json")
 
+            # Sync P2 reconciliation & customer engagement revocation on full refund, dispute, or failure
+            if inv.status in ("refunded", "disputed", "failed"):
+                from app.services.p2_proposal_settlement import record_payment_failure_or_refund
+
+                record_payment_failure_or_refund(
+                    db,
+                    event_kind=inv.status,
+                    checkout_reference=inv.provider_payment_id or event.resource_id,
+                    provider_event_id=event.id,
+                    org_id=inv.org_id,
+                    reason=f"Gateway webhook '{event.event_type}' set invoice {inv.id} to {inv.status}",
+                )
+
     # Step 6c: Subscription renewal cycle credit replenishment or cancellation revoking
     if any(k in raw_ev for k in ("invoice.paid", "subscription.charged", "subscription.renewed")):
         from sqlalchemy.orm.attributes import flag_modified
@@ -340,6 +390,8 @@ async def payment_webhook_endpoint(
     }
     if provision_result:
         resp_payload["provisioning"] = provision_result
+    if p2_reconciliation:
+        resp_payload["p2_reconciliation"] = p2_reconciliation
 
     return resp_payload
 

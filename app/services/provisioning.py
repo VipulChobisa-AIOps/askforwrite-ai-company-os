@@ -85,8 +85,14 @@ def auto_provision_tenant_on_payment(
         email = payload_data.get("email")
         contact = payload_data.get("contact", "")
         notes = payload_data.get("notes", {}) or {}
-        company_name = notes.get("notes_company") or notes.get("company")
-        package_key = notes.get("notes_package") or notes.get("package") or "company_os_starter"
+        company_name = notes.get("company_name") or notes.get("notes_company") or notes.get("company")
+        package_key = (
+            notes.get("package_key")
+            or notes.get("notes_package")
+            or notes.get("package")
+            or notes.get("sku_key")
+            or "company_os_starter"
+        )
         raw_amt = payload_data.get("amount", 0)
         amount = float(raw_amt) / 100.0 if raw_amt else 0.0
         currency = payload_data.get("currency", "INR")

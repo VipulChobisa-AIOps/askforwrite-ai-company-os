@@ -502,3 +502,34 @@ def verify_connector(
     payload["probe_request_id"] = probe_id
     return payload
 
+
+def check_connector_execution_allowed(
+    db: Session,
+    connector_id: str,
+    *,
+    execution_mode: str | None = None,
+    org_id: str | None = None,
+) -> dict[str, Any]:
+    """Check whether a connector is configured and LIVE_VERIFIED (or mode-compatible) before external calls."""
+    spec = CONNECTOR_SPECS.get(connector_id)
+    if not spec:
+        return {"allowed": False, "capability_state": "BLOCKED", "reason": f"Unknown connector '{connector_id}'"}
+    mode = resolve_execution_mode(execution_mode)
+    db_state = get_connector_record(db, connector_id, org_id or "__platform__")
+    serialized = serialize_connector(spec, db_state, mode)
+    cap_state = str(serialized["capability_state"])
+    if mode == "PRODUCTION":
+        if cap_state != "LIVE_VERIFIED":
+            return {
+                "allowed": False,
+                "capability_state": cap_state,
+                "reason": serialized.get("last_error") or f"{connector_id} connector is {cap_state} (not LIVE_VERIFIED)",
+            }
+        return {"allowed": True, "capability_state": cap_state, "reason": None}
+    allowed = cap_state in ("LIVE_VERIFIED", "SANDBOX_VERIFIED", "LOCAL_ENGINE_VERIFIED")
+    return {
+        "allowed": allowed,
+        "capability_state": cap_state,
+        "reason": None if allowed else (serialized.get("last_error") or f"{connector_id} connector is {cap_state}"),
+    }
+

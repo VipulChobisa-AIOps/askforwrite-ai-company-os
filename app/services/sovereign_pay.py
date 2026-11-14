@@ -1071,6 +1071,22 @@ def verify_sovereign_payment(
 
     provisioning_result = auto_provision_tenant_on_payment(db=db, event=synthetic_event)
 
+    from app.services.p2_proposal_settlement import reconcile_verified_payment
+
+    p2_reconciliation = reconcile_verified_payment(
+        db=db,
+        provider="afw_directpay",
+        provider_event_id=f"sovereign_{session.session_id}",
+        checkout_reference=session.session_id,
+        package_key=session.package_key,
+        received_amount=float(session.amount),
+        currency=session.currency,
+        email=session.customer_email,
+        company_name=session.company_name,
+        provisioning_result=provisioning_result,
+        verification_mode=verification_mode,
+    )
+
     session.status = "COMPLETED"
     session.verification_proof = clean_proof
     session.verified_rail = clean_rail
@@ -1106,6 +1122,7 @@ def verify_sovereign_payment(
             "sealed_by": trust_block.sealed_by,
         },
         "provisioning": provisioning_result,
+        "p2_reconciliation": p2_reconciliation,
         "message": (
             f"Sovereign payment verified on rail '{clean_rail}' with 0% gateway commission. "
             "Multi-tenant workspace, admin account, and paid invoice successfully provisioned."
@@ -1194,6 +1211,23 @@ def confirm_sovereign_payment_by_owner(
 
     provisioning_result = auto_provision_tenant_on_payment(db=db, event=synthetic_event)
 
+    # P2 Commercial Settlement Reconciliation hook on Owner HITL verified settlement
+    from app.services.p2_proposal_settlement import reconcile_verified_payment
+
+    p2_reconciliation = reconcile_verified_payment(
+        db=db,
+        provider="afw_directpay",
+        provider_event_id=f"sovereign_{session.session_id}",
+        checkout_reference=session.session_id,
+        package_key=session.package_key,
+        received_amount=float(session.amount),
+        currency=session.currency,
+        email=session.customer_email,
+        company_name=session.company_name,
+        provisioning_result=provisioning_result,
+        verification_mode=f"OWNER_HITL_VERIFIED:{decided_by}",
+    )
+
     # 3. Update ApprovalRequest record
     approval = (
         db.query(ApprovalRequest)
@@ -1246,6 +1280,7 @@ def confirm_sovereign_payment_by_owner(
             "sealed_by": trust_block.sealed_by,
         },
         "provisioning": provisioning_result,
+        "p2_reconciliation": p2_reconciliation,
         "message": (
             f"Sovereign payment for {session.company_name} confirmed by owner on rail '{session.verified_rail}'. "
             "ECDSA NIST P-256 block sealed, invoice generated, and multi-tenant workspace provisioned."

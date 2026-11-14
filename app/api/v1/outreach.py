@@ -214,6 +214,22 @@ def unsubscribe_prospect_endpoint(
                 out.status = "SUPPRESSED_OPT_OUT"
                 cancelled_outreach.append(out.id)
 
+    # Persist into DB-backed suppression table & sync P2 dossier status
+    from app.db.models import P2ProspectDossierRecord
+    from app.services.suppression import add_db_suppression
+
+    if payload.email:
+        add_db_suppression(db, payload.email, reason=payload.reason or "Recipient opted out", source="unsubscribe_endpoint")
+    if payload.domain:
+        add_db_suppression(db, payload.domain, reason=payload.reason or "Domain opted out", source="unsubscribe_endpoint")
+    for lid in suppressed_leads:
+        add_db_suppression(db, lid, reason=payload.reason or "Lead opted out", source="unsubscribe_endpoint", identifier_type="lead_id")
+        dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=lid).first()
+        if dossier:
+            dossier.pipeline_status = "DO_NOT_CONTACT"
+            dossier.next_action = "Opted out via unsubscribe endpoint"
+            db.add(dossier)
+
     task_id = str(uuid.uuid4())
     db.add(
         AuditLog(
@@ -273,10 +289,10 @@ def record_outreach_reply_endpoint(
             "lead_status": lead.status,
         }
 
-    if record.status not in ("SENT", "REPLIED"):
+    if record.status not in ("SENT", "DISPATCHED", "REPLIED", "SIMULATED_SENT"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Cannot record prospect reply for outreach in status '{record.status}'; outreach must be SENT first.",
+            detail=f"Cannot record prospect reply for outreach in status '{record.status}'; outreach must be SENT or DISPATCHED first.",
         )
 
     record.status = "REPLIED"

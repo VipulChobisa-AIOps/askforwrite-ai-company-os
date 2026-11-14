@@ -19,19 +19,31 @@ Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-ge
 
 ---
 
-## P1 Modular SME Platform & Documentation Index
+## P1 Modular SME Platform & P2 Commercial Revenue OS Index
 
 - **Hosting:** Deployed via Render Blueprint ([`render.yaml`](render.yaml)) (`askforwrite-ai-company-os` production & `askforwrite-ai-company-os-staging` sandbox).
-- **Customer Business Control Center:** Role-separated `/app` PWA (`sw.js`: `afw-os-shell-v4.0-p1-workforce`) featuring 12 sections (`Overview`, `Business Profile`, `Service Marketplace`, `AI Workforce`, `Agent Run Console`, `Workflow Builder`, `Connected Tools`, `Tasks & Execution History`, `Approvals`, `Analytics & Reports`, `Subscription & Billing`, `Settings & Security`).
-- **Unified Registry Counts:** `9` Service Categories, `16` Services, `13` Specialist AI Agents, `11` Connectors, and a strict 7-state capability model (`LIVE_VERIFIED`, `LOCAL_ENGINE_VERIFIED`, `SANDBOX_VERIFIED`, `HUMAN_ASSISTED`, `SIMULATED`, `BLOCKED`, `ROADMAP`).
+- **Dashboard & PWA (`/app`):** Role-separated interface (`sw.js`: `afw-os-shell-v4.0-p1-workforce`) with 12 P1 Modular SME sections plus the **P2 Commercial Revenue OS** owner control centre (`Prospects & Briefs`, `Outreach (HITL) & Responses`, `12-Stage Pipeline, Proposals & Payment`, `Activation, Delivery & Renewal`, and `12-Step Acceptance Checklist`).
+- **Unified Registry Counts:** `9` Service Categories, `16` Services, `20` Specialist AI Agents (`13` P0/P1 + `7` P2 Commercial), `11` Connectors, and a strict 7-state capability model (`LIVE_VERIFIED`, `LOCAL_ENGINE_VERIFIED`, `SANDBOX_VERIFIED`, `HUMAN_ASSISTED`, `SIMULATED`, `BLOCKED`, `ROADMAP`).
+- **P2 Commercial Entry Offer:** Verified catalog offer `managed_seo_content_pilot` (*AskforWrite Managed SEO & Content Pilot (14-Day)*, `INR 4,999` / `USD 59`, `billing_type="managed_pilot_14d"`) supporting India SMB digital marketing & SEO agency acquisition under strict HITL outreach/proposal gates, simulation-vs-live KPI separation, opt-out suppression, and webhook/DirectPay reconciliation.
 
-### Documentation Suite (`docs/`)
+### P2 Commercial Documentation Suite (`docs/`)
 
 | Document | Coverage |
 |---|---|
-| [Architecture](docs/ARCHITECTURE.md) | 6-layer P1 architecture, Alembic revision `g7b2c3d4e5f6`, RBAC & tenant isolation |
-| [API Reference](docs/API_REFERENCE.md) | `/v1/registry/*`, `/v1/workflows/*`, `/v1/me/*`, `/v1/revenue/*`, `/v1/watchdog/*` |
-| [Agent Registry](docs/AGENT_REGISTRY.md) | All 13 registered agents, tool allowlists, HITL gates, and lifecycle |
+| [P2 Commercial Architecture](docs/P2_COMMERCIAL_ARCHITECTURE.md) | 12-stage India agency acquisition journey, verified `managed_seo_content_pilot` scope, P0/P1 reuse |
+| [P2 Data Model & API](docs/P2_COMMERCIAL_DATA_MODEL_AND_API.md) | Alembic revision `h8c3d4e5f6a7` (6 P2 tables) & `/v1/commercial/*` API reference |
+| [P2 Founder Operating Guide](docs/P2_FOUNDER_OPERATING_GUIDE.md) | Daily founder workflow across intake, briefs, HITL outreach, discovery, proposals & renewal |
+| [P2 Payment & Activation Guide](docs/P2_PAYMENT_AND_ACTIVATION_GUIDE.md) | Webhook HMAC + DirectPay UTR settlement, idempotent provisioning & refund revocation |
+| [P2 Real-World Acceptance Checklist](docs/P2_REAL_WORLD_ACCEPTANCE_CHECKLIST.md) | 12-step live verification tracker (`NOT_TESTED` / `SANDBOX_VERIFIED` / `LIVE_VERIFIED`) |
+| [P2 Test & Limitations Report](docs/P2_TEST_AND_LIMITATIONS_REPORT.md) | Exact verification outputs (`448 passed`), sandbox vs live boundaries & launch prerequisites |
+
+### Core P1 Architecture & Operations Suite (`docs/`)
+
+| Document | Coverage |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | 6-layer P1 architecture, RBAC & tenant isolation, P0/P1 schema foundations |
+| [API Reference](docs/API_REFERENCE.md) | `/v1/registry/*`, `/v1/workflows/*`, `/v1/me/*`, `/v1/revenue/*`, `/v1/watchdog/*`, `/v1/commercial/*` |
+| [Agent Registry](docs/AGENT_REGISTRY.md) | All 20 registered agents (`13` P0/P1 + `7` P2), tool allowlists, HITL gates, and lifecycle |
 | [Service Catalog](docs/SERVICE_CATALOG.md) | 9 service categories, 16 services, and preserved commercial catalog SKUs |
 | [Connector Setup](docs/CONNECTOR_SETUP.md) | 11 external/internal connectors, verification checks, and secret redaction |
 | [Subscription Model](docs/SUBSCRIPTION_MODEL.md) | 5 modular SME tiers, 6 modules, 15+ field contracts, atomic credit ledger |

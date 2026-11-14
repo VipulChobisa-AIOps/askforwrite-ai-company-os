@@ -956,3 +956,183 @@ class EmergencyStopRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
+
+
+class P2ProspectDossierRecord(Base):
+    """P2 Prospect Intelligence, 6-criterion Qualification Breakdown, Brief, & 12-stage Sales Pipeline."""
+
+    __tablename__ = "p2_prospect_dossiers"
+    __table_args__ = (
+        UniqueConstraint("lead_id", name="uq_p2_dossier_lead_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    lead_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    normalized_company_key: Mapped[str] = mapped_column(String(250), index=True, nullable=False)
+    normalized_domain: Mapped[str] = mapped_column(String(250), index=True, nullable=False)
+    business_category: Mapped[str] = mapped_column(
+        String(150), default="Digital Marketing & SEO Agency", nullable=False
+    )
+    location: Mapped[str] = mapped_column(String(250), default="India", nullable=False)
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), default="manual_owner_curation", nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    public_contacts_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    agency_profile_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    research_claims_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    qualification_breakdown_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    qualification_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    research_brief_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    pipeline_status: Mapped[str] = mapped_column(String(32), default="NEW", index=True, nullable=False)
+    next_action: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discovery_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_history_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    recommended_sku: Mapped[str] = mapped_column(String(100), default="managed_seo_content_pilot", nullable=False)
+    commercial_value_inr: Mapped[float] = mapped_column(Float, default=4999.0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(32), default="NOT_INITIATED", index=True, nullable=False)
+    activation_status: Mapped[str] = mapped_column(String(32), default="NOT_ACTIVATED", index=True, nullable=False)
+    activated_org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class P2CommercialProposalRecord(Base):
+    """P2 Structured Multi-Clause Commercial Proposal gated by Owner HITL approval."""
+
+    __tablename__ = "p2_commercial_proposals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    proposal_record_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    lead_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    sku_key: Mapped[str] = mapped_column(String(100), default="managed_seo_content_pilot", nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    customer_problem: Mapped[str] = mapped_column(Text, nullable=False)
+    scope_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    deliverables_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    exclusions_limitations_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    implementation_schedule_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    pricing_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    payment_terms_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    client_responsibilities_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    provider_responsibilities_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    acceptance_cancellation_terms_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="AWAITING_OWNER_APPROVAL", index=True, nullable=False)
+    approval_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    shared_channel: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    checkout_session_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    checkout_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(120), default="system", nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class P2SuppressionEntryRecord(Base):
+    """Persistent DB-backed suppression and opt-out registry."""
+
+    __tablename__ = "p2_suppression_entries"
+    __table_args__ = (
+        UniqueConstraint("identifier_value", name="uq_p2_suppression_identifier"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    identifier_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    identifier_value: Mapped[str] = mapped_column(String(250), index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), default="Opt-out requested", nullable=False)
+    source: Mapped[str] = mapped_column(String(64), default="unsubscribe_endpoint", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class P2PaymentReconciliationRecord(Base):
+    """Payment-to-activation reconciliation queue & settlement audit state."""
+
+    __tablename__ = "p2_payment_reconciliation_queue"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    proposal_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    lead_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    provider: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    checkout_reference: Mapped[str] = mapped_column(String(200), index=True, nullable=False)
+    provider_event_id: Mapped[str | None] = mapped_column(String(200), unique=True, nullable=True)
+    expected_sku: Mapped[str] = mapped_column(String(100), default="managed_seo_content_pilot", nullable=False)
+    expected_amount: Mapped[float] = mapped_column(Float, default=4999.0, nullable=False)
+    received_amount: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
+    verification_state: Mapped[str] = mapped_column(
+        String(32), default="CHECKOUT_CREATED", index=True, nullable=False
+    )
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activated_org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    invoice_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    activation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class P2CustomerEngagementRecord(Base):
+    """Post-payment customer activation, onboarding checklist, workflow delivery, feedback & renewal."""
+
+    __tablename__ = "p2_customer_engagements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    lead_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    proposal_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    invoice_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sku_key: Mapped[str] = mapped_column(String(100), default="managed_seo_content_pilot", nullable=False)
+    billing_type: Mapped[str] = mapped_column(String(64), default="managed_pilot_14d", nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default="ONBOARDING_PENDING_INPUTS", index=True, nullable=False
+    )
+    assigned_modules_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    entitlements_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    onboarding_checklist_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    required_client_inputs_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    deliverables_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    customer_feedback_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    renewal_recommendation_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    pilot_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pilot_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class P2AcceptanceStepRecord(Base):
+    """Owner-executable 12-step real-world pilot verification tracker."""
+
+    __tablename__ = "p2_acceptance_checklist_steps"
+
+    step_number: Mapped[int] = mapped_column(Integer, primary_key=True)
+    step_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(32), default="NOT_TESTED", index=True, nullable=False)
+    evidence_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    verified_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )

@@ -202,6 +202,31 @@ def decide_approval(
         if lead is not None:
             lead.status = "PROPOSAL_APPROVED" if decision == "APPROVED" else "PROPOSAL_REJECTED"
 
+        from app.db.models import P2CommercialProposalRecord, P2ProspectDossierRecord
+
+        p2_prop = (
+            db.query(P2CommercialProposalRecord)
+            .filter(
+                (P2CommercialProposalRecord.approval_id == approval.id)
+                | (P2CommercialProposalRecord.proposal_record_id == approval.proposal_id)
+            )
+            .first()
+        )
+        if p2_prop:
+            p2_prop.status = "APPROVED" if decision == "APPROVED" else "REJECTED"
+            if decision == "APPROVED":
+                p2_prop.approved_by = decided_by
+                p2_prop.approved_at = datetime.now(UTC)
+            db.add(p2_prop)
+            dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=p2_prop.lead_id).first()
+            if dossier:
+                dossier.next_action = (
+                    "Share approved proposal & verified checkout link with prospect"
+                    if decision == "APPROVED"
+                    else "Revise rejected proposal before sharing"
+                )
+                db.add(dossier)
+
     approval.status = decision
     approval.decided_by = decided_by
     approval.decision_note = effective_note
@@ -217,25 +242,39 @@ def decide_approval(
     if decision == "APPROVED":
         from app.db.models import OutreachRecord, SeoDraftRecord
 
-        # 1. Linked Outreach auto-dispatch
+        # 1. Linked Outreach handling
         outreach = (
             db.query(OutreachRecord).filter_by(approval_id=approval.id).first()
             or (db.query(OutreachRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
         )
         if outreach and outreach.status in ("PENDING_APPROVAL", "APPROVED"):
-            from app.services.outreach import dispatch_outreach
-            try:
-                dispatch_outreach(
-                    db=db,
-                    outreach_id=outreach.id,
-                    correlation_id=effective_corr_id,
-                    dispatched_by=decided_by,
-                )
-            except Exception:
-                outreach.status = "DISPATCHED"
+            is_p2 = bool((outreach.metadata_json or {}).get("p2_commercial"))
+            if is_p2:
+                # P2 outreach leaves actual dispatch as an explicit step (never fakes DISPATCHED)
+                outreach.status = "APPROVED"
                 db.add(outreach)
-            external_action_performed = True
-            auto_executed_action = "outreach_dispatched"
+                from app.db.models import P2ProspectDossierRecord
+
+                dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=outreach.lead_id).first()
+                if dossier:
+                    dossier.next_action = f"Dispatch approved outreach '{outreach.id}'"
+                    db.add(dossier)
+                external_action_performed = False
+                auto_executed_action = "p2_outreach_approved_ready_to_send"
+            else:
+                from app.services.outreach import dispatch_outreach
+                try:
+                    dispatch_outreach(
+                        db=db,
+                        outreach_id=outreach.id,
+                        correlation_id=effective_corr_id,
+                        dispatched_by=decided_by,
+                    )
+                except Exception:
+                    outreach.status = "DISPATCHED"
+                    db.add(outreach)
+                external_action_performed = True
+                auto_executed_action = "outreach_dispatched"
 
         # 2. Linked SEO draft live publishing via 4-site WordPress Bridge
         seo_draft = (

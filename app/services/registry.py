@@ -581,6 +581,132 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=0,
     ),
+    "market_research_agent": RegisteredAgent(
+        agent_id="market_research_agent",
+        agent_name="Market Research Agent (India Agency ICP)",
+        description="Synthesizes market segment observations and verifies catalog offer boundaries without fabricating benchmarks.",
+        business_function="research_intelligence",
+        capabilities=("evidence_research",),
+        supported_tools=("catalog_verify", "source_lookup", "claim_classifier"),
+        input_schema={"type": "object", "properties": {"sku_key": {"type": "string", "default": "managed_seo_content_pilot"}}},
+        output_schema={"type": "object", "properties": {"offer_contract": {"type": "object"}}},
+        model_configuration={"model": "gemini-3.8-flash", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Never invent discounts, guarantees, case studies, or unsupported ROI numbers.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "autonomous_price_change": False},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="evidence_research",
+        default_connector_id="project_api",
+        credit_cost=1,
+    ),
+    "prospect_discovery_agent": RegisteredAgent(
+        agent_id="prospect_discovery_agent",
+        agent_name="Prospect Discovery Agent (P2 Real Agencies)",
+        description="Discovers or curates real Indian digital marketing / SEO agencies while rejecting synthetic fixtures.",
+        business_function="lead_discovery",
+        capabilities=("lead_generation", "customer_discovery"),
+        supported_tools=("serper_search", "google_places", "website_enrich", "domain_company_dedupe"),
+        input_schema={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}}},
+        output_schema={"type": "object", "properties": {"discovered_count": {"type": "integer"}, "status": {"type": "string"}}},
+        model_configuration={"model": "deterministic_extractor", "temperature": 0.0, "fallback": "blocked_without_live_source"},
+        system_instructions="Reject synthetic fixtures, record source URL and date collected, and deduplicate on normalized domain and company identity.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "reject_synthetic_in_prod": True},
+        execution_limits={"max_credits_per_run": 2, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="lead_discovery",
+        default_connector_id="serper_search",
+        credit_cost=1,
+    ),
+    "lead_qualification_agent": RegisteredAgent(
+        agent_id="lead_qualification_agent",
+        agent_name="Lead Qualification Agent (6-Criterion Scorer)",
+        description="Scores prospect fit transparently across 6 criteria with supporting source evidence.",
+        business_function="lead_discovery",
+        capabilities=("lead_generation",),
+        supported_tools=("rubric_scorer", "contact_validity_check", "freshness_check"),
+        input_schema={"type": "object", "properties": {"lead_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"qualification_score": {"type": "number"}, "criteria": {"type": "object"}}},
+        model_configuration={"model": "deterministic_scorer", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Present scores as configurable estimates backed by source evidence, never as verified facts.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 15},
+        required_approvals=(),
+        entitlement_key="lead_discovery",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "account_intelligence_agent": RegisteredAgent(
+        agent_id="account_intelligence_agent",
+        agent_name="Account Intelligence Agent",
+        description="Builds account-specific research briefs separating Verified Facts, Reasonable Inferences, and Unverified Assumptions.",
+        business_function="research_intelligence",
+        capabilities=("evidence_research",),
+        supported_tools=("dossier_reader", "brief_generator", "epistemic_classifier"),
+        input_schema={"type": "object", "properties": {"lead_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"verified_facts": {"type": "array"}, "unverified_assumptions": {"type": "array"}}},
+        model_configuration={"model": "gemini-3.8-flash", "temperature": 0.2, "fallback": "local_deterministic"},
+        system_instructions="Clearly separate verified facts from reasonable inferences and unverified assumptions.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="evidence_research",
+        default_connector_id="gemini_api",
+        credit_cost=1,
+    ),
+    "outreach_preparation_agent": RegisteredAgent(
+        agent_id="outreach_preparation_agent",
+        agent_name="Outreach Preparation Agent (HITL-Gated)",
+        description="Prepares honest, claim-grounded outreach emails gated by Owner HITL approval, suppression, and rate limits.",
+        business_function="sales_proposals",
+        capabilities=("sales_proposal",),
+        supported_tools=("suppression_check", "rate_limit_check", "honesty_validator", "approval_request"),
+        input_schema={"type": "object", "properties": {"lead_id": {"type": "string"}, "recipient_email": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"outreach_id": {"type": "string"}, "approval_id": {"type": "string"}, "status": {"type": "string"}}},
+        model_configuration={"model": "gemini-3.8-flash", "temperature": 0.2, "fallback": "local_deterministic"},
+        system_instructions="Never send unapproved external messages; enforce suppression list, rate limits, and zero fabricated claims.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "external_send_gated": True, "autonomous_send": False},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 25},
+        required_approvals=("external_sales_outreach",),
+        entitlement_key="sales_capture",
+        default_connector_id="hostinger_smtp",
+        credit_cost=1,
+    ),
+    "customer_onboarding_agent": RegisteredAgent(
+        agent_id="customer_onboarding_agent",
+        agent_name="Customer Onboarding Agent",
+        description="Creates post-payment customer engagements, assigns SKU entitlements, and tracks required onboarding inputs.",
+        business_function="customer_support",
+        capabilities=("support_followup",),
+        supported_tools=("onboarding_checklist", "entitlement_assign", "input_collector"),
+        input_schema={"type": "object", "properties": {"engagement_id": {"type": "string"}, "target_domain": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"engagement_id": {"type": "string"}, "status": {"type": "string"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Never activate unpaid customers or perform autonomous payment/refund actions.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "autonomous_payment_activation": False},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 20},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "customer_success_agent": RegisteredAgent(
+        agent_id="customer_success_agent",
+        agent_name="Customer Success & Renewal Agent",
+        description="Links P1 pilot delivery workflows, gathers verified buyer feedback, and builds evidence-grounded renewal recommendations.",
+        business_function="customer_support",
+        capabilities=("support_followup", "seo_content_automation"),
+        supported_tools=("workflow_delivery", "feedback_capture", "renewal_recommender"),
+        input_schema={"type": "object", "properties": {"engagement_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"status": {"type": "string"}, "deliverables": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Never mark delivery completed from drafts alone; never process autonomous renewals without explicit buyer consent.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "autonomous_charge": False},
+        execution_limits={"max_credits_per_run": 2, "timeout_seconds": 45},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=1,
+    ),
 }
 
 
@@ -1149,6 +1275,109 @@ def _dispatch_domain_agent(
             "fallback_used": False,
             "provider_request_id": f"trust-verify-{uuid.uuid4().hex[:10]}",
         }
+
+    if agent_id == "market_research_agent":
+        from app.services.p2_prospect_intel import verify_pilot_offer_contract
+
+        offer = verify_pilot_offer_contract(str(input_payload.get("sku_key", "managed_seo_content_pilot")))
+        return {
+            "output": {"target_segment": "Small & medium digital marketing / SEO agencies in India", "offer_contract": offer},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p2-mkt-{uuid.uuid4().hex[:10]}",
+        }
+
+    if agent_id == "prospect_discovery_agent":
+        from app.services.p2_prospect_intel import run_configured_prospect_discovery
+
+        res = run_configured_prospect_discovery(
+            db,
+            query=str(input_payload.get("query", "digital marketing SEO agency India")),
+            limit=max(1, min(int(input_payload.get("limit", 5)), 15)),
+            execution_mode=exec_mode,
+            actor=actor,
+            org_id=None if tenant_id == "__platform__" else tenant_id,
+        )
+        return {
+            "output": res,
+            "uses_external_provider": exec_mode == "PRODUCTION",
+            "fallback_used": res.get("status") == "BLOCKED",
+            "provider_request_id": f"p2-disc-{uuid.uuid4().hex[:10]}",
+        }
+
+    if agent_id == "lead_qualification_agent":
+        from app.db.models import LeadRecordRow, P2ProspectDossierRecord
+        from app.services.p2_prospect_intel import evaluate_qualification_score
+
+        lead_id = str(input_payload.get("lead_id", ""))
+        lead = db.get(LeadRecordRow, lead_id)
+        dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=lead_id).first()
+        if not lead or not dossier:
+            raise ValueError("lead_id referencing an existing P2 prospect dossier is required")
+        qual = evaluate_qualification_score(
+            company=lead.company,
+            business_category=dossier.business_category,
+            location=dossier.location,
+            website=lead.website,
+            source_url=dossier.source_url,
+            collected_at=dossier.collected_at,
+            agency_profile=dossier.agency_profile_json or {},
+            public_contacts=dossier.public_contacts_json or [],
+            research_claims=dossier.research_claims_json or [],
+        )
+        return {"output": qual, "uses_external_provider": False, "fallback_used": False}
+
+    if agent_id == "account_intelligence_agent":
+        from app.services.p2_prospect_intel import generate_account_intelligence_brief
+
+        brief = generate_account_intelligence_brief(
+            db,
+            lead_id=str(input_payload.get("lead_id", "")),
+            execution_mode=exec_mode,
+            actor=actor,
+        )
+        return {
+            "output": brief,
+            "uses_external_provider": not bool(brief.get("fallback_used", True)),
+            "fallback_used": bool(brief.get("fallback_used", True)),
+        }
+
+    if agent_id == "outreach_preparation_agent":
+        from app.services.p2_outreach_pipeline import prepare_p2_outreach
+
+        res = prepare_p2_outreach(
+            db,
+            lead_id=str(input_payload.get("lead_id", "")),
+            recipient_email=input_payload.get("recipient_email"),
+            recipient_name=input_payload.get("recipient_name"),
+            custom_notes=input_payload.get("custom_notes"),
+            actor=actor,
+        )
+        return {"output": res, "uses_external_provider": False, "fallback_used": False, "approval_id": res.get("approval_id")}
+
+    if agent_id == "customer_onboarding_agent":
+        from app.services.p2_customer_ops import submit_onboarding_inputs
+
+        res = submit_onboarding_inputs(
+            db,
+            engagement_id=str(input_payload.get("engagement_id", "")),
+            target_domain=str(input_payload.get("target_domain", "")),
+            cms_delivery_mode=str(input_payload.get("cms_delivery_mode", "markdown_html_export")),
+            priority_topics=list(input_payload.get("priority_topics") or []),
+            actor=actor,
+        )
+        return {"output": res, "uses_external_provider": False, "fallback_used": False}
+
+    if agent_id == "customer_success_agent":
+        from app.services.p2_customer_ops import execute_pilot_delivery
+
+        res = execute_pilot_delivery(
+            db,
+            engagement_id=str(input_payload.get("engagement_id", "")),
+            execution_mode=exec_mode,
+            actor=actor,
+        )
+        return {"output": res, "uses_external_provider": False, "fallback_used": exec_mode == "SIMULATION"}
 
     # Default ceo_manager_agent orchestrator
     from app.services.manager import execute_manager_workflow

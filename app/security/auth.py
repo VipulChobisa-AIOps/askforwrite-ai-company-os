@@ -369,6 +369,21 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
     return bool(required & entitled_caps) or clean_key in entitled_caps
 
 
+def get_org_entitled_capabilities(org: Any) -> set[str]:
+    """Return the resolved set of entitled capabilities for an OrganizationRecord."""
+    if not org:
+        return set()
+    pkg_key = (org.metadata_json or {}).get("package_key") or org.tier
+    entitled_caps = set((org.metadata_json or {}).get("entitled_capabilities") or [])
+    if not entitled_caps and pkg_key:
+        from app.services.catalog import CATALOG, get_package
+
+        pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
+        if pkg:
+            entitled_caps = set(pkg.entitled_capabilities)
+    return entitled_caps
+
+
 def check_tenant_entitlement(
     principal: APIPrincipal,
     service_key: str,
@@ -389,12 +404,7 @@ def check_tenant_entitlement(
         )
 
     pkg_key = (org.metadata_json or {}).get("package_key") or org.tier
-    entitled_caps = set((org.metadata_json or {}).get("entitled_capabilities") or [])
-    if not entitled_caps and pkg_key:
-        from app.services.catalog import CATALOG, get_package
-        pkg = get_package(pkg_key) or CATALOG.get(pkg_key)
-        if pkg:
-            entitled_caps = set(pkg.entitled_capabilities)
+    entitled_caps = get_org_entitled_capabilities(org)
 
     if not is_service_entitled(service_key, entitled_caps, pkg_key):
         raise HTTPException(

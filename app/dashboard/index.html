@@ -152,6 +152,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
         <span>Warehouse StockSense AI</span>
       </a>
+      <a href="#" class="nav-item" data-page="commercial-os" id="nav-commercial-os">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <span>P2 Commercial Revenue OS</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2255,6 +2259,235 @@
               <button type="button" class="secondary-btn" id="btn-cw-release-estop">Release Stop</button>
             </div>
             <div id="cw-estop-active-list" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════ P2: COMMERCIAL ACQUISITION & REVENUE CONTROL CENTRE ══════ -->
+      <section class="page" id="page-commercial-os">
+        <div class="page-actions">
+          <h2>P2 Commercial Revenue Engine — India Agencies Pilot</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="secondary-btn" id="btn-p2-refresh-all">Refresh Commercial Control Centre</button>
+            <button type="button" class="secondary-btn" id="btn-p2-discover-live">Run Configured Live Discovery</button>
+          </div>
+        </div>
+
+        <!-- Strictly Separated KPI Strip + Capability States + Catalog Contract -->
+        <div class="cw-grid-2" style="margin-bottom:16px;">
+          <div class="cw-card">
+            <h3>Verified Real Commercial Metrics (Zero Simulation Counted)</h3>
+            <div id="p2-verified-kpis" style="font-size:0.85rem;">Loading verified commercial KPIs...</div>
+          </div>
+          <div class="cw-card">
+            <h3>Simulation / Test Metrics &amp; Connector Capabilities</h3>
+            <div id="p2-sim-and-caps" style="font-size:0.85rem;">Loading capability states...</div>
+          </div>
+        </div>
+
+        <div class="cw-card" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <h3 style="margin:0;">Verified Catalog Pilot Contract (<code>managed_seo_content_pilot</code>)</h3>
+            <span class="cw-pill live">No Fabricated Discounts or Guarantees</span>
+          </div>
+          <div id="p2-offer-contract" style="margin-top:8px;font-size:0.82rem;">Loading catalog contract...</div>
+        </div>
+
+        <!-- P2 Subtabs -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;" id="p2-subtabs-bar">
+          <button type="button" class="primary-btn p2-subtab-btn active" data-p2tab="prospects">1. Prospects &amp; Briefs</button>
+          <button type="button" class="secondary-btn p2-subtab-btn" data-p2tab="outreach">2. Outreach (HITL) &amp; Responses</button>
+          <button type="button" class="secondary-btn p2-subtab-btn" data-p2tab="deals">3. 12-Stage Pipeline, Proposals &amp; Payment</button>
+          <button type="button" class="secondary-btn p2-subtab-btn" data-p2tab="customers">4. Activation, Delivery &amp; Renewal</button>
+          <button type="button" class="secondary-btn p2-subtab-btn" data-p2tab="acceptance">5. 12-Step Acceptance Checklist</button>
+        </div>
+
+        <!-- Subtab 1: Real Prospect Intake, Qualification & Intelligence Briefs -->
+        <div class="p2-subtab-panel" id="p2-panel-prospects">
+          <div class="cw-grid-2" style="margin-bottom:16px;">
+            <div class="cw-card">
+              <h3>Curated Real India Agency Intake (Rejects Synthetic Fixtures)</h3>
+              <div><label class="modal-label" for="p2-in-company">Agency Name</label><input id="p2-in-company" class="settings-input" placeholder="e.g. Digital Rankers Jaipur"></div>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-in-website">Website URL</label><input id="p2-in-website" class="settings-input" placeholder="https://agencydomain.in"></div>
+                <div><label class="modal-label" for="p2-in-location">City / State (India)</label><input id="p2-in-location" class="settings-input" value="Bengaluru, India"></div>
+              </div>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-in-source">Source URL (Evidence)</label><input id="p2-in-source" class="settings-input" placeholder="https://agencydomain.in/services"></div>
+                <div><label class="modal-label" for="p2-in-email">Public Contact Email</label><input id="p2-in-email" class="settings-input" placeholder="hello@agencydomain.in"></div>
+              </div>
+              <div><label class="modal-label" for="p2-in-services">Actual Services (comma-separated)</label><input id="p2-in-services" class="settings-input" placeholder="Technical SEO, Content Marketing, Local SEO"></div>
+              <div><label class="modal-label" for="p2-in-needs">Verifiable SEO/Content Needs (comma-separated)</label><input id="p2-in-needs" class="settings-input" placeholder="No weekly editorial cadence, missing schema JSON-LD"></div>
+              <div style="display:flex;gap:12px;align-items:center;margin:8px 0;">
+                <label style="font-size:0.8rem;"><input type="checkbox" id="p2-in-contact-verified" checked> Public Contact Verified</label>
+                <label style="font-size:0.8rem;"><input type="checkbox" id="p2-in-inspect-live"> Fetch Live Website Metadata</label>
+              </div>
+              <button type="button" class="primary-btn" id="btn-p2-ingest-prospect">Ingest &amp; Score Agency</button>
+            </div>
+            <div class="cw-card">
+              <h3>Account Intelligence Brief (Facts vs Inferences vs Assumptions)</h3>
+              <div id="p2-brief-viewer" style="font-size:0.82rem;">Select any agency below and click "Brief" to inspect its evidence-separated account intelligence brief.</div>
+            </div>
+          </div>
+
+          <div class="cw-card">
+            <h3>Agency Prospects &amp; 6-Criterion Qualification Breakdown</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Agency &amp; Domain</th>
+                  <th>Status</th>
+                  <th>Score &amp; 6-Criteria</th>
+                  <th>Source Evidence</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="p2-prospects-tbody">
+                <tr class="empty-row"><td colspan="5"><div class="empty-state"><p>No real agency prospects ingested yet.</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Subtab 2: Outreach Queue, Dispatch & Response Logging -->
+        <div class="p2-subtab-panel" id="p2-panel-outreach" style="display:none;">
+          <div class="cw-grid-2">
+            <div class="cw-card">
+              <h3>Prepare Honesty-Validated Outreach (HITL Approval Gated)</h3>
+              <div><label class="modal-label" for="p2-out-lead-id">Lead ID</label><input id="p2-out-lead-id" class="settings-input" placeholder="Select from Prospects table or paste lead_id"></div>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-out-email">Recipient Email</label><input id="p2-out-email" class="settings-input" placeholder="founder@agency.in"></div>
+                <div><label class="modal-label" for="p2-out-name">Recipient Name</label><input id="p2-out-name" class="settings-input" placeholder="Founder Name"></div>
+              </div>
+              <div><label class="modal-label" for="p2-out-notes">Optional Context Note</label><input id="p2-out-notes" class="settings-input" placeholder="Factual observation only — no fake calls or guarantees"></div>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                <button type="button" class="primary-btn" id="btn-p2-prepare-outreach">Draft &amp; Request Owner Approval</button>
+                <button type="button" class="secondary-btn" id="btn-p2-dispatch-outreach">Dispatch Approved Draft</button>
+              </div>
+              <input type="hidden" id="p2-last-outreach-id">
+              <div id="p2-outreach-result" style="margin-top:10px;font-size:0.82rem;"></div>
+            </div>
+
+            <div class="cw-card">
+              <h3>Log Prospect Response &amp; Discovery Notes</h3>
+              <div><label class="modal-label" for="p2-resp-lead-id">Lead ID</label><input id="p2-resp-lead-id" class="settings-input" placeholder="lead_id"></div>
+              <div>
+                <label class="modal-label" for="p2-resp-sentiment">Response Classification</label>
+                <select id="p2-resp-sentiment" class="settings-select">
+                  <option value="interested">Interested (Advances to RESPONDED / DISCOVERY)</option>
+                  <option value="question">Question / Clarification</option>
+                  <option value="objection">Objection</option>
+                  <option value="not_interested">Not Interested (Marks LOST)</option>
+                  <option value="unsubscribe">Unsubscribe (DO_NOT_CONTACT + Suppression)</option>
+                </select>
+              </div>
+              <div><label class="modal-label" for="p2-resp-summary">Actual Reply Summary</label><textarea id="p2-resp-summary" class="settings-input" rows="2" placeholder="Exact quote or factual summary of prospect email reply..."></textarea></div>
+              <div><label class="modal-label" for="p2-resp-discovery">Discovery Notes</label><textarea id="p2-resp-discovery" class="settings-input" rows="2" placeholder="Confirmed monthly content bottleneck, WordPress CMS, etc."></textarea></div>
+              <button type="button" class="primary-btn" id="btn-p2-log-response">Log Response &amp; Update Pipeline</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 3: 12-Stage Pipeline, Structured Proposals, Checkout & Payment Reconciliation -->
+        <div class="p2-subtab-panel" id="p2-panel-deals" style="display:none;">
+          <div class="cw-grid-2" style="margin-bottom:16px;">
+            <div class="cw-card">
+              <h3>Generate Catalog-Verified Multi-Clause Proposal (HITL Gated)</h3>
+              <div><label class="modal-label" for="p2-prop-lead-id">Lead ID</label><input id="p2-prop-lead-id" class="settings-input" placeholder="lead_id"></div>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-prop-sku">Catalog SKU</label><input id="p2-prop-sku" class="settings-input" value="managed_seo_content_pilot"></div>
+                <div><label class="modal-label" for="p2-prop-currency">Currency</label><select id="p2-prop-currency" class="settings-select"><option value="INR">INR (₹4,999)</option><option value="USD">USD ($59)</option></select></div>
+              </div>
+              <div><label class="modal-label" for="p2-prop-problem">Verified Problem Statement (from Discovery)</label><textarea id="p2-prop-problem" class="settings-input" rows="2" placeholder="Specific agency bottleneck confirmed in discovery..."></textarea></div>
+              <button type="button" class="primary-btn" id="btn-p2-create-proposal">Create Proposal &amp; Request Owner Approval</button>
+              <div id="p2-proposals-list" style="margin-top:12px;font-size:0.82rem;"></div>
+            </div>
+
+            <div class="cw-card">
+              <h3>12-Stage Deal Transition &amp; Payment Reconciliation Queue</h3>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-pipe-lead-id">Lead ID</label><input id="p2-pipe-lead-id" class="settings-input" placeholder="lead_id"></div>
+                <div>
+                  <label class="modal-label" for="p2-pipe-status">Target Status</label>
+                  <select id="p2-pipe-status" class="settings-select">
+                    <option value="NEW">NEW</option><option value="RESEARCHING">RESEARCHING</option><option value="QUALIFIED">QUALIFIED</option>
+                    <option value="DISQUALIFIED">DISQUALIFIED</option><option value="APPROVAL_PENDING">APPROVAL_PENDING</option><option value="CONTACTED">CONTACTED</option>
+                    <option value="RESPONDED">RESPONDED</option><option value="DISCOVERY">DISCOVERY</option><option value="PROPOSAL_PENDING">PROPOSAL_PENDING</option>
+                    <option value="WON">WON</option><option value="LOST">LOST</option><option value="DO_NOT_CONTACT">DO_NOT_CONTACT</option>
+                  </select>
+                </div>
+              </div>
+              <div><label class="modal-label" for="p2-pipe-next">Next Action</label><input id="p2-pipe-next" class="settings-input" placeholder="e.g. Owner reviews proposal before sharing"></div>
+              <button type="button" class="secondary-btn" id="btn-p2-transition-status" style="margin-bottom:12px;">Apply Audited Status Transition</button>
+              <h4>Payment Reconciliation Queue</h4>
+              <div id="p2-reconciliation-list" style="font-size:0.82rem;">No checkout / settlement events yet.</div>
+            </div>
+          </div>
+
+          <div class="cw-card">
+            <h3>Unified 12-Stage Commercial Pipeline</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                  <th>Next Action</th>
+                  <th>Evidence</th>
+                </tr>
+              </thead>
+              <tbody id="p2-pipeline-tbody">
+                <tr class="empty-row"><td colspan="5"><div class="empty-state"><p>Pipeline is empty.</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Subtab 4: Customer Activation, Onboarding, Delivery Workflow & Renewal -->
+        <div class="p2-subtab-panel" id="p2-panel-customers" style="display:none;">
+          <div class="cw-grid-2" style="margin-bottom:16px;">
+            <div class="cw-card">
+              <h3>Paid Customer Onboarding &amp; Pilot Delivery Actions</h3>
+              <div><label class="modal-label" for="p2-eng-id">Engagement ID (Created only after Verified Settlement)</label><input id="p2-eng-id" class="settings-input" placeholder="Select engagement below or paste ID"></div>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-onb-domain">Client Target Domain</label><input id="p2-onb-domain" class="settings-input" placeholder="clientdomain.in"></div>
+                <div><label class="modal-label" for="p2-onb-cms">CMS Delivery Mode</label><select id="p2-onb-cms" class="settings-select"><option value="markdown_html_export">Markdown / HTML Export</option><option value="wordpress_rest">WordPress Draft REST</option><option value="google_doc_export">Google Doc Export</option></select></div>
+              </div>
+              <div><label class="modal-label" for="p2-onb-topics">Priority SEO Topics (comma-separated)</label><input id="p2-onb-topics" class="settings-input" placeholder="Technical SEO audit B2B SaaS, Content workflow automation"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                <button type="button" class="primary-btn" id="btn-p2-submit-onboarding">1. Submit Onboarding Inputs</button>
+                <button type="button" class="secondary-btn" id="btn-p2-run-delivery">2. Run Pilot Delivery Workflow</button>
+                <button type="button" class="secondary-btn" id="btn-p2-complete-delivery">3. Mark Client Delivery Completed</button>
+              </div>
+              <div style="margin-top:10px;"><label class="modal-label" for="p2-deliv-proof">Delivery Proof / Handoff Link (for Step 3)</label><input id="p2-deliv-proof" class="settings-input" placeholder="Export archive / WordPress draft ID confirmed sent"></div>
+            </div>
+
+            <div class="cw-card">
+              <h3>Customer Feedback &amp; Renewal Recommendation (No Auto-Charge)</h3>
+              <div class="cw-grid-2" style="gap:8px;">
+                <div><label class="modal-label" for="p2-fb-rating">Rating (1–5)</label><input id="p2-fb-rating" type="number" min="1" max="5" value="5" class="settings-input"></div>
+                <div><label class="modal-label" for="p2-fb-renew">Buyer Interested in Renewal?</label><select id="p2-fb-renew" class="settings-select"><option value="true">Yes</option><option value="false">No / Undecided</option></select></div>
+              </div>
+              <div><label class="modal-label" for="p2-fb-comments">Genuine Customer Feedback</label><textarea id="p2-fb-comments" class="settings-input" rows="2" placeholder="Actual client feedback post-pilot..."></textarea></div>
+              <button type="button" class="primary-btn" id="btn-p2-submit-feedback">Record Feedback &amp; Generate Renewal Offer</button>
+              <div id="p2-feedback-result" style="margin-top:10px;font-size:0.82rem;"></div>
+            </div>
+          </div>
+
+          <div class="cw-card">
+            <h3>Active Paid Customer Engagements</h3>
+            <div id="p2-engagements-list" style="font-size:0.83rem;">No paid customer engagements activated yet.</div>
+          </div>
+        </div>
+
+        <!-- Subtab 5: 12-Step Real-World Pilot Acceptance Checklist -->
+        <div class="p2-subtab-panel" id="p2-panel-acceptance" style="display:none;">
+          <div class="cw-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <h3 style="margin:0;">12-Step Real-World Pilot Acceptance Checklist</h3>
+              <div id="p2-acceptance-summary" style="font-size:0.82rem;"></div>
+            </div>
+            <div id="p2-acceptance-steps-list">Loading 12-step verification checklist...</div>
           </div>
         </div>
       </section>

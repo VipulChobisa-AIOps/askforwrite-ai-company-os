@@ -3,27 +3,34 @@
 **Source of Truth:** `app/services/registry.py` (`AGENT_REGISTRY`)  
 **API Surface:** `app/api/v1/registry.py`
 
-All 13 specialist AI agents share a validated dataclass contract containing `agent_id`, `agent_name`, `description`, `business_function`, `capabilities`, `supported_tools`, `input_schema`, `output_schema`, `model_configuration`, `system_instructions`, `permission_policy`, `execution_limits`, `required_approvals`, `version`, and `status`.
+All `20` registered specialist AI agents share a validated dataclass contract containing `agent_id`, `agent_name`, `description`, `business_function`, `capabilities`, `supported_tools`, `input_schema`, `output_schema`, `model_configuration`, `system_instructions`, `permission_policy`, `execution_limits`, `required_approvals`, `version`, and `status`.
 
 ---
 
-## Registered AI Workforce (13 Agents)
+## Registered AI Workforce (20 Agents: 13 P0/P1 + 7 P2 Commercial)
 
-| `agent_id` | Business Function | Registry Status | Allowed Tool Names (`supported_tools`) | HITL Approval Gates (`required_approvals`) |
+| `agent_id` | Business Function | Phase | Allowed Tool Names (`supported_tools`) | HITL Approval Gates (`required_approvals`) |
 |---|---|---|---|---|
-| `ceo_manager_agent` | `governance_trust` | `AVAILABLE` | `discovery_pipeline`, `research_synthesis`, `sales_draft`, `trust_seal` | `external_sales_outreach` |
-| `discovery_sdr_agent` | `lead_discovery` | `AVAILABLE` | `lead_search`, `lead_scoring`, `lead_dedupe` | `—` |
-| `research_analyst_agent` | `research_intelligence` | `AVAILABLE` | `source_synthesis`, `citation_builder`, `trust_seal` | `—` |
-| `academic_research_agent` | `research_intelligence` | `AVAILABLE` | `academic_synthesis`, `bibtex_formatter`, `trust_seal` | `—` |
-| `sales_proposal_agent` | `sales_proposals` | `AVAILABLE` | `pain_diagnose`, `proposal_draft`, `approval_request`, `email_dispatch` | `external_sales_outreach` |
-| `seo_content_agent` | `seo_content` | `AVAILABLE` | `blog_generate`, `seo_stage_draft`, `wordpress_stage` | `—` |
-| `marketing_creative_agent` | `marketing_campaigns` | `AVAILABLE` | `social_campaign_generate`, `creative_pack_generate` | `—` |
-| `support_followup_agent` | `customer_support` | `AVAILABLE` | `ticket_triage`, `followup_draft`, `approval_request` | `customer_followup_dispatch` |
-| `field_ops_agent` | `field_operations` | `AVAILABLE` | `route_optimize`, `telemetry_summary` | `—` |
-| `warehouse_stocksense_agent` | `inventory_quality` | `AVAILABLE` | `inventory_abc_eoq`, `dead_stock_audit` | `—` |
-| `quality_vision_agent` | `inventory_quality` | `AVAILABLE` | `quality_grade`, `defect_scoring` | `—` |
-| `mobility_rebalance_agent` | `inventory_quality` | `AVAILABLE` | `mobility_forecast`, `rebalance_route` | `—` |
-| `trust_governance_agent` | `governance_trust` | `AVAILABLE` | `trust_seal`, `trust_verify`, `watchdog_scan` | `—` |
+| `ceo_manager_agent` | `governance_trust` | P0/P1 | `discovery_pipeline`, `research_synthesis`, `sales_draft`, `trust_seal` | `external_sales_outreach` |
+| `discovery_sdr_agent` | `lead_discovery` | P0/P1 | `lead_search`, `lead_scoring`, `lead_dedupe` | `—` |
+| `research_analyst_agent` | `research_intelligence` | P0/P1 | `source_synthesis`, `citation_builder`, `trust_seal` | `—` |
+| `academic_research_agent` | `research_intelligence` | P0/P1 | `academic_synthesis`, `bibtex_formatter`, `trust_seal` | `—` |
+| `sales_proposal_agent` | `sales_proposals` | P0/P1/P2 | `pain_diagnose`, `proposal_draft`, `approval_request`, `email_dispatch` | `external_sales_outreach` |
+| `seo_content_agent` | `seo_content` | P0/P1 | `blog_generate`, `seo_stage_draft`, `wordpress_stage` | `—` |
+| `marketing_creative_agent` | `marketing_campaigns` | P0/P1 | `social_campaign_generate`, `creative_pack_generate` | `—` |
+| `support_followup_agent` | `customer_support` | P0/P1 | `ticket_triage`, `followup_draft`, `approval_request` | `customer_followup_dispatch` |
+| `field_ops_agent` | `field_operations` | P0/P1 | `route_optimize`, `telemetry_summary` | `—` |
+| `warehouse_stocksense_agent` | `inventory_quality` | P0/P1 | `inventory_abc_eoq`, `dead_stock_audit` | `—` |
+| `quality_vision_agent` | `inventory_quality` | P0/P1 | `quality_grade`, `defect_scoring` | `—` |
+| `mobility_rebalance_agent` | `inventory_quality` | P0/P1 | `mobility_forecast`, `rebalance_route` | `—` |
+| `trust_governance_agent` | `governance_trust` | P0/P1 | `trust_seal`, `trust_verify`, `watchdog_scan` | `—` |
+| `market_research_agent` | `research_intelligence` | P2 | `catalog_verify`, `source_lookup`, `claim_classifier` | `—` |
+| `prospect_discovery_agent` | `lead_discovery` | P2 | `serper_search`, `google_places`, `website_enrich`, `domain_company_dedupe` | `—` |
+| `lead_qualification_agent` | `lead_discovery` | P2 | `rubric_scorer`, `contact_validity_check`, `freshness_check` | `—` |
+| `account_intelligence_agent` | `research_intelligence` | P2 | `dossier_reader`, `brief_generator`, `epistemic_classifier` | `—` |
+| `outreach_preparation_agent` | `sales_proposals` | P2 | `suppression_check`, `rate_limit_check`, `honesty_validator`, `approval_request` | `external_sales_outreach` |
+| `customer_onboarding_agent` | `customer_support` | P2 | `onboarding_checklist`, `entitlement_assign`, `input_collector` | `—` |
+| `customer_success_agent` | `customer_support` | P2 | `workflow_delivery`, `feedback_capture`, `renewal_recommender` | `—` |
 
 ---
 

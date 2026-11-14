@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 import migrations.versions.e5f6a1b2c3d4_add_watchdog_preview_and_shift_tables as sprint5_migration
 import migrations.versions.f6a1b2c3d4e5_add_sovereign_payment_sessions as sovereign_migration
 import migrations.versions.g7b2c3d4e5f6_add_p1_modular_workforce_tables as p1_migration
+import migrations.versions.h8c3d4e5f6a7_add_p2_commercial_revenue_engine_tables as p2_migration
 
 
 class MigrationChainAndSchemaParityTests(unittest.TestCase):
@@ -27,15 +28,15 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
         self.script_directory = ScriptDirectory.from_config(self.config)
 
     def test_migration_chain_has_single_head_and_correct_revisions(self):
-        """Verify the migration chain ends at g7b2c3d4e5f6 with down_revision f6a1b2c3d4e5."""
+        """Verify the migration chain ends at h8c3d4e5f6a7 with down_revision g7b2c3d4e5f6."""
         heads = self.script_directory.get_heads()
         self.assertEqual(len(heads), 1, f"Expected exactly 1 migration head, got: {heads}")
         head_rev = heads[0]
-        self.assertEqual(head_rev, "g7b2c3d4e5f6")
+        self.assertEqual(head_rev, "h8c3d4e5f6a7")
 
         head_script = self.script_directory.get_revision(head_rev)
         self.assertIsNotNone(head_script)
-        self.assertEqual(head_script.down_revision, "f6a1b2c3d4e5")
+        self.assertEqual(head_script.down_revision, "g7b2c3d4e5f6")
 
         prev_script = self.script_directory.get_revision("f6a1b2c3d4e5")
         self.assertIsNotNone(prev_script)
@@ -257,6 +258,47 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
                 self.assertIn("sovereign_payment_sessions", inspector.get_table_names())
             finally:
                 sovereign_migration.op = orig_op
+
+    def test_p2_commercial_migration_upgrade_and_downgrade_parity(self):
+        """Verify upgrade() and downgrade() of h8c3d4e5f6a7 (6 P2 commercial tables) against SQLite."""
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
+        from alembic.runtime.migration import MigrationContext
+        from alembic.operations import Operations
+
+        expected_tables = (
+            "p2_prospect_dossiers",
+            "p2_commercial_proposals",
+            "p2_suppression_entries",
+            "p2_payment_reconciliation_queue",
+            "p2_customer_engagements",
+            "p2_acceptance_checklist_steps",
+        )
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            orig_op = p2_migration.op
+            p2_migration.op = op
+            try:
+                p2_migration.upgrade()
+                conn.commit()
+                inspector = inspect(conn)
+                tables = set(inspector.get_table_names())
+                for tbl in expected_tables:
+                    self.assertIn(tbl, tables)
+
+                p2_migration.downgrade()
+                conn.commit()
+                tables_after = set(inspect(conn).get_table_names())
+                for tbl in expected_tables:
+                    self.assertNotIn(tbl, tables_after)
+            finally:
+                p2_migration.op = orig_op
 
 
 if __name__ == "__main__":

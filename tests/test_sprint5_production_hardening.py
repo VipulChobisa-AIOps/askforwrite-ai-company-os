@@ -77,7 +77,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
 
         heads = script_dir.get_heads()
         self.assertEqual(len(heads), 1)
-        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6"])
+        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6", "h8c3d4e5f6a7"])
 
         rev = script_dir.get_revision("e5f6a1b2c3d4")
         self.assertIsNotNone(rev)
