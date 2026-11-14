@@ -890,6 +890,42 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=0,
     ),
+    "tenant_provisioning_agent": RegisteredAgent(
+        agent_id="tenant_provisioning_agent",
+        agent_name="P5 Idempotent Tenant Provisioning Agent",
+        description="Audits catalog-grounded templates, 9-state tenant provisioning FSM runs, and idempotent onboarding recovery.",
+        business_function="platform_operations",
+        capabilities=("template_validation", "idempotent_provisioning", "connector_staging"),
+        supported_tools=("catalog_binding_check", "provisioning_fsm_runner", "trust_chain_seal"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"summary": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Bind every template to live CATALOG/MODULAR_SME_TIERS prices and never duplicate provisioning runs across retries.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="trust_engine",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "sla_operations_agent": RegisteredAgent(
+        agent_id="sla_operations_agent",
+        agent_name="P5 Multi-Tenant Quota & SLA Operations Agent",
+        description="Monitors tenant rate limits, credit budgets, quota breaches, and SLA incident deadlines.",
+        business_function="trust_governance",
+        capabilities=("quota_monitoring", "sla_tracking", "incident_triage"),
+        supported_tools=("policy_evaluator", "incident_sla_tracker"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"incidents": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Enforce tenant isolation across quota checks and preserve accurate SLA breach timestamps.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
 }
 
 
@@ -1740,6 +1776,34 @@ def _dispatch_domain_agent(
             "uses_external_provider": False,
             "fallback_used": False,
             "provider_request_id": f"p4-intel-{len(intel)}",
+        }
+
+    if agent_id == "tenant_provisioning_agent":
+        from app.services.p5_productization import compute_p5_scale_summary, list_p5_templates
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        summary = compute_p5_scale_summary(db, org_id=org_filter)
+        templates = list_p5_templates(db, active_only=True)
+        return {
+            "output": {"summary": summary, "template_count": len(templates)},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p5-prov-{summary['provisioning_run_count']}",
+        }
+
+    if agent_id == "sla_operations_agent":
+        from app.services.p5_productization import list_operational_incidents, list_quota_events
+
+        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        incidents = list_operational_incidents(db, org_id=org_filter)
+        events = list_quota_events(db, org_id=org_filter, limit=25)
+        return {
+            "output": {"incident_count": len(incidents), "incidents": incidents, "recent_quota_events": len(events)},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"p5-sla-{len(incidents)}",
         }
 
     # Default ceo_manager_agent orchestrator

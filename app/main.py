@@ -38,6 +38,7 @@ from app.api.v1.sovereign_pay import router as sovereign_pay_router
 from app.api.v1.solutions_pages import router as solutions_router
 from app.api.v1.service_pages import router as service_pages_router
 from app.api.v1.p4_growth import router as p4_growth_router
+from app.api.v1.p5_scale import router as p5_scale_router
 from app.api.v1.neon_api import router as neon_router
 from app.api.v1.subscriptions import router as subscriptions_router
 from app.api.v1.watchdog import router as watchdog_router
@@ -213,6 +214,7 @@ app.include_router(sovereign_pay_router)
 app.include_router(solutions_router)
 app.include_router(service_pages_router)
 app.include_router(p4_growth_router)
+app.include_router(p5_scale_router)
 app.include_router(neon_router)
 
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────

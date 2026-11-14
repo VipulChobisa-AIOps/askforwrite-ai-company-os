@@ -1559,3 +1559,132 @@ class P4PipelineDealRecord(Base):
     __table_args__ = (
         Index("ix_p4_deal_org_stage_origin", "org_id", "stage", "evidence_status"),
     )
+
+
+class P5TenantTemplateRecord(Base):
+    """P5 catalog-bound multi-tenant industry and workflow provisioning template."""
+
+    __tablename__ = "p5_tenant_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    template_key: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    industry: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    tier_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    selected_modules_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    catalog_service_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    default_agent_ids_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    connector_requirements_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    policy_defaults_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    monthly_price_inr: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    evidence_status: Mapped[str] = mapped_column(String(32), nullable=False, default="CATALOG_GROUNDED")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p5_tpl_industry_active", "industry", "is_active"),
+    )
+
+
+class P5ProvisioningRunRecord(Base):
+    """P5 idempotent 9-state tenant provisioning state machine execution and retry record."""
+
+    __tablename__ = "p5_provisioning_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(180), unique=True, index=True, nullable=False)
+    template_key: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="REQUESTED")
+    completed_steps_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    failed_step: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    config_snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    execution_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="SIMULATION")
+    created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p5_prov_org_state", "org_id", "state"),
+    )
+
+
+class P5TenantPolicyRecord(Base):
+    """P5 per-tenant rate limit, quota, credit budget, and SLA enforcement policy."""
+
+    __tablename__ = "p5_tenant_policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    tier_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    rate_limit_rpm: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    daily_agent_runs_cap: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    monthly_credit_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
+    storage_quota_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=1024)
+    sla_target_uptime_pct: Mapped[float] = mapped_column(Float, nullable=False, default=99.5)
+    sla_response_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=240)
+    auto_throttle_on_breach: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    custom_limits_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class P5UsageQuotaEventRecord(Base):
+    """P5 tenant-scoped runtime quota/rate evaluation and throttle audit record."""
+
+    __tablename__ = "p5_usage_quota_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    metric_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    observed_value: Mapped[float] = mapped_column(Float, nullable=False)
+    limit_value: Mapped[float] = mapped_column(Float, nullable=False)
+    breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    action_taken: Mapped[str] = mapped_column(String(32), nullable=False, default="ALLOWED")
+    details_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    recorded_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_p5_usage_org_metric", "org_id", "metric_type", "breached"),
+    )
+
+
+class P5OperationalIncidentRecord(Base):
+    """P5 multi-tenant SLA/quota/provisioning incident lifecycle tracker."""
+
+    __tablename__ = "p5_operational_incidents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    severity: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="SEV3_MEDIUM")
+    category: Mapped[str] = mapped_column(String(48), index=True, nullable=False, default="SLA_DEGRADATION")
+    status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="OPEN")
+    root_cause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mitigation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reported_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
+    assigned_to: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_p5_incident_org_status", "org_id", "status", "severity"),
+    )

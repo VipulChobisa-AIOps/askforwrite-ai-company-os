@@ -4381,11 +4381,13 @@
       if (page === 'commercial-os') p2LoadControlCentre();
       if (page === 'customer-success') p3LoadControlCentre();
       if (page === 'p4-growth') p4LoadControlCentre();
+      if (page === 'p5-scale') p5LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
     p3BindEvents();
     p4BindEvents();
+    p5BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -5345,6 +5347,91 @@
     });
   }
 
+  // ── P5 Productization & Multi-Customer Scale Controller ───
+  async function p5LoadControlCentre() {
+    if (!$('#page-p5-scale')) return;
+    try {
+      const res = await api('GET', '/v1/p5/scale/overview');
+      const sum = res.summary || {};
+      if ($('#p5-kpi-templates')) $('#p5-kpi-templates').textContent = String(sum.template_count || 0);
+      if ($('#p5-kpi-active-runs')) $('#p5-kpi-active-runs').textContent = String(sum.active_provisioned_count || 0);
+      if ($('#p5-kpi-breaches')) $('#p5-kpi-breaches').textContent = String(sum.quota_breaches_count || 0);
+      if ($('#p5-kpi-incidents')) $('#p5-kpi-incidents').textContent = String(sum.open_incidents_count || 0);
+
+      if ($('#p5-templates-tbody')) {
+        const tpls = res.templates || [];
+        $('#p5-templates-tbody').innerHTML = tpls.length
+          ? tpls.map(t => `<tr>
+              <td><strong>${escapeHtml(t.template_key)}</strong></td>
+              <td><span class="badge">${escapeHtml(t.tier_id)}</span></td>
+              <td>${escapeHtml((t.selected_modules || []).join(', '))}</td>
+              <td>₹${Number(t.monthly_price_inr || 0).toLocaleString()}</td>
+              <td>${escapeHtml((t.catalog_service_ids || []).join(', '))}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No templates loaded</td></tr>';
+      }
+
+      if ($('#p5-runs-tbody')) {
+        const runs = res.provisioning_runs || [];
+        $('#p5-runs-tbody').innerHTML = runs.length
+          ? runs.map(r => `<tr>
+              <td>${escapeHtml(r.template_key)}</td>
+              <td><span class="badge">${escapeHtml(r.state)}</span></td>
+              <td>${(r.completed_steps || []).length}/5</td>
+              <td>${r.state === 'FAILED' ? `<button type="button" class="secondary-btn" onclick="window.app.p5RetryRun('${escapeHtml(r.run_id)}')">Retry</button>` : escapeHtml(r.execution_mode)}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="4">No runs recorded</td></tr>';
+      }
+
+      if ($('#p5-incidents-tbody')) {
+        const incs = res.incidents || [];
+        $('#p5-incidents-tbody').innerHTML = incs.length
+          ? incs.map(i => `<tr>
+              <td>${escapeHtml(i.title)}</td>
+              <td>${escapeHtml(i.severity)}</td>
+              <td><span class="badge">${escapeHtml(i.status)}</span></td>
+              <td>${i.status !== 'RESOLVED' ? `<button type="button" class="secondary-btn" onclick="window.app.p5TransitionIncident('${escapeHtml(i.incident_id)}', 'RESOLVED')">Resolve</button>` : 'Closed'}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="4">No incidents logged</td></tr>';
+      }
+    } catch (e) {
+      toast(`Failed to load P5 Scale overview: ${e.message}`, 'error');
+    }
+  }
+
+  function p5BindEvents() {
+    $('#btn-p5-refresh-all')?.addEventListener('click', p5LoadControlCentre);
+    $('#btn-p5-start-prov')?.addEventListener('click', async () => {
+      const company = ($('#p5-prov-company')?.value || '').trim();
+      const tpl = ($('#p5-prov-tpl')?.value || 'india_agency_starter').trim();
+      const idem = ($('#p5-prov-idem')?.value || '').trim() || `ui-${Date.now()}`;
+      try {
+        await api('POST', '/v1/p5/scale/provisioning', {
+          template_key: tpl,
+          idempotency_key: idem,
+          company_name: company || undefined,
+          execution_mode: 'SIMULATION',
+        });
+        toast('Tenant provisioning run executed', 'success');
+        await p5LoadControlCentre();
+      } catch (e) {
+        toast(`Provisioning failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p5-create-incident')?.addEventListener('click', async () => {
+      const title = ($('#p5-inc-title')?.value || '').trim();
+      const severity = ($('#p5-inc-severity')?.value || 'SEV3_MEDIUM').trim();
+      if (!title) return toast('Provide incident title', 'error');
+      try {
+        await api('POST', '/v1/p5/scale/incidents', { title, severity, category: 'SLA_DEGRADATION' });
+        toast('Incident opened', 'success');
+        await p5LoadControlCentre();
+      } catch (e) {
+        toast(`Create incident failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -5559,6 +5646,25 @@
         await p4LoadControlCentre();
       } catch (e) {
         toast(`Deal transition failed: ${e.message}`, 'error');
+      }
+    },
+    p5LoadAll: p5LoadControlCentre,
+    p5RetryRun: async (runId) => {
+      try {
+        await api('POST', `/v1/p5/scale/provisioning/${encodeURIComponent(runId)}/retry`, {});
+        toast('Provisioning run recovered', 'success');
+        await p5LoadControlCentre();
+      } catch (e) {
+        toast(`Retry failed: ${e.message}`, 'error');
+      }
+    },
+    p5TransitionIncident: async (incidentId, targetStatus) => {
+      try {
+        await api('POST', `/v1/p5/scale/incidents/${encodeURIComponent(incidentId)}/transition`, { target_status: targetStatus });
+        toast(`Incident moved to ${targetStatus}`, 'success');
+        await p5LoadControlCentre();
+      } catch (e) {
+        toast(`Incident update failed: ${e.message}`, 'error');
       }
     },
     setApiKey: (key) => {

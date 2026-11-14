@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import (
     AuditLog,
+    CreditLedgerRecord,
     InvoiceRecord,
     OrganizationRecord,
     SubscriptionRecord,
@@ -356,6 +359,8 @@ def list_org_invoices(
 class ConsumeCreditsRequest(BaseModel):
     credit_type: str = Field(..., description="'lead' or 'outreach'")
     amount: int = Field(default=1, gt=0, description="Number of credits to consume")
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    reason: str = Field(default="api_consume_credits", max_length=300)
 
 
 class ConsumeCreditsResponse(BaseModel):
@@ -364,6 +369,8 @@ class ConsumeCreditsResponse(BaseModel):
     consumed: int
     credits_remaining: int
     allowed: bool
+    ledger_entry_id: str | None = None
+    idempotency_key: str | None = None
 
 
 @router.post("/orgs/{org_id}/consume-credits", response_model=ConsumeCreditsResponse)
@@ -373,50 +380,106 @@ def consume_org_credits(
     principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
 ):
-    """Verify and consume monthly feature credits for an organization.
-
-    Enforces plan limits on discovery and outreach.
-    """
+    """Verify and atomically consume monthly feature credits for an organization, recording an immutable ledger entry."""
     enforce_tenant_access(principal, org_id)
+
+    ctype = payload.credit_type.strip().lower()
+    if ctype not in ("lead", "outreach"):
+        raise HTTPException(status_code=400, detail="Invalid credit_type. Must be 'lead' or 'outreach'")
 
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
-
     if not org.is_active:
         raise HTTPException(status_code=403, detail="Organization account is inactive or suspended")
 
-    ctype = payload.credit_type.lower()
-    if ctype == "lead":
-        limit = org.lead_credits_limit
-        used = org.lead_credits_used
-        if used + payload.amount > limit:
-            raise HTTPException(
-                status_code=402,
-                detail=f"Lead credit quota exceeded ({used}/{limit} used). Upgrade plan for more credits.",
+    pool_name = "lead_credits" if ctype == "lead" else "outreach_credits"
+    raw_idem = (payload.idempotency_key or "").strip() or None
+    scoped_key = f"acct:{org_id}:{raw_idem}" if raw_idem else None
+    if scoped_key:
+        existing_ledger = db.query(CreditLedgerRecord).filter_by(org_id=org_id, idempotency_key=scoped_key).first()
+        if existing_ledger:
+            if existing_ledger.credit_pool != pool_name or abs(int(existing_ledger.delta)) != payload.amount:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency key already used with different credit_type or amount",
+                )
+            return ConsumeCreditsResponse(
+                org_id=org_id,
+                credit_type=ctype,
+                consumed=abs(int(existing_ledger.delta)),
+                credits_remaining=int(existing_ledger.balance_after),
+                allowed=True,
+                ledger_entry_id=existing_ledger.id,
+                idempotency_key=raw_idem,
             )
-        org.lead_credits_used += payload.amount
-        remaining = limit - org.lead_credits_used
-    elif ctype == "outreach":
-        limit = org.outreach_credits_limit
-        used = org.outreach_credits_used
-        if used + payload.amount > limit:
-            raise HTTPException(
-                status_code=402,
-                detail=f"Outreach credit quota exceeded ({used}/{limit} used). Upgrade plan for more credits.",
-            )
-        org.outreach_credits_used += payload.amount
-        remaining = limit - org.outreach_credits_used
-    else:
-        raise HTTPException(status_code=400, detail="Invalid credit_type. Must be 'lead' or 'outreach'")
 
+    if ctype == "lead":
+        used_col, limit_col, err_label = (
+            OrganizationRecord.lead_credits_used,
+            OrganizationRecord.lead_credits_limit,
+            "Lead",
+        )
+    else:
+        used_col, limit_col, err_label = (
+            OrganizationRecord.outreach_credits_used,
+            OrganizationRecord.outreach_credits_limit,
+            "Outreach",
+        )
+
+    stmt = (
+        update(OrganizationRecord)
+        .where(
+            OrganizationRecord.id == org_id,
+            OrganizationRecord.is_active.is_(True),
+            (limit_col - used_col) >= payload.amount,
+        )
+        .values({used_col.key: used_col + payload.amount})
+    )
+    res = db.execute(stmt)
+    if res.rowcount == 0:
+        db.rollback()
+        refreshed = db.query(OrganizationRecord).filter_by(id=org_id).first()
+        if refreshed and not refreshed.is_active:
+            raise HTTPException(status_code=403, detail="Organization account is inactive or suspended")
+        used_now = (refreshed.lead_credits_used if ctype == "lead" else refreshed.outreach_credits_used) if refreshed else 0
+        limit_now = (refreshed.lead_credits_limit if ctype == "lead" else refreshed.outreach_credits_limit) if refreshed else 0
+        raise HTTPException(
+            status_code=402,
+            detail=f"{err_label} credit quota exceeded ({used_now}/{limit_now} used). Upgrade plan for more credits.",
+        )
+
+    db.expire(org)
+    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
+    used_after = org.lead_credits_used if ctype == "lead" else org.outreach_credits_used
+    limit_after = org.lead_credits_limit if ctype == "lead" else org.outreach_credits_limit
+    remaining = max(0, int(limit_after) - int(used_after))
+
+    ledger_id = str(uuid.uuid4())
+    ledger_entry = CreditLedgerRecord(
+        id=ledger_id,
+        org_id=org_id,
+        execution_id=None,
+        idempotency_key=scoped_key or f"acct:{org_id}:{ledger_id}",
+        entry_type="DEBIT",
+        credit_pool=pool_name,
+        delta=-int(payload.amount),
+        balance_after=remaining,
+        status="COMMITTED",
+        reason=(payload.reason or "api_consume_credits").strip()[:300],
+        created_by=principal.subject,
+    )
+    db.add(ledger_entry)
     db.commit()
+
     return ConsumeCreditsResponse(
         org_id=org_id,
         credit_type=ctype,
         consumed=payload.amount,
         credits_remaining=remaining,
         allowed=True,
+        ledger_entry_id=ledger_id,
+        idempotency_key=raw_idem,
     )
 
 

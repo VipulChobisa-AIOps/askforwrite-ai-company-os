@@ -164,6 +164,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><polyline points="14 7 21 7 21 14"/></svg>
         <span>P4 Growth &amp; GTM Engine</span>
       </a>
+      <a href="#" class="nav-item" data-page="p5-scale" id="nav-p5-scale">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>P5 Productization &amp; Scale</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2880,6 +2884,74 @@
             <table class="cw-table">
               <thead><tr><th>Company</th><th>Origin</th><th>Stage</th><th>Value (INR)</th><th>Source / Lost Reason</th><th>Advance</th></tr></thead>
               <tbody id="p4-deals-tbody"><tr><td colspan="6">No deals tracked</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P5 Productization & Multi-Customer Scale ──────────────────── -->
+      <section class="page" id="page-p5-scale">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P5 Productization &amp; Multi-Customer Scale</h2>
+            <p class="subtitle" style="margin:4px 0 0;">Catalog-Grounded Templates, Idempotent 9-State Provisioning FSM, Tenant Quotas &amp; SLA Incidents</p>
+          </div>
+          <button type="button" class="primary-btn" id="btn-p5-refresh-all">Refresh P5 Scale</button>
+        </div>
+
+        <div class="cw-kpi-row" id="p5-kpis">
+          <div class="cw-kpi"><div class="cw-kpi-label">Catalog Templates</div><div class="cw-kpi-val" id="p5-kpi-templates">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Active Provisioned Runs</div><div class="cw-kpi-val" id="p5-kpi-active-runs">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Quota Breaches</div><div class="cw-kpi-val" id="p5-kpi-breaches">0</div></div>
+          <div class="cw-kpi"><div class="cw-kpi-label">Open Incidents</div><div class="cw-kpi-val" id="p5-kpi-incidents">0</div></div>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card">
+            <h3>Start Idempotent Provisioning Run</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p5-prov-company" class="cw-input" placeholder="Tenant Company Name (or blank for existing org)"/>
+              <input id="p5-prov-tpl" class="cw-input" value="india_agency_starter" placeholder="Template Key (e.g. india_agency_starter)"/>
+              <input id="p5-prov-idem" class="cw-input" placeholder="Idempotency Key (min 4 chars)"/>
+              <button type="button" class="primary-btn" id="btn-p5-start-prov">Provision Tenant (Simulation)</button>
+            </div>
+          </div>
+          <div class="cw-card">
+            <h3>Open Operational Incident</h3>
+            <div style="display:grid;gap:8px;">
+              <input id="p5-inc-title" class="cw-input" placeholder="Incident Title (e.g. Connector Webhook Timeout)"/>
+              <select id="p5-inc-severity" class="cw-input">
+                <option value="SEV3_MEDIUM">SEV3_MEDIUM</option>
+                <option value="SEV2_HIGH">SEV2_HIGH</option>
+                <option value="SEV1_CRITICAL">SEV1_CRITICAL</option>
+                <option value="SEV4_LOW">SEV4_LOW</option>
+              </select>
+              <button type="button" class="primary-btn" id="btn-p5-create-incident">Open Incident</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="cw-card" style="margin-top:14px;overflow-x:auto;">
+          <h3>Catalog-Grounded Onboarding Templates</h3>
+          <table class="cw-table">
+            <thead><tr><th>Key</th><th>Tier</th><th>Modules</th><th>Monthly INR</th><th>Services</th></tr></thead>
+            <tbody id="p5-templates-tbody"><tr><td colspan="5">No templates loaded</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="cw-grid-2" style="margin-top:14px;">
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>Provisioning Runs (9-State FSM)</h3>
+            <table class="cw-table">
+              <thead><tr><th>Template</th><th>State</th><th>Steps</th><th>Action</th></tr></thead>
+              <tbody id="p5-runs-tbody"><tr><td colspan="4">No runs recorded</td></tr></tbody>
+            </table>
+          </div>
+          <div class="cw-card" style="overflow-x:auto;">
+            <h3>SLA &amp; Quota Incidents</h3>
+            <table class="cw-table">
+              <thead><tr><th>Title</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="p5-incidents-tbody"><tr><td colspan="4">No incidents logged</td></tr></tbody>
             </table>
           </div>
         </div>
