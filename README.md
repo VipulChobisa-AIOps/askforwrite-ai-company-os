@@ -1,14 +1,12 @@
 # AskforWrite AI Company OS (v2.0 Sovereign Edition)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/CI%2FCD-Passing-brightgreen?style=for-the-badge&logo=github-actions" alt="CI/CD Status" />
-  <img src="https://img.shields.io/badge/Tests-400%2F400%20Passing-success?style=for-the-badge&logo=pytest" alt="Test Status" />
-  <img src="https://img.shields.io/badge/Coverage-82%25-informational?style=for-the-badge&logo=pytest" alt="Coverage" />
+  <img src="https://img.shields.io/badge/CI%2FCD-Pytest%20%2B%20Ruff-brightgreen?style=for-the-badge&logo=github-actions" alt="CI/CD Status" />
   <img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Security-ECDSA%20NIST%20P--256%20Merkle-8A2BE2?style=for-the-badge" alt="Security" />
   <img src="https://img.shields.io/badge/Payments-AFW%20DirectPay%200%25%20Fee-orange?style=for-the-badge" alt="Sovereign Payments" />
-  <img src="https://img.shields.io/badge/Zero--Mock-Production%20Verified-blueviolet?style=for-the-badge" alt="Zero Mock" />
+  <img src="https://img.shields.io/badge/Hosting-Render%20Blueprint-46E3B7?style=for-the-badge" alt="Render Hosting" />
 </p>
 
 ---
@@ -17,7 +15,31 @@
 
 **AskforWrite AI Company OS** is a production-grade, enterprise autonomous company operating system designed to run an entire digital corporation autonomously under **Human-in-the-Loop (HITL)** governance.
 
-Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-generation SDR engine, a cryptographic NIST P-256 Merkle DAG audit ledger, zero-fee direct payment rails (**AFW DirectPay**), and an 8-vertical commercial specialist AI agent fleet.
+Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-generation SDR engine, a cryptographic NIST P-256 Merkle DAG audit ledger, zero-fee direct payment rails (**AFW DirectPay**), and a **P1 Modular SME AI Workforce** with unified Service/Agent/Connector registries, 8-state HITL workflows, atomic credit accounting, and durable execution evidence.
+
+---
+
+## P1 Modular SME Platform & Documentation Index
+
+- **Hosting:** Deployed via Render Blueprint ([`render.yaml`](render.yaml)) (`askforwrite-ai-company-os` production & `askforwrite-ai-company-os-staging` sandbox).
+- **Customer Business Control Center:** Role-separated `/app` PWA (`sw.js`: `afw-os-shell-v4.0-p1-workforce`) featuring 12 sections (`Overview`, `Business Profile`, `Service Marketplace`, `AI Workforce`, `Agent Run Console`, `Workflow Builder`, `Connected Tools`, `Tasks & Execution History`, `Approvals`, `Analytics & Reports`, `Subscription & Billing`, `Settings & Security`).
+- **Unified Registry Counts:** `9` Service Categories, `16` Services, `13` Specialist AI Agents, `11` Connectors, and a strict 7-state capability model (`LIVE_VERIFIED`, `LOCAL_ENGINE_VERIFIED`, `SANDBOX_VERIFIED`, `HUMAN_ASSISTED`, `SIMULATED`, `BLOCKED`, `ROADMAP`).
+
+### Documentation Suite (`docs/`)
+
+| Document | Coverage |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | 6-layer P1 architecture, Alembic revision `g7b2c3d4e5f6`, RBAC & tenant isolation |
+| [API Reference](docs/API_REFERENCE.md) | `/v1/registry/*`, `/v1/workflows/*`, `/v1/me/*`, `/v1/revenue/*`, `/v1/watchdog/*` |
+| [Agent Registry](docs/AGENT_REGISTRY.md) | All 13 registered agents, tool allowlists, HITL gates, and lifecycle |
+| [Service Catalog](docs/SERVICE_CATALOG.md) | 9 service categories, 16 services, and preserved commercial catalog SKUs |
+| [Connector Setup](docs/CONNECTOR_SETUP.md) | 11 external/internal connectors, verification checks, and secret redaction |
+| [Subscription Model](docs/SUBSCRIPTION_MODEL.md) | 5 modular SME tiers, 6 modules, 15+ field contracts, atomic credit ledger |
+| [SME Onboarding](docs/CUSTOMER_ONBOARDING.md) | 13-field business profile, explainable recommendations, confirmation gate |
+| [Environment Variables](docs/ENVIRONMENT_VARIABLES.md) | Full reference from `render.yaml`, `.env.example`, and runtime guards |
+| [Simulation & Testing](docs/SIMULATION_AND_TESTING.md) | `SIMULATION` / `SANDBOX` / `PRODUCTION` locks, sink, and pytest commands |
+| [Render Deployment](docs/RENDER_DEPLOYMENT.md) | Production & staging Render blueprint deployment and `alembic upgrade head` |
+| [Capability Matrix](docs/CAPABILITY_MATRIX.md) | Verified runtime classification (`LOCAL_ENGINE_VERIFIED`, `SIMULATED`, `BLOCKED`, etc.) |
 
 ---
 
@@ -192,14 +214,14 @@ uvicorn app.main:app --reload --port 8000
 
 ### 2. Run Tests & Linting
 ```powershell
-# Full test discovery suite (400/400 passing, 82% coverage)
-python -m pytest -v --cov=app
+# Full test discovery suite
+python -m pytest -q
 
-# Adversarial competitor audit suite (22/22 passing)
-python -m pytest tests/test_competitor_adversarial_audit.py -v
+# P1 Modular SME Workforce suite
+python -m pytest tests/test_p1_modular_sme_workforce.py -v
 
 # Ruff linting & style enforcement
-python -m ruff check app tests scripts
+python -m ruff check app tests migrations
 ```
 
 ### 3. Production Docker Deployment

@@ -131,41 +131,55 @@ def publish_seo_draft_to_wordpress(
     post_id = int(hashlib.sha256(f"{draft.id}-{network}".encode()).hexdigest()[:6], 16)
 
     if wp_site_url and wp_username and wp_app_password:
-        try:
-            import httpx
-            endpoint = f"{wp_site_url.rstrip('/')}/wp-json/wp/v2/posts"
-            resp = httpx.post(
-                endpoint,
-                auth=(wp_username, wp_app_password),
-                json={
-                    "title": title,
-                    "content": draft.content,
-                    "status": "publish",
-                    "slug": slug,
-                },
-                timeout=10.0,
+        from app.services.execution_guard import (
+            is_external_side_effect_blocked,
+            record_simulated_dispatch,
+            validate_external_url,
+        )
+
+        if is_external_side_effect_blocked():
+            record_simulated_dispatch(
+                "wordpress_rest",
+                wp_site_url,
+                {"draft_id": str(draft.id), "title": title, "slug": slug},
             )
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                mode = "WORDPRESS_REST_LIVE"
-                post_id = data.get("id", post_id)
-                canonical_url = data.get("link", canonical_url)
-            else:
-                draft.status = "PUBLISH_FAILED"
-                draft.decided_at = datetime.now(UTC)
-                db.add(draft)
-                db.commit()
-                logger.error(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
-                raise RuntimeError(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
-        except Exception as exc:
-            if not isinstance(exc, RuntimeError):
-                draft.status = "PUBLISH_FAILED"
-                draft.decided_at = datetime.now(UTC)
-                db.add(draft)
-                db.commit()
-                logger.error(f"Live WordPress publish exception: {exc}")
-                raise RuntimeError(f"Live WordPress publish error: {exc}") from exc
-            raise
+        else:
+            validate_external_url(wp_site_url)
+            try:
+                import httpx
+                endpoint = f"{wp_site_url.rstrip('/')}/wp-json/wp/v2/posts"
+                resp = httpx.post(
+                    endpoint,
+                    auth=(wp_username, wp_app_password),
+                    json={
+                        "title": title,
+                        "content": draft.content,
+                        "status": "publish",
+                        "slug": slug,
+                    },
+                    timeout=10.0,
+                )
+                if resp.status_code in (200, 201):
+                    data = resp.json()
+                    mode = "WORDPRESS_REST_LIVE"
+                    post_id = data.get("id", post_id)
+                    canonical_url = data.get("link", canonical_url)
+                else:
+                    draft.status = "PUBLISH_FAILED"
+                    draft.decided_at = datetime.now(UTC)
+                    db.add(draft)
+                    db.commit()
+                    logger.error(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
+                    raise RuntimeError(f"Live WordPress publish failed ({resp.status_code}): {resp.text}")
+            except Exception as exc:
+                if not isinstance(exc, RuntimeError):
+                    draft.status = "PUBLISH_FAILED"
+                    draft.decided_at = datetime.now(UTC)
+                    db.add(draft)
+                    db.commit()
+                    logger.error(f"Live WordPress publish exception: {exc}")
+                    raise RuntimeError(f"Live WordPress publish error: {exc}") from exc
+                raise
 
     # Update draft record on successful publish (live or simulated)
     now = datetime.now(UTC)

@@ -152,6 +152,47 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
         <span>Warehouse StockSense AI</span>
       </a>
+      <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
+      <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>Business Profile</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-marketplace" id="nav-cw-marketplace">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Service Marketplace</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-workforce" id="nav-cw-workforce">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+        <span>AI Workforce</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-run-console" id="nav-cw-run-console">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <span>Agent Run Console</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-workflows" id="nav-cw-workflows">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 8.6L15.4 15.4"/></svg>
+        <span>Workflow Builder</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-connectors" id="nav-cw-connectors">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span>Connected Tools</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-history" id="nav-cw-history">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Tasks &amp; Evidence</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-analytics" id="nav-cw-analytics">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Analytics &amp; Reports</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-billing" id="nav-cw-billing">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        <span>Subscription &amp; Billing</span>
+      </a>
+      <a href="#" class="nav-item" data-page="cw-settings" id="nav-cw-settings">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4m0 14v4M4.22 4.22l2.83 2.83m9.9 9.9l2.83 2.83M1 12h4m14 0h4M4.22 19.78l2.83-2.83m9.9-9.9l2.83-2.83"/></svg>
+        <span>Settings &amp; Security</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -1968,6 +2009,255 @@
           </div>
         </div>
       </section>
+
+      <!-- ══════ P1: BUSINESS PROFILE & REQUIREMENT ENGINE ══════ -->
+      <section class="page" id="page-cw-profile">
+        <div class="page-actions">
+          <h2>Business Profile &amp; AI Recommendations</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="cw-pill sandbox" id="cw-readiness-badge">Readiness: --%</span>
+            <button type="button" class="secondary-btn" id="btn-cw-reload-profile">Refresh Profile</button>
+          </div>
+        </div>
+        <div class="cw-card" style="margin-bottom:16px;">
+          <div class="cw-form-grid">
+            <div><label class="modal-label" for="cw-prof-name">Business Name</label><input id="cw-prof-name" class="settings-input" placeholder="Jaipur Ethnic Craft Pvt Ltd"></div>
+            <div><label class="modal-label" for="cw-prof-industry">Industry</label><input id="cw-prof-industry" class="settings-input" placeholder="B2B Textile & Handicraft Export"></div>
+            <div><label class="modal-label" for="cw-prof-location">Location</label><input id="cw-prof-location" class="settings-input" placeholder="Jaipur, Rajasthan, India"></div>
+            <div><label class="modal-label" for="cw-prof-website">Website</label><input id="cw-prof-website" class="settings-input" placeholder="https://example.in"></div>
+            <div><label class="modal-label" for="cw-prof-email">Contact Email</label><input id="cw-prof-email" class="settings-input" placeholder="ops@company.in"></div>
+            <div><label class="modal-label" for="cw-prof-phone">Contact Phone</label><input id="cw-prof-phone" class="settings-input" placeholder="+91-98290-00001"></div>
+            <div><label class="modal-label" for="cw-prof-size">Company Size</label><select id="cw-prof-size" class="settings-select"><option value="micro">Micro (1-10)</option><option value="small" selected>Small (11-50)</option><option value="medium">Medium (51-250)</option></select></div>
+            <div><label class="modal-label" for="cw-prof-employees">Employee Count</label><input id="cw-prof-employees" type="number" min="1" class="settings-input" value="25"></div>
+            <div><label class="modal-label" for="cw-prof-budget">Monthly Budget (INR)</label><input id="cw-prof-budget" type="number" min="0" class="settings-input" value="15000"></div>
+            <div><label class="modal-label" for="cw-prof-volume">Expected Monthly Volume</label><input id="cw-prof-volume" type="number" min="1" class="settings-input" value="500"></div>
+            <div><label class="modal-label" for="cw-prof-approval-mode">Approval Mode</label><select id="cw-prof-approval-mode" class="settings-select"><option value="hitl_required" selected>HITL Approval Required</option><option value="conditional">Conditional Rules</option><option value="auto_within_budget">Auto Within Budget</option></select></div>
+            <div><label class="modal-label" for="cw-prof-products">Products &amp; Services (comma-separated)</label><input id="cw-prof-products" class="settings-input" placeholder="Block Print Textiles, Home Decor"></div>
+            <div><label class="modal-label" for="cw-prof-segments">Customer Segments</label><input id="cw-prof-segments" class="settings-input" placeholder="B2B Importers, Boutique Retail"></div>
+            <div><label class="modal-label" for="cw-prof-channels">Sales Channels</label><input id="cw-prof-channels" class="settings-input" placeholder="Email, WhatsApp, Shopify, IndiaMART"></div>
+            <div><label class="modal-label" for="cw-prof-software">Current Software</label><input id="cw-prof-software" class="settings-input" placeholder="WordPress, Zoho Books, Gmail"></div>
+            <div><label class="modal-label" for="cw-prof-pain">Operational Pain Points</label><input id="cw-prof-pain" class="settings-input" placeholder="Manual lead follow-ups, low organic SEO traffic"></div>
+            <div><label class="modal-label" for="cw-prof-objectives">Business Objectives</label><input id="cw-prof-objectives" class="settings-input" placeholder="Automate B2B lead outreach and weekly SEO content"></div>
+            <div><label class="modal-label" for="cw-prof-automations">Required Automations</label><input id="cw-prof-automations" class="settings-input" placeholder="lead_generation, seo_publishing, payment_followup"></div>
+          </div>
+          <div>
+            <label class="modal-label" for="cw-prof-desc">Business Description &amp; Requirements</label>
+            <textarea id="cw-prof-desc" class="modal-textarea" rows="3" placeholder="Describe what your company sells, your daily bottlenecks, and what you want AI agents to automate..."></textarea>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" class="primary-btn" id="btn-cw-save-profile">Save Profile &amp; Generate Recommendations</button>
+          </div>
+        </div>
+        <div id="cw-recommendations-box" class="cw-card">
+          <div style="color:var(--text-muted);font-size:0.85rem;">Save your business profile above to extract structured requirements and generate tailored service recommendations.</div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: SERVICE MARKETPLACE ══════ -->
+      <section class="page" id="page-cw-marketplace">
+        <div class="page-actions">
+          <h2>Modular SME Service Marketplace</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="cw-marketplace-category-filter" class="settings-select">
+              <option value="all">All 9 Business Categories</option>
+            </select>
+            <button type="button" class="secondary-btn" id="btn-cw-refresh-marketplace">Refresh Registry</button>
+          </div>
+        </div>
+        <div id="cw-marketplace-container" class="cw-grid-2">
+          <div class="empty-state"><p>Loading services from central registry...</p></div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: AI WORKFORCE (AGENT REGISTRY) ══════ -->
+      <section class="page" id="page-cw-workforce">
+        <div class="page-actions">
+          <h2>AI Workforce &amp; Agent Controls</h2>
+          <button type="button" class="secondary-btn" id="btn-cw-refresh-workforce">Refresh Agents</button>
+        </div>
+        <div id="cw-workforce-grid" class="cw-grid-2">
+          <div class="empty-state"><p>Loading AI agents from central registry...</p></div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: AGENT RUN CONSOLE ══════ -->
+      <section class="page" id="page-cw-run-console">
+        <div class="page-actions">
+          <h2>Agent Run Console</h2>
+          <span class="cw-pill sandbox" id="cw-run-mode-indicator">Mode: SIMULATION</span>
+        </div>
+        <div class="cw-card" style="margin-bottom:16px;">
+          <div class="cw-form-grid">
+            <div>
+              <label class="modal-label" for="cw-run-agent-select">Target Agent (from Agent Registry)</label>
+              <select id="cw-run-agent-select" class="settings-select"></select>
+            </div>
+            <div>
+              <label class="modal-label" for="cw-run-service-select">Associated Service (Optional)</label>
+              <select id="cw-run-service-select" class="settings-select"><option value="">-- Agent Direct Execution --</option></select>
+            </div>
+            <div>
+              <label class="modal-label" for="cw-run-mode-select">Execution Mode</label>
+              <select id="cw-run-mode-select" class="settings-select">
+                <option value="SIMULATION" selected>SIMULATION (Zero External Side Effects)</option>
+                <option value="SANDBOX">SANDBOX (Test Provider APIs Only)</option>
+                <option value="PRODUCTION">PRODUCTION (Requires Verified Live Connectors)</option>
+              </select>
+            </div>
+            <div>
+              <label class="modal-label" for="cw-run-idempotency-key">Idempotency Key (Optional)</label>
+              <input id="cw-run-idempotency-key" class="settings-input" placeholder="auto-generated if blank">
+            </div>
+          </div>
+          <div>
+            <label class="modal-label" for="cw-run-input-json">Structured Execution Input (JSON)</label>
+            <textarea id="cw-run-input-json" class="modal-textarea" rows="4">{"task":"Audit weekly B2B export leads and draft summary"}</textarea>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" class="primary-btn" id="btn-cw-execute-agent">Execute Agent with Credit &amp; Evidence Guard</button>
+          </div>
+        </div>
+        <div id="cw-run-result-card" class="cw-card" style="display:none;"></div>
+      </section>
+
+      <!-- ══════ P1: WORKFLOW BUILDER & EXECUTION ══════ -->
+      <section class="page" id="page-cw-workflows">
+        <div class="page-actions">
+          <h2>Workflow Builder &amp; State Machine Runs</h2>
+          <button type="button" class="secondary-btn" id="btn-cw-refresh-workflows">Refresh Workflows</button>
+        </div>
+        <div class="cw-grid-2">
+          <div class="cw-card">
+            <h3>Create Workflow Definition</h3>
+            <div><label class="modal-label" for="cw-wf-name">Workflow Name</label><input id="cw-wf-name" class="settings-input" placeholder="Weekly SEO & Outreach Pipeline"></div>
+            <div><label class="modal-label" for="cw-wf-budget">Max Credit Budget</label><input id="cw-wf-budget" type="number" min="1" class="settings-input" value="10"></div>
+            <div><label class="modal-label" for="cw-wf-steps-json">Steps Definition (JSON Array)</label><textarea id="cw-wf-steps-json" class="modal-textarea" rows="6">[
+  {"step_key":"step_1","step_type":"agent_step","agent_id":"discovery_sdr_agent","input_template":{"industry":"textiles"}},
+  {"step_key":"step_2","step_type":"approval_gate","approval_action":"workflow_hitl_gate"}
+]</textarea></div>
+            <button type="button" class="primary-btn" id="btn-cw-create-workflow">Save Workflow Definition</button>
+          </div>
+          <div class="cw-card">
+            <h3>Saved Definitions</h3>
+            <div id="cw-wf-definitions-list"><div class="empty-state"><p>No workflow definitions yet.</p></div></div>
+          </div>
+        </div>
+        <div class="cw-card" style="margin-top:16px;">
+          <h3>Workflow Execution Runs (8-State FSM)</h3>
+          <div id="cw-wf-runs-list"><div class="empty-state"><p>No workflow runs recorded yet.</p></div></div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: CONNECTED TOOLS & CONNECTOR REGISTRY ══════ -->
+      <section class="page" id="page-cw-connectors">
+        <div class="page-actions">
+          <h2>Connected Tools &amp; Verification</h2>
+          <button type="button" class="secondary-btn" id="btn-cw-refresh-connectors">Refresh Connectors</button>
+        </div>
+        <div id="cw-connectors-grid" class="cw-grid-2">
+          <div class="empty-state"><p>Loading connector registry...</p></div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: TASKS & EXECUTION EVIDENCE HISTORY ══════ -->
+      <section class="page" id="page-cw-history">
+        <div class="page-actions">
+          <h2>Tasks &amp; Execution Evidence</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="cw-history-mode-filter" class="settings-select">
+              <option value="">All Modes</option>
+              <option value="SIMULATION">SIMULATION</option>
+              <option value="SANDBOX">SANDBOX</option>
+              <option value="PRODUCTION">PRODUCTION</option>
+            </select>
+            <button type="button" class="secondary-btn" id="btn-cw-refresh-history">Refresh Evidence</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Execution ID</th>
+                <th>Agent / Service</th>
+                <th>Mode &amp; Origin</th>
+                <th>Status</th>
+                <th>Credits</th>
+                <th>Duration</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="cw-history-tbody">
+              <tr class="empty-row"><td colspan="7"><div class="empty-state"><p>No execution evidence recorded yet.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ══════ P1: ORGANIZATION ANALYTICS & REPORTS ══════ -->
+      <section class="page" id="page-cw-analytics">
+        <div class="page-actions">
+          <h2>Organization Analytics &amp; Reports</h2>
+          <button type="button" class="secondary-btn" id="btn-cw-refresh-analytics">Recalculate from Evidence</button>
+        </div>
+        <div id="cw-analytics-summary" class="cw-grid-3" style="margin-bottom:16px;"></div>
+        <div id="cw-analytics-breakdown" class="cw-card"></div>
+      </section>
+
+      <!-- ══════ P1: SUBSCRIPTION, PRICING COMPOSER & CREDIT LEDGER ══════ -->
+      <section class="page" id="page-cw-billing">
+        <div class="page-actions">
+          <h2>Subscription, Modular Plan &amp; Credit Ledger</h2>
+          <button type="button" class="secondary-btn" id="btn-cw-refresh-billing">Refresh Billing</button>
+        </div>
+        <div class="cw-grid-2" style="margin-bottom:16px;">
+          <div class="cw-card">
+            <h3>Modular Subscription Composer</h3>
+            <div><label class="modal-label" for="cw-bill-tier">Base Plan Tier</label><select id="cw-bill-tier" class="settings-select"><option value="launch">Launch Plan</option><option value="growth" selected>Growth Plan</option><option value="operations">Operations Plan</option><option value="business_pro">Business Pro</option><option value="enterprise">Enterprise Custom</option></select></div>
+            <div><label class="modal-label" for="cw-bill-addons">Add-on Modules (comma-separated keys)</label><input id="cw-bill-addons" class="settings-input" placeholder="seo_geo_copilot, trust_ledger"></div>
+            <div><label class="modal-label" for="cw-bill-credits">Extra Credit Top-Up</label><input id="cw-bill-credits" type="number" min="0" class="settings-input" value="0"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              <button type="button" class="primary-btn" id="btn-cw-apply-subscription">Save Subscription</button>
+              <button type="button" class="secondary-btn" id="btn-cw-purchase-credits">Purchase Credits</button>
+              <button type="button" class="secondary-btn" id="btn-cw-renew-subscription">Renew</button>
+              <button type="button" class="danger-btn" id="btn-cw-cancel-subscription">Cancel Sub</button>
+            </div>
+          </div>
+          <div class="cw-card">
+            <h3>Canonical Pricing Contracts</h3>
+            <div id="cw-pricing-contracts-list"></div>
+          </div>
+        </div>
+        <div class="cw-card">
+          <h3>Immutable Credit Ledger</h3>
+          <div id="cw-credit-ledger-list"><div class="empty-state"><p>No credit transactions yet.</p></div></div>
+        </div>
+      </section>
+
+      <!-- ══════ P1: SETTINGS, BYOK & EMERGENCY STOP ══════ -->
+      <section class="page" id="page-cw-settings">
+        <div class="page-actions">
+          <h2>Workspace Settings &amp; Emergency Safety Controls</h2>
+        </div>
+        <div class="cw-grid-2">
+          <div class="cw-card">
+            <h3>Bring Your Own Key (Gemini BYOK)</h3>
+            <label class="modal-label" for="cw-settings-gemini-key">Gemini API Key</label>
+            <input type="text" id="cw-settings-gemini-key" class="settings-input masked-secret-input" placeholder="AIzaSy..." autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" spellcheck="false">
+            <button type="button" class="primary-btn" id="btn-cw-save-gemini">Save Tenant BYOK Key</button>
+          </div>
+          <div class="cw-card">
+            <h3>4-Level Emergency Stop Kill-Switch</h3>
+            <div><label class="modal-label" for="cw-estop-scope">Stop Scope</label><select id="cw-estop-scope" class="settings-select"><option value="tenant">Tenant Organization Stop</option><option value="agent">Specific Agent Stop</option><option value="execution">Specific Execution Run Stop</option></select></div>
+            <div><label class="modal-label" for="cw-estop-target">Target ID (leave blank for Tenant)</label><input id="cw-estop-target" class="settings-input" placeholder="e.g. outreach_drafter_agent or exec_id"></div>
+            <div><label class="modal-label" for="cw-estop-reason">Audit Reason</label><input id="cw-estop-reason" class="settings-input" placeholder="Compliance hold or unexpected output spike"></div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" class="danger-btn" id="btn-cw-trigger-estop">Activate Emergency Stop</button>
+              <button type="button" class="secondary-btn" id="btn-cw-release-estop">Release Stop</button>
+            </div>
+            <div id="cw-estop-active-list" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -2010,7 +2300,7 @@
         <button class="modal-close" id="settings-modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="form-group" style="margin-bottom: 16px;">
+        <div class="form-group" id="settings-owner-key-group" style="margin-bottom: 16px;">
           <label class="modal-label" for="settings-api-key">Owner API Key</label>
           <div style="position: relative; display: flex; align-items: center;">
             <input type="text" id="settings-api-key" class="settings-input masked-secret-input" placeholder="Enter your OWNER_API_KEY or MANAGER_API_KEY" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" spellcheck="false" style="width: 100%; padding-right: 40px;">
@@ -2275,6 +2565,23 @@
 
       <!-- Message / Error Banner -->
       <div id="auth-gate-message" style="display:none; padding:10px 14px; border-radius:8px; font-size:0.82rem; margin-top:14px; text-align:center;"></div>
+    </div>
+  </div>
+
+  <!-- ── P1 Evidence Inspector Drawer Modal ─────────────────────────────── -->
+  <div class="modal-overlay" id="cw-evidence-drawer" style="display:none">
+    <div class="modal" style="max-width:780px;width:94%;">
+      <div class="modal-header">
+        <div>
+          <h3 id="cw-evidence-drawer-title" style="margin:0;">Execution Evidence Inspector</h3>
+          <span style="font-size:0.75rem;color:var(--text-muted);">18-Field Immutable Audit &amp; Origin Record</span>
+        </div>
+        <button type="button" class="modal-close" id="btn-cw-close-evidence">&times;</button>
+      </div>
+      <div class="modal-body" id="cw-evidence-drawer-body" style="max-height:70vh;overflow-y:auto;"></div>
+      <div class="modal-footer">
+        <button type="button" class="primary-btn" id="btn-cw-close-evidence-footer">Close Inspector</button>
+      </div>
     </div>
   </div>
 

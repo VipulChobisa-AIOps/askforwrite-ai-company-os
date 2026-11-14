@@ -1082,26 +1082,61 @@ def use_tenant_service(
 
 
 class TenantBusinessProfileRequest(BaseModel):
-    business_name: str = Field(min_length=1, max_length=200)
+    business_name: str = Field(min_length=1, max_length=250)
     industry: str = Field(default="SME Business", max_length=200)
-    company_size: str = Field(default="10-50 employees", max_length=100)
+    description: str = Field(default="", max_length=2000)
+    location: str | None = Field(default=None, max_length=250)
     city: str = Field(default="Jaipur", max_length=100)
-    website: str = Field(default="", max_length=300)
-    sales_channels: list[str] = Field(default_factory=lambda: ["B2B Direct", "Website", "WhatsApp"])
+    website: str = Field(default="", max_length=500)
+    contact_info: dict[str, Any] = Field(default_factory=dict)
+    company_size: str = Field(default="10-50 employees", max_length=100)
+    employee_count: int = Field(default=10, ge=1, le=500000)
+    products_and_services: list[str] = Field(default_factory=list)
     products: list[str] = Field(default_factory=list)
+    customer_segments: list[str] = Field(default_factory=list)
+    sales_channels: list[str] = Field(default_factory=lambda: ["B2B Direct", "Website", "WhatsApp"])
     current_software: list[str] = Field(default_factory=list)
+    operational_pain_points: list[str] = Field(default_factory=list)
+    business_objectives: list[str] = Field(default_factory=list)
+    required_automations: list[str] = Field(default_factory=list)
+    expected_monthly_volume: dict[str, Any] = Field(default_factory=dict)
+    currency: str = Field(default="INR", max_length=10)
     requirements_text: str = Field(
         default="Generate qualified leads, manage inventory shortages, and publish SEO content",
         max_length=2000,
     )
 
 
+class TenantProfileConfirmRequest(BaseModel):
+    base_plan_key: str | None = Field(default=None, max_length=100)
+    selected_modules: list[str] | None = Field(default=None)
+    billing_interval: str = Field(default="monthly", max_length=32)
+    currency: str = Field(default="INR", max_length=10)
+    activate_selection: bool = Field(default=False)
+
+
 class TenantModularSubscriptionRequest(BaseModel):
     base_tier: str = Field(default="growth", description="launch | growth | operations | business_pro | enterprise")
     addon_modules: list[str] = Field(
         default_factory=list,
-        description="Additional modules: sales, marketing, seo, inventory, field_force, customer_ops",
+        description="Additional modules: lead_discovery, sales_proposals, seo_content, marketing_campaigns, customer_support, field_operations, inventory_quality, governance_trust",
     )
+    billing_type: str = Field(default="recurring", max_length=32)
+    billing_interval: str = Field(default="monthly", max_length=32)
+    currency: str = Field(default="INR", max_length=10)
+    extra_agents: int = Field(default=0, ge=0, le=500)
+    extra_seats: int = Field(default=0, ge=0, le=5000)
+    credit_packs: int = Field(default=0, ge=0, le=500)
+    integration_addons: list[str] = Field(default_factory=list)
+    customization_level: str = Field(default="standard", max_length=64)
+
+
+class TenantCancelSubscriptionRequest(BaseModel):
+    cancel_at_period_end: bool = Field(default=True)
+
+
+class TenantCreditPurchaseRequest(BaseModel):
+    credit_packs: int = Field(default=1, ge=1, le=500)
 
 
 class TenantAgentControlRequest(BaseModel):
@@ -1110,9 +1145,16 @@ class TenantAgentControlRequest(BaseModel):
     budget_credits: int | None = Field(default=None, ge=0, le=100000)
 
 
+class TenantEmergencyStopRequest(BaseModel):
+    scope_level: str = Field(default="tenant", description="tenant | agent | execution")
+    scope_target: str | None = Field(default=None, max_length=120)
+    state: str = Field(default="EMERGENCY_STOPPED", description="ACTIVE | PAUSED | EMERGENCY_STOPPED")
+    reason: str = Field(default="Customer tenant safety stop", max_length=500)
+
+
 @router.post(
     "/business-profile",
-    summary="Save SME business profile and run AI requirement assessment (Steps 1-3)",
+    summary="Save SME business profile and run AI requirement assessment (13-field P1 engine)",
     operation_id="save_me_business_profile",
 )
 def save_tenant_business_profile(
@@ -1120,7 +1162,8 @@ def save_tenant_business_profile(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Persist SME Business Profile into tenant workspace and return tailored 6-Layer SME OS assessment."""
+    """Persist full 13-field SME Business Profile into DB, extract requirements, and generate explainable recommendations."""
+    from app.services.onboarding import save_profile_and_generate_recommendations
     from app.services.watchdog import assess_sme_business_requirements
 
     user = db.get(UserRecord, principal.user_id)
@@ -1130,48 +1173,68 @@ def save_tenant_business_profile(
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
+    loc = body.location or body.city
+    prods = body.products_and_services or body.products
+    pain_pts = body.operational_pain_points or ([body.requirements_text] if body.requirements_text else [])
+    objs = body.business_objectives or ([body.requirements_text] if body.requirements_text else [])
+
+    p1_result = save_profile_and_generate_recommendations(
+        db,
+        org_id=org.id,
+        actor=user.email,
+        payload={
+            "business_name": body.business_name,
+            "industry": body.industry,
+            "description": body.description,
+            "location": loc,
+            "website": body.website,
+            "contact_info": body.contact_info or {"email": user.email, "name": user.full_name},
+            "company_size": body.company_size,
+            "employee_count": body.employee_count,
+            "products_and_services": prods,
+            "customer_segments": body.customer_segments,
+            "sales_channels": body.sales_channels,
+            "current_software": body.current_software,
+            "operational_pain_points": pain_pts,
+            "business_objectives": objs,
+            "required_automations": body.required_automations,
+            "expected_monthly_volume": body.expected_monthly_volume,
+            "currency": body.currency,
+        },
+    )
     assessment = assess_sme_business_requirements(
         business_name=body.business_name,
         industry=body.industry,
-        city=body.city,
+        city=loc,
         company_size=body.company_size,
-        requirements_text=body.requirements_text,
+        requirements_text=body.requirements_text or "; ".join(pain_pts + objs),
     )
-    meta = dict(org.metadata_json or {})
-    meta["business_profile"] = {
-        **assessment["business_profile"],
-        "website": body.website,
-        "sales_channels": body.sales_channels,
-        "products": body.products,
-        "current_software": body.current_software,
-        "recommended_base_tier": assessment["recommended_base_tier"],
-        "selected_modules": assessment["selected_modules"],
-        "recommended_agents": assessment["recommended_agents"],
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    org.metadata_json = meta
-    flag_modified(org, "metadata_json")
-    db.add(org)
-    db.commit()
 
     return {
         "status": "SAVED",
         "org_id": org.id,
-        "business_profile": meta["business_profile"],
+        "profile": p1_result["profile"],
+        "structured_requirements": p1_result["structured_requirements"],
+        "recommendation": p1_result["recommendation"],
+        "business_profile": p1_result["business_profile"],
         "assessment": assessment,
     }
 
 
 @router.get(
     "/business-profile",
-    summary="Get SME business profile and recommended modular workforce",
+    summary="Get SME business profile, structured requirements, and modular recommendations",
     operation_id="get_me_business_profile",
 )
 def get_tenant_business_profile(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Retrieve the tenant's saved SME Business Profile and modular subscription configuration."""
+    """Retrieve the tenant's saved 13-field SME Business Profile and modular subscription configuration."""
+    from app.db.models import BusinessProfileRecord, StructuredRequirementRecord, TenantSubscriptionRecord
+    from app.services.billing_ledger import serialize_tenant_subscription
+    from app.services.onboarding import serialize_business_profile
+
     user = db.get(UserRecord, principal.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -1180,14 +1243,66 @@ def get_tenant_business_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     meta = org.metadata_json or {}
+    profile_rec = db.query(BusinessProfileRecord).filter_by(org_id=org.id).first()
+    req_rows = db.query(StructuredRequirementRecord).filter_by(org_id=org.id).all()
+    sub_prof = db.query(TenantSubscriptionRecord).filter_by(org_id=org.id).first()
+
     return {
         "org_id": org.id,
         "org_name": org.name,
         "tier": org.tier,
+        "profile": serialize_business_profile(profile_rec) if profile_rec else None,
+        "structured_requirements": [
+            {
+                "requirement_id": r.id,
+                "category": r.category,
+                "title": r.title,
+                "priority": r.priority,
+                "recommended_modules": r.recommended_modules,
+                "recommended_agents": r.recommended_agents,
+                "required_connectors": r.required_connectors,
+                "expected_monthly_credits": r.expected_monthly_credits,
+                "limitations": r.limitations,
+                "status": r.status,
+            }
+            for r in req_rows
+        ],
+        "recommendation": profile_rec.recommended_plan if profile_rec else None,
+        "subscription_contract": serialize_tenant_subscription(sub_prof) if sub_prof else None,
         "business_profile": meta.get("business_profile") or {},
         "modular_subscription": meta.get("modular_subscription") or {},
         "agent_controls": meta.get("agent_controls") or {},
     }
+
+
+@router.post(
+    "/business-profile/confirm",
+    summary="Explicitly confirm recommended SME modules before activating/charging",
+    operation_id="confirm_me_business_profile",
+)
+def confirm_tenant_business_profile(
+    body: TenantProfileConfirmRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Explicit customer confirmation step for recommended SME services and subscription."""
+    from app.services.onboarding import confirm_recommended_selection
+
+    if not principal.org_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant organization required")
+    try:
+        return confirm_recommended_selection(
+            db,
+            org_id=principal.org_id,
+            actor=principal.subject,
+            selected_modules=body.selected_modules,
+            base_plan_key=body.base_plan_key,
+            billing_interval=body.billing_interval,
+            currency=body.currency,
+            activate_selection=body.activate_selection,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.post(
@@ -1200,8 +1315,9 @@ def configure_tenant_modular_subscription(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Compose a modular SME subscription (e.g., Growth plan + Inventory module) and return its 13-field contract."""
-    from app.services.catalog import MODULAR_SERVICE_MODULES, get_modular_pricing_contract
+    """Compose a modular SME subscription and persist the 15-field contract + credits."""
+    from app.services.billing_ledger import apply_subscription_configuration
+    from app.services.catalog import get_modular_pricing_contract
 
     user = db.get(UserRecord, principal.user_id)
     if not user:
@@ -1210,27 +1326,186 @@ def configure_tenant_modular_subscription(
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
+    res = apply_subscription_configuration(
+        db,
+        org_id=org.id,
+        actor=user.email,
+        action="configure",
+        base_plan_key=body.base_tier,
+        selected_modules=body.addon_modules,
+        billing_type=body.billing_type,
+        billing_interval=body.billing_interval,
+        currency=body.currency,
+        extra_agents=body.extra_agents,
+        extra_seats=body.extra_seats,
+        credit_packs=body.credit_packs,
+        integration_addons=body.integration_addons,
+        customization_level=body.customization_level,
+    )
     contract = get_modular_pricing_contract(body.base_tier, addon_modules=body.addon_modules)
-    entitled_caps: list[str] = []
-    for mod_key in contract["included_modules"]:  # type: ignore[union-attr]
-        mod_spec = MODULAR_SERVICE_MODULES.get(str(mod_key), {})
-        for cap in mod_spec.get("capabilities", []):  # type: ignore[union-attr]
-            if cap not in entitled_caps:
-                entitled_caps.append(str(cap))
-
-    meta = dict(org.metadata_json or {})
-    meta["modular_subscription"] = contract
-    meta["entitled_capabilities"] = entitled_caps
-    org.metadata_json = meta
-    flag_modified(org, "metadata_json")
-    db.add(org)
-    db.commit()
+    # Sync P0 metadata key cleanly alongside P1 DB table
+    org = db.get(OrganizationRecord, org.id)
+    if org:
+        meta = dict(org.metadata_json or {})
+        meta["modular_subscription"] = {**contract, **res["pricing"]}
+        org.metadata_json = meta
+        flag_modified(org, "metadata_json")
+        db.commit()
 
     return {
         "status": "CONFIGURED",
         "org_id": org.id,
-        "pricing_contract": contract,
-        "entitled_capabilities": entitled_caps,
+        "pricing_contract": res["pricing"],
+        "subscription": res["subscription"],
+        "entitled_capabilities": res["pricing"]["entitled_capabilities"],
+    }
+
+
+@router.post("/subscription/upgrade", summary="Upgrade tenant modular subscription")
+def upgrade_tenant_subscription(
+    body: TenantModularSubscriptionRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import apply_subscription_configuration
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return apply_subscription_configuration(
+        db,
+        org_id=principal.org_id,
+        actor=principal.subject,
+        action="upgrade",
+        base_plan_key=body.base_tier,
+        selected_modules=body.addon_modules,
+        billing_type=body.billing_type,
+        billing_interval=body.billing_interval,
+        currency=body.currency,
+        extra_agents=body.extra_agents,
+        extra_seats=body.extra_seats,
+        credit_packs=body.credit_packs,
+        integration_addons=body.integration_addons,
+        customization_level=body.customization_level,
+    )
+
+
+@router.post("/subscription/downgrade", summary="Downgrade tenant modular subscription")
+def downgrade_tenant_subscription(
+    body: TenantModularSubscriptionRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import apply_subscription_configuration
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return apply_subscription_configuration(
+        db,
+        org_id=principal.org_id,
+        actor=principal.subject,
+        action="downgrade",
+        base_plan_key=body.base_tier,
+        selected_modules=body.addon_modules,
+        billing_type=body.billing_type,
+        billing_interval=body.billing_interval,
+        currency=body.currency,
+        extra_agents=body.extra_agents,
+        extra_seats=body.extra_seats,
+        credit_packs=body.credit_packs,
+        integration_addons=body.integration_addons,
+        customization_level=body.customization_level,
+    )
+
+
+@router.post("/subscription/cancel", summary="Cancel tenant modular subscription")
+def cancel_tenant_subscription(
+    body: TenantCancelSubscriptionRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import apply_subscription_configuration
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return apply_subscription_configuration(
+        db,
+        org_id=principal.org_id,
+        actor=principal.subject,
+        action="cancel",
+        cancel_at_period_end=body.cancel_at_period_end,
+    )
+
+
+@router.post("/subscription/renew", summary="Renew tenant modular subscription cycle")
+def renew_tenant_subscription(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import apply_subscription_configuration
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return apply_subscription_configuration(
+        db,
+        org_id=principal.org_id,
+        actor=principal.subject,
+        action="renew",
+    )
+
+
+@router.post("/credits/purchase", summary="Purchase modular usage credit packs")
+def purchase_tenant_credits(
+    body: TenantCreditPurchaseRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import apply_subscription_configuration
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return apply_subscription_configuration(
+        db,
+        org_id=principal.org_id,
+        actor=principal.subject,
+        action="purchase_credits",
+        credit_packs=body.credit_packs,
+    )
+
+
+@router.get("/credits/ledger", summary="View tenant credit accounting ledger")
+def get_tenant_credit_ledger(
+    limit: int = 50,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.db.models import CreditLedgerRecord
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    rows = (
+        db.query(CreditLedgerRecord)
+        .filter_by(org_id=principal.org_id)
+        .order_by(CreditLedgerRecord.created_at.desc())
+        .limit(max(1, min(limit, 200)))
+        .all()
+    )
+    return {
+        "org_id": principal.org_id,
+        "count": len(rows),
+        "entries": [
+            {
+                "id": r.id,
+                "execution_id": r.execution_id,
+                "entry_type": r.entry_type,
+                "credit_pool": r.credit_pool,
+                "delta": r.delta,
+                "balance_after": r.balance_after,
+                "status": r.status,
+                "reason": r.reason,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
     }
 
 
@@ -1245,7 +1520,9 @@ def control_tenant_agent(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Update tenant-scoped lifecycle state (ACTIVE, PAUSED, EMERGENCY_STOPPED) for an AI agent."""
+    """Update persistent tenant-scoped lifecycle state (ACTIVE, PAUSED, EMERGENCY_STOPPED) for an AI agent."""
+    from app.services.execution_guard import set_emergency_stop
+
     user = db.get(UserRecord, principal.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -1268,11 +1545,24 @@ def control_tenant_agent(
             detail=f"Unsupported action '{body.action}'. Use activate, pause, emergency_stop, resume, or configure.",
         )
 
+    target_state = state_map[clean_action]
+    scope_lvl = "tenant" if clean_agent in ("__all__", "*") else "agent"
+    scope_target = org.id if scope_lvl == "tenant" else clean_agent
+    set_emergency_stop(
+        db,
+        scope_level=scope_lvl,
+        scope_target=scope_target,
+        state=target_state,
+        reason=body.reason or f"Tenant {clean_action}",
+        triggered_by=user.email,
+        org_id=org.id,
+    )
+
     meta = dict(org.metadata_json or {})
     controls = dict(meta.get("agent_controls") or {})
     entry = {
         "agent_key": clean_agent,
-        "state": state_map[clean_action],
+        "state": target_state,
         "last_action": clean_action,
         "reason": body.reason or f"Tenant {clean_action}",
         "budget_credits": body.budget_credits if body.budget_credits is not None else 100,
@@ -1293,5 +1583,151 @@ def control_tenant_agent(
         "status": "UPDATED",
         "org_id": org.id,
         "control": entry,
+    }
+
+
+@router.post("/emergency-stop", summary="Trigger or clear tenant-scoped emergency stop (tenant/agent/execution)")
+def trigger_tenant_emergency_stop(
+    body: TenantEmergencyStopRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.execution_guard import set_emergency_stop
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    clean_scope = body.scope_level.strip().lower()
+    if clean_scope == "platform":
+        raise HTTPException(status_code=403, detail="Tenants cannot toggle platform-wide emergency stop")
+    target = principal.org_id if clean_scope == "tenant" else (body.scope_target or principal.org_id)
+    try:
+        ctrl = set_emergency_stop(
+            db,
+            scope_level=clean_scope,
+            scope_target=target,
+            state=body.state,
+            reason=body.reason,
+            triggered_by=principal.subject,
+            org_id=principal.org_id,
+        )
+        db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": ctrl["state"], "emergency_stop": ctrl}
+
+
+@router.get("/emergency-stops", summary="List active emergency stops for current tenant")
+def list_tenant_emergency_stops(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.execution_guard import list_active_emergency_stops
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    stops = list_active_emergency_stops(db, org_id=principal.org_id)
+    return {"org_id": principal.org_id, "count": len(stops), "emergency_stops": stops}
+
+
+@router.get("/evidence", summary="List tenant-scoped 18-field execution evidence records")
+def list_tenant_execution_evidence(
+    agent_id: str | None = None,
+    limit: int = 50,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.evidence import list_execution_evidence
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    rows = list_execution_evidence(db, tenant_id=principal.org_id, agent_id=agent_id, limit=limit)
+    return {"org_id": principal.org_id, "count": len(rows), "records": rows}
+
+
+@router.get("/approvals", summary="List HITL approvals belonging to current tenant workspace")
+def list_tenant_approvals(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.db.models import ApprovalRequest, WorkflowRunRecord
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    # Match approvals requested by tenant users OR attached to tenant workflow runs
+    wf_app_ids = [
+        r.approval_id
+        for r in db.query(WorkflowRunRecord).filter_by(org_id=principal.org_id).all()
+        if r.approval_id
+    ]
+    user_emails = [u.email for u in db.query(UserRecord).filter_by(org_id=principal.org_id).all()]
+    all_apprs = db.query(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).limit(200).all()
+    scoped = [
+        a
+        for a in all_apprs
+        if a.id in wf_app_ids or a.requested_by in user_emails or a.requested_by == principal.subject
+    ]
+    return {
+        "org_id": principal.org_id,
+        "count": len(scoped),
+        "approvals": [
+            {
+                "approval_id": a.id,
+                "task_id": a.task_id,
+                "action": a.action,
+                "requested_by": a.requested_by,
+                "status": a.status,
+                "decided_by": a.decided_by,
+                "decision_note": a.decision_note,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in scoped
+        ],
+    }
+
+
+class TenantApprovalDecisionRequest(BaseModel):
+    decision: str = Field(default="APPROVED")
+    reason: str = Field(default="", max_length=500)
+    decision_note: str = Field(default="", max_length=500)
+
+
+@router.post("/approvals/{approval_id}/decide", summary="Approve or reject a tenant HITL gate")
+def decide_tenant_approval(
+    approval_id: str,
+    body: TenantApprovalDecisionRequest | None = None,
+    decision: str | None = None,
+    decision_note: str = "",
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.db.models import ApprovalRequest, WorkflowRunRecord
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    appr = db.get(ApprovalRequest, approval_id)
+    if not appr:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+
+    # Verify tenant ownership
+    wf_match = db.query(WorkflowRunRecord).filter_by(org_id=principal.org_id, approval_id=approval_id).first()
+    user_emails = {u.email for u in db.query(UserRecord).filter_by(org_id=principal.org_id).all()}
+    if not wf_match and appr.requested_by not in user_emails and appr.requested_by != principal.subject:
+        raise HTTPException(status_code=403, detail="Approval request belongs to a different organization")
+
+    effective_dec = (body.decision if body else None) or decision or "APPROVED"
+    effective_note = (body.decision_note or body.reason if body else "") or decision_note
+    clean_dec = effective_dec.strip().upper()
+    if clean_dec not in ("APPROVED", "REJECTED"):
+        raise HTTPException(status_code=422, detail="decision must be APPROVED or REJECTED")
+    appr.status = clean_dec
+    appr.decided_by = principal.subject
+    appr.decision_note = effective_note or appr.decision_note
+    appr.decided_at = datetime.now(timezone.utc)
+    db.commit()
+    return {
+        "approval_id": appr.id,
+        "status": appr.status,
+        "decided_by": appr.decided_by,
+        "decision_note": appr.decision_note,
     }
 

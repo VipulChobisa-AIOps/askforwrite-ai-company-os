@@ -63,6 +63,15 @@ class MockEmailDispatcher:
             from_email=sender,
         )
         self.sent_messages.append(message)
+        try:
+            from app.services.execution_guard import record_simulated_dispatch
+            record_simulated_dispatch(
+                "hostinger_smtp",
+                recipient_email,
+                {"subject": subject, "sender": sender, "body_preview": body_text[:120]},
+            )
+        except Exception:
+            pass
         logger.info("MockEmailDispatcher (SIMULATED) dispatched to %s with subject: %s", recipient_email, subject)
         return {
             "provider": "mock",
@@ -102,6 +111,26 @@ class SmtpEmailDispatcher:
         from_email: str | None = None,
     ) -> dict[str, object]:
         sender = from_email or self.default_sender
+        app_env = os.getenv("APP_ENV", "development").strip().lower()
+        ext_disabled = os.getenv("ENABLE_EXTERNAL_SIDE_EFFECTS", "").strip().lower() in ("0", "false", "no")
+        sim_only = os.getenv("SIMULATION_ONLY", "").strip().lower() in ("1", "true", "yes")
+        if ext_disabled or sim_only or app_env in ("staging", "simulation"):
+            from app.services.execution_guard import record_simulated_dispatch
+
+            rec = record_simulated_dispatch(
+                "smtp_email",
+                recipient_email,
+                {"subject": subject, "sender": sender, "body_preview": body_text[:120]},
+            )
+            return {
+                "provider": "smtp_simulation",
+                "status": "simulated",
+                "simulated": True,
+                "recipient": recipient_email,
+                "sender": sender,
+                "dispatch_id": rec["dispatch_id"],
+            }
+
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = sender
@@ -139,6 +168,11 @@ def get_email_dispatcher() -> EmailDispatcher:
     """Factory to retrieve configured email dispatcher based on environment settings."""
     app_env = os.getenv("APP_ENV", "development").lower()
     provider = os.getenv("OUTREACH_DISPATCH_PROVIDER", "smtp" if app_env == "production" else "mock").lower()
+    ext_disabled = os.getenv("ENABLE_EXTERNAL_SIDE_EFFECTS", "").strip().lower() in ("0", "false", "no")
+    sim_only = os.getenv("SIMULATION_ONLY", "").strip().lower() in ("1", "true", "yes")
+
+    if ext_disabled or sim_only or app_env in ("staging", "simulation"):
+        return _default_mock_dispatcher
 
     if app_env == "production":
         if provider != "smtp" or not os.getenv("SMTP_HOST"):

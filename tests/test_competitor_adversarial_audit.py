@@ -1330,6 +1330,7 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
                 "WP_SITE_URL": "https://example-wordpress.com",
                 "WP_USERNAME": "test_wp_user",
                 "WP_APP_PASSWORD": "test_wp_password",
+                "ALLOW_LIVE_IN_TEST": "1",
             },
         ), patch("httpx.post") as mock_wp_post:
             from unittest.mock import MagicMock

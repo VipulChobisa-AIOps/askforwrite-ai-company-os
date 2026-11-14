@@ -1,11 +1,12 @@
 /**
  * AskforWrite AI Company OS — Service Worker
- * Version: 3.5.0 (P0 Truthfulness & Fail-Closed Release)
+ * Version: 4.0.0 (P1 Modular SME AI Workforce & Control Center)
  * Provides network-first asset freshness, cache-busting on release, and offline fallback.
  */
 
-const CACHE_NAME = 'afw-os-shell-v3.5-truthfulness';
-const BUILD_VERSION = 'v3.5-p0-truthfulness';
+const CACHE_NAME = 'afw-os-shell-v4.0-p1-workforce';
+const PREVIOUS_CACHE_NAMES = ['afw-os-shell-v3.5-truthfulness'];
+const BUILD_VERSION = 'v4.0-p1-modular-workforce';
 
 const STATIC_ASSETS = [
   '/dashboard/',

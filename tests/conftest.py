@@ -20,6 +20,12 @@ if str(_project_root) not in sys.path:
 # Load fixtures from the helpers module (relative path works from any cwd)
 pytest_plugins = ["tests.helpers"]
 
+# Ensure all ORM models (including P1 tables) are registered on Base.metadata before any test creates engines
+import app.db.models  # noqa: E402, F401
+from app.db.database import Base as _Base, engine as _default_engine  # noqa: E402
+
+_Base.metadata.create_all(bind=_default_engine, checkfirst=True)
+
 # Database session fixture for tests that need DB access
 @pytest.fixture
 def db_session():

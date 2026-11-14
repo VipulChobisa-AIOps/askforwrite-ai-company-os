@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 import migrations.versions.e5f6a1b2c3d4_add_watchdog_preview_and_shift_tables as sprint5_migration
 import migrations.versions.f6a1b2c3d4e5_add_sovereign_payment_sessions as sovereign_migration
+import migrations.versions.g7b2c3d4e5f6_add_p1_modular_workforce_tables as p1_migration
 
 
 class MigrationChainAndSchemaParityTests(unittest.TestCase):
@@ -26,20 +27,78 @@ class MigrationChainAndSchemaParityTests(unittest.TestCase):
         self.script_directory = ScriptDirectory.from_config(self.config)
 
     def test_migration_chain_has_single_head_and_correct_revisions(self):
-        """Verify the migration chain ends at f6a1b2c3d4e5 with down_revision e5f6a1b2c3d4."""
+        """Verify the migration chain ends at g7b2c3d4e5f6 with down_revision f6a1b2c3d4e5."""
         heads = self.script_directory.get_heads()
         self.assertEqual(len(heads), 1, f"Expected exactly 1 migration head, got: {heads}")
         head_rev = heads[0]
-        self.assertEqual(head_rev, "f6a1b2c3d4e5")
+        self.assertEqual(head_rev, "g7b2c3d4e5f6")
 
         head_script = self.script_directory.get_revision(head_rev)
         self.assertIsNotNone(head_script)
-        self.assertEqual(head_script.down_revision, "e5f6a1b2c3d4")
+        self.assertEqual(head_script.down_revision, "f6a1b2c3d4e5")
 
-        # Verify down revision script exists
+        prev_script = self.script_directory.get_revision("f6a1b2c3d4e5")
+        self.assertIsNotNone(prev_script)
+        self.assertEqual(prev_script.down_revision, "e5f6a1b2c3d4")
+
+        # Verify earlier down revision script exists
         down_script = self.script_directory.get_revision("e5f6a1b2c3d4")
         self.assertIsNotNone(down_script)
         self.assertEqual(down_script.down_revision, "d4e5f6a1b2c3")
+
+    def test_p1_modular_workforce_migration_upgrade_and_downgrade_parity(self):
+        """Verify upgrade() and downgrade() of g7b2c3d4e5f6 against SQLite engine."""
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
+        from alembic.runtime.migration import MigrationContext
+        from alembic.operations import Operations
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+
+            orig_op = p1_migration.op
+            p1_migration.op = op
+            try:
+                p1_migration.upgrade()
+                conn.commit()
+
+                inspector = inspect(conn)
+                table_names = set(inspector.get_table_names())
+                expected_tables = {
+                    "business_profiles",
+                    "structured_requirements",
+                    "tenant_subscription_profiles",
+                    "tenant_agent_configs",
+                    "connector_states",
+                    "workflow_definitions",
+                    "workflow_runs",
+                    "execution_evidence_records",
+                    "credit_ledger_records",
+                    "emergency_stop_records",
+                }
+                self.assertTrue(expected_tables.issubset(table_names))
+
+                evidence_cols = {c["name"] for c in inspector.get_columns("execution_evidence_records")}
+                self.assertTrue({
+                    "execution_id", "tenant_id", "workflow_id", "agent_id", "connector_id",
+                    "execution_mode", "input_reference", "output_reference", "provider_request_id",
+                    "fallback_used", "approval_id", "status", "failure_reason", "credits_consumed",
+                    "started_at", "completed_at", "evidence_reference", "version",
+                }.issubset(evidence_cols))
+
+                p1_migration.downgrade()
+                conn.commit()
+
+                inspector_after = inspect(conn)
+                table_names_after = set(inspector_after.get_table_names())
+                self.assertTrue(expected_tables.isdisjoint(table_names_after))
+            finally:
+                p1_migration.op = orig_op
 
     def test_sprint5_migration_upgrade_and_downgrade_parity(self):
         """Verify upgrade() and downgrade() of e5f6a1b2c3d4 against SQLite engine."""

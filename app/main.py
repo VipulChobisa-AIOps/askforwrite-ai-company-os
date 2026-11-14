@@ -29,6 +29,7 @@ from app.api.v1.mobility_analytics import router as mobility_analytics_router
 from app.api.v1.outreach import router as outreach_router
 from app.api.v1.previews import router as previews_router
 from app.api.v1.quality_analytics import router as quality_analytics_router
+from app.api.v1.registry import router as registry_router
 from app.api.v1.revenue import router as revenue_router
 from app.api.v1.scheduler import router as scheduler_router
 from app.api.v1.sovereign_pay import router as sovereign_pay_router
@@ -38,6 +39,7 @@ from app.api.v1.neon_api import router as neon_router
 from app.api.v1.subscriptions import router as subscriptions_router
 from app.api.v1.watchdog import router as watchdog_router
 from app.api.v1.webhooks import router as webhooks_router
+from app.api.v1.workflows import router as workflows_router
 from app.clients.field_force import FieldForceClient, get_field_force_client
 from app.db.database import get_db
 from app.db.models import (
@@ -195,6 +197,8 @@ app.include_router(growth_suite_router)
 app.include_router(quality_analytics_router)
 app.include_router(mobility_analytics_router)
 app.include_router(inventory_analytics_router)
+app.include_router(registry_router)
+app.include_router(workflows_router)
 app.include_router(watchdog_router)
 app.include_router(previews_router)
 app.include_router(scheduler_router)

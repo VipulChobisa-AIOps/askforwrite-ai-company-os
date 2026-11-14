@@ -1716,3 +1716,131 @@ body::before {
   color: #ffffff;
 }
 
+/* ── P1 Customer Business Control Center Styles ─────────────────────── */
+.sidebar-section-label {
+  padding: 12px 14px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  opacity: 0.85;
+}
+
+.cw-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.cw-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.cw-card {
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.75);
+  color: #cbd5e1;
+}
+
+.cw-pill.live,
+.cw-pill.completed {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(20, 83, 45, 0.35);
+  color: #86efac;
+}
+
+.cw-pill.sandbox,
+.cw-pill.ready,
+.cw-pill.running {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(12, 74, 110, 0.35);
+  color: #7dd3fc;
+}
+
+.cw-pill.simulated,
+.cw-pill.warning,
+.cw-pill.waiting_approval {
+  border-color: rgba(250, 204, 21, 0.45);
+  background: rgba(113, 63, 18, 0.35);
+  color: #fde047;
+}
+
+.cw-pill.blocked,
+.cw-pill.failed,
+.cw-pill.disabled,
+.cw-pill.cancelled {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fca5a5;
+}
+
+.cw-code-box {
+  background: rgba(2, 6, 23, 0.85);
+  border: 1px solid rgba(51, 65, 85, 0.7);
+  border-radius: 8px;
+  padding: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.cw-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.cw-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.cw-evidence-field {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(51, 65, 85, 0.65);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.cw-evidence-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.cw-evidence-value {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  word-break: break-word;
+}
+
+

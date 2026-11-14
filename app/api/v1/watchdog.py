@@ -228,6 +228,14 @@ class AgentControlRequest(BaseModel):
     budget_credits: int | None = Field(default=None, ge=0, le=100000)
 
 
+class PlatformEmergencyStopRequest(BaseModel):
+    scope_level: str = Field(default="platform", description="execution | agent | tenant | platform")
+    scope_target: str = Field(default="*", max_length=120)
+    org_id: str | None = Field(default=None, max_length=64)
+    state: str = Field(default="EMERGENCY_STOPPED", description="ACTIVE | PAUSED | EMERGENCY_STOPPED")
+    reason: str = Field(default="Platform operator emergency stop", max_length=500)
+
+
 @router.post("/agent-control")
 def control_agent_runtime_endpoint(
     body: AgentControlRequest,
@@ -235,8 +243,10 @@ def control_agent_runtime_endpoint(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Activate, pause, configure, or emergency-stop an AI agent or the entire workforce."""
+    from app.services.execution_guard import set_emergency_stop
+
     try:
-        return control_agent_runtime(
+        res = control_agent_runtime(
             db=db,
             agent_key=body.agent_key,
             action=body.action,
@@ -244,11 +254,62 @@ def control_agent_runtime_endpoint(
             budget_credits=body.budget_credits,
             operator_id=principal.subject or "owner-l0",
         )
+        ctrl_state = res.get("control", {}).get("state", "ACTIVE")
+        scope_lvl = "platform" if body.agent_key in ("__all__", "*") else "agent"
+        set_emergency_stop(
+            db,
+            scope_level=scope_lvl,
+            scope_target=body.agent_key,
+            state=ctrl_state,
+            reason=body.reason or f"Watchdog {body.action}",
+            triggered_by=principal.subject or "owner-l0",
+            org_id=None,
+        )
+        db.commit()
+        return res
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.post("/emergency-stop")
+def trigger_platform_emergency_stop(
+    body: PlatformEmergencyStopRequest,
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Set or clear 4-level emergency stop (execution, agent, tenant, platform)."""
+    from app.services.execution_guard import set_emergency_stop
+
+    try:
+        ctrl = set_emergency_stop(
+            db,
+            scope_level=body.scope_level,
+            scope_target=body.scope_target,
+            state=body.state,
+            reason=body.reason,
+            triggered_by=principal.subject or "owner-l0",
+            org_id=body.org_id,
+        )
+        db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"status": ctrl["state"], "emergency_stop": ctrl}
+
+
+@router.get("/emergency-stops")
+def list_platform_emergency_stops(
+    org_id: str | None = None,
+    _principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """List all active 4-level emergency stops across platform, tenants, agents, and executions."""
+    from app.services.execution_guard import list_active_emergency_stops
+
+    stops = list_active_emergency_stops(db, org_id=org_id)
+    return {"count": len(stops), "emergency_stops": stops}
 
 
 @router.get("/release-checklist")

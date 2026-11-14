@@ -211,6 +211,17 @@ def require_manager(
     return principal
 
 
+def require_tenant_operator(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Allow platform managers or authenticated organization customers operating within their own tenant scope."""
+    if principal.role in {"owner", "manager", "admin", "tenant_admin"}:
+        return principal
+    if principal.role == "customer" and principal.org_id:
+        return principal
+    raise HTTPException(status_code=403, detail="Authenticated tenant organization or manager role required")
+
+
 def require_platform_manager(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
@@ -344,6 +355,7 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
         "sales_proposal": {"sales_proposal", "sales_capture", "inbound_sales_closer", "all_access"},
         "revenue_engine": {"sales_proposal", "inbound_sales_closer", "revenue_engine", "growth_all_in_one", "all_access"},
         "inbound_sales_closer": {"inbound_sales_closer", "sales_proposal", "growth_all_in_one", "all_access"},
+        "support_followup": {"support_followup", "customer_ops", "sales_proposal", "growth_all_in_one", "all_access"},
     }
 
     clean_key = service_key.strip().lower()

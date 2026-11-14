@@ -619,16 +619,30 @@
     if (!pendingDecision.approvalId) return;
 
     const note = $('#decision-note').value.trim();
+    const isCustomer = CONFIG.userRole === 'customer' || (!CONFIG.ownerApiKey && !!CONFIG.accessToken);
     try {
-      await api('POST', `/v1/approvals/${pendingDecision.approvalId}/decision`, {
-        decision: decision,
-        reason: note || `${decision} via Owner Dashboard`,
-      });
-      toast(`Approval ${decision.toLowerCase()} successfully`, 'success');
-      closeModal();
-      await fetchApprovals();
-      await fetchLeads();
-      await fetchDashboardData();
+      if (isCustomer) {
+        await api('POST', `/v1/me/approvals/${pendingDecision.approvalId}/decide`, {
+          decision: decision,
+          reason: note || `${decision} via Customer Control Center`,
+          decision_note: note || `${decision} via Customer Control Center`,
+        });
+        toast(`Approval ${decision.toLowerCase()} successfully`, 'success');
+        closeModal();
+        if (typeof cwFetchScopedApprovals === 'function') {
+          await cwFetchScopedApprovals();
+        }
+      } else {
+        await api('POST', `/v1/approvals/${pendingDecision.approvalId}/decision`, {
+          decision: decision,
+          reason: note || `${decision} via Owner Dashboard`,
+        });
+        toast(`Approval ${decision.toLowerCase()} successfully`, 'success');
+        closeModal();
+        await fetchApprovals();
+        await fetchLeads();
+        await fetchDashboardData();
+      }
     } catch (e) {
       toast(`Decision failed: ${e.message}`, 'error');
     }
@@ -2239,9 +2253,17 @@
     if (sidebarEl) sidebarEl.style.visibility = 'visible';
     if (mainEl) mainEl.style.visibility = 'visible';
 
-    // Apply role-based navigation visibility
+    // Apply strict role-based navigation visibility & settings separation
     const isCustomer = CONFIG.userRole === 'customer' || (!hasOwnerKey && hasAccessToken);
-    const ownerTabs = ['dashboard', 'leads', 'approvals', 'outreach', 'organizations', 'revenue'];
+    const ownerTabs = [
+      'dashboard', 'leads', 'outreach', 'organizations', 'revenue',
+      'field-force', 'growth', 'mobile', 'trust-chain', 'quality', 'mobility', 'inventory',
+    ];
+    const customerTabs = [
+      'portal', 'approvals', 'cw-profile', 'cw-marketplace', 'cw-workforce',
+      'cw-run-console', 'cw-workflows', 'cw-connectors', 'cw-history',
+      'cw-analytics', 'cw-billing', 'cw-settings',
+    ];
 
     ownerTabs.forEach(tab => {
       const navItem = $(`#nav-${tab}`);
@@ -2249,6 +2271,16 @@
         navItem.style.display = isCustomer ? 'none' : 'flex';
       }
     });
+    customerTabs.forEach(tab => {
+      const navItem = $(`#nav-${tab}`);
+      if (navItem) {
+        navItem.style.display = 'flex';
+      }
+    });
+    const ownerKeyGroup = $('#settings-owner-key-group');
+    if (ownerKeyGroup) {
+      ownerKeyGroup.style.display = isCustomer ? 'none' : 'block';
+    }
 
     if (isCustomer) {
       if (state.currentPage === 'dashboard' || ownerTabs.includes(state.currentPage)) {
@@ -3168,6 +3200,879 @@
   window.closeLegalModal = closeLegalModal;
   window.switchLegalTab = switchLegalTab;
 
+  // ══════════════════════════════════════════════════════════════════════
+  // P1 CUSTOMER BUSINESS CONTROL CENTER & REGISTRY ENGINE
+  // ══════════════════════════════════════════════════════════════════════
+  const cwState = {
+    services: [],
+    categories: [],
+    agents: [],
+    connectors: [],
+    evidence: [],
+    definitions: [],
+    runs: [],
+    contracts: [],
+    ledger: [],
+    stops: [],
+    initialized: false,
+  };
+
+  const CW_PAGE_TITLES = {
+    portal: 'Business Overview & Quick Launch',
+    'cw-profile': 'Business Profile & AI Recommendations',
+    'cw-marketplace': 'Service Marketplace (9 Categories)',
+    'cw-workforce': 'AI Workforce & Agent Controls',
+    'cw-run-console': 'Agent Run Console',
+    'cw-workflows': 'Workflow Builder & 8-State Runs',
+    'cw-connectors': 'Connected Tools & Verification',
+    'cw-history': 'Tasks & 18-Field Execution Evidence',
+    approvals: 'HITL Approvals',
+    'cw-analytics': 'Organization Analytics & Reports',
+    'cw-billing': 'Subscription & Credit Ledger',
+    'cw-settings': 'Settings & 4-Level Emergency Stop',
+  };
+
+  function cwIsCustomer() {
+    return CONFIG.userRole === 'customer' || (!CONFIG.ownerApiKey && !!CONFIG.accessToken);
+  }
+
+  function cwSplitList(val) {
+    return (val || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function cwOriginClass(origin) {
+    if (origin === 'LIVE_PROVIDER_VERIFIED' || origin === 'LOCAL_DETERMINISTIC') return 'live';
+    if (origin === 'SANDBOX_VERIFIED' || origin === 'HUMAN_ASSISTED') return 'sandbox';
+    if (origin === 'SIMULATED_SYNTHETIC') return 'simulated';
+    return 'blocked';
+  }
+
+  function cwStateClass(stateStr) {
+    const s = (stateStr || '').toUpperCase();
+    if (['LIVE_VERIFIED', 'LOCAL_ENGINE_VERIFIED', 'COMPLETED', 'ACTIVE', 'READY'].includes(s)) return 'live';
+    if (['SANDBOX_VERIFIED', 'HUMAN_ASSISTED', 'RUNNING', 'CONFIGURED_UNVERIFIED'].includes(s)) return 'sandbox';
+    if (['SIMULATED', 'WAITING_APPROVAL', 'DRAFT', 'ROADMAP'].includes(s)) return 'simulated';
+    return 'blocked';
+  }
+
+  async function cwFetchScopedApprovals() {
+    if (!cwIsCustomer()) {
+      await fetchApprovals();
+      return;
+    }
+    try {
+      const data = await api('GET', '/v1/me/approvals');
+      const rows = data.approvals || [];
+      state.approvals = rows.map(a => ({
+        id: a.approval_id || a.id,
+        task_id: a.task_id,
+        action: a.action,
+        requested_by: a.requested_by,
+        status: a.status,
+        decided_by: a.decided_by,
+        decision_note: a.decision_note,
+        created_at: a.created_at,
+      }));
+      renderApprovals();
+      renderRecentApprovals();
+    } catch (e) {
+      toast(`Failed to load scoped approvals: ${e.message}`, 'error');
+    }
+  }
+
+  async function cwHydrateRegistry() {
+    try {
+      const [svcRes, agRes, connRes] = await Promise.all([
+        api('GET', '/v1/registry/services'),
+        api('GET', '/v1/registry/agents'),
+        api('GET', '/v1/registry/connectors'),
+      ]);
+      cwState.services = svcRes.services || [];
+      cwState.categories = svcRes.categories || [];
+      cwState.agents = agRes.agents || [];
+      cwState.connectors = connRes.connectors || [];
+
+      // Single Source of Truth hydration for Overview quick tools & selector
+      const iconBar = $('#portal-service-icon-bar');
+      if (iconBar) {
+        iconBar.innerHTML = cwState.services.map(s => `
+          <button type="button" class="portal-quick-tool-btn" data-portal-service="${escapeHtml(s.service_id)}" title="${escapeHtml(s.description || '')}">
+            ${escapeHtml(s.service_name)} <span style="opacity:0.7;font-size:0.7rem;">(${escapeHtml(s.execution_status)})</span>
+          </button>
+        `).join('');
+        iconBar.querySelectorAll('.portal-quick-tool-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const sel = $('#portal-service-selector');
+            if (sel) sel.value = btn.dataset.portalService;
+          });
+        });
+      }
+
+      const svcSel = $('#portal-service-selector');
+      if (svcSel && cwState.services.length > 0) {
+        const cur = svcSel.value;
+        svcSel.innerHTML = cwState.services.map(s => (
+          `<option value="${escapeHtml(s.service_id)}">${escapeHtml(s.service_name)} (${escapeHtml(s.category)} • ${escapeHtml(s.execution_status)})</option>`
+        )).join('');
+        if (cur && cwState.services.some(s => s.service_id === cur)) {
+          svcSel.value = cur;
+        }
+      }
+
+      const catFilter = $('#cw-marketplace-category-filter');
+      if (catFilter) {
+        const curCat = catFilter.value || 'all';
+        const cats = [...new Set(cwState.services.map(s => s.category).filter(Boolean))];
+        catFilter.innerHTML = '<option value="all">All 9 Business Categories</option>' +
+          cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c.replace(/_/g, ' ').toUpperCase())}</option>`).join('');
+        catFilter.value = curCat;
+      }
+
+      const runAgentSel = $('#cw-run-agent-select');
+      if (runAgentSel && cwState.agents.length > 0) {
+        const curA = runAgentSel.value;
+        runAgentSel.innerHTML = cwState.agents.map(a => (
+          `<option value="${escapeHtml(a.agent_id)}">${escapeHtml(a.agent_name)} (${escapeHtml(a.business_function)} • ${a.credits_per_run ?? 1} cr)</option>`
+        )).join('');
+        if (curA && cwState.agents.some(a => a.agent_id === curA)) {
+          runAgentSel.value = curA;
+        }
+      }
+
+      const runSvcSel = $('#cw-run-service-select');
+      if (runSvcSel) {
+        runSvcSel.innerHTML = '<option value="">-- Agent Direct Execution --</option>' +
+          cwState.services.map(s => `<option value="${escapeHtml(s.service_id)}">${escapeHtml(s.service_name)}</option>`).join('');
+      }
+
+      cwRenderMarketplace();
+      cwRenderWorkforce();
+      cwRenderConnectors();
+    } catch (e) {
+      console.warn('Registry hydration:', e.message);
+    }
+  }
+
+  function cwRenderMarketplace() {
+    const container = $('#cw-marketplace-container');
+    if (!container) return;
+    const filterVal = $('#cw-marketplace-category-filter')?.value || 'all';
+    const items = filterVal === 'all'
+      ? cwState.services
+      : cwState.services.filter(s => s.category === filterVal);
+    if (!items.length) {
+      container.innerHTML = '<div class="empty-state"><p>No services matched filter.</p></div>';
+      return;
+    }
+    container.innerHTML = items.map(s => `
+      <div class="cw-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div>
+            <div style="font-size:0.72rem;color:var(--cyan);text-transform:uppercase;">${escapeHtml((s.category || '').replace(/_/g, ' '))}</div>
+            <h3 style="margin:2px 0;">${escapeHtml(s.service_name)}</h3>
+          </div>
+          <span class="cw-pill ${cwStateClass(s.execution_status)}">${escapeHtml(s.execution_status)}</span>
+        </div>
+        <p style="margin:0;font-size:0.83rem;color:var(--text-secondary);">${escapeHtml(s.description || '')}</p>
+        <div style="font-size:0.78rem;color:var(--text-muted);">
+          <strong>Outcome:</strong> ${escapeHtml(s.business_outcome || 'Operational automation')}<br>
+          <strong>Agents:</strong> ${escapeHtml((s.available_agents || []).join(', ') || 'None')}<br>
+          <strong>Connectors:</strong> ${escapeHtml((s.required_connectors || []).join(', ') || 'None')}<br>
+          <strong>Entitlement Key:</strong> <code>${escapeHtml(s.entitlement_key || 'core')}</code> • <strong>v${escapeHtml(s.version || '1.0.0')}</strong>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:auto;">
+          <button type="button" class="secondary-btn cw-btn-open-console" data-service-id="${escapeHtml(s.service_id)}" data-agent-id="${escapeHtml((s.available_agents || [])[0] || '')}">Open in Run Console</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.cw-btn-open-console').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.agentId && $('#cw-run-agent-select')) {
+          $('#cw-run-agent-select').value = btn.dataset.agentId;
+        }
+        if (btn.dataset.serviceId && $('#cw-run-service-select')) {
+          $('#cw-run-service-select').value = btn.dataset.serviceId;
+        }
+        navigateTo('cw-run-console');
+      });
+    });
+  }
+
+  function cwRenderWorkforce() {
+    const grid = $('#cw-workforce-grid');
+    if (!grid) return;
+    if (!cwState.agents.length) {
+      grid.innerHTML = '<div class="empty-state"><p>No agents found in registry.</p></div>';
+      return;
+    }
+    grid.innerHTML = cwState.agents.map(a => {
+      const active = !!a.tenant_active;
+      return `
+        <div class="cw-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-size:0.72rem;color:var(--purple);text-transform:uppercase;">${escapeHtml(a.business_function || 'operations')}</div>
+              <h3 style="margin:2px 0;">${escapeHtml(a.agent_name)}</h3>
+            </div>
+            <span class="cw-pill ${active ? 'live' : 'disabled'}">${active ? 'ACTIVE' : escapeHtml(a.status || 'INACTIVE')}</span>
+          </div>
+          <p style="margin:0;font-size:0.82rem;color:var(--text-secondary);">${escapeHtml(a.description || '')}</p>
+          <div style="font-size:0.76rem;color:var(--text-muted);">
+            <strong>ID:</strong> <code>${escapeHtml(a.agent_id)}</code> • <strong>v${escapeHtml(a.version || '1.0.0')}</strong><br>
+            <strong>Tools:</strong> ${escapeHtml((a.supported_tools || []).join(', '))}<br>
+            <strong>Approvals:</strong> ${escapeHtml((a.required_approvals || []).join(', ') || 'Standard policy')}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:auto;">
+            <button type="button" class="secondary-btn cw-agent-toggle-btn" data-agent-id="${escapeHtml(a.agent_id)}" data-active="${active ? '1' : '0'}">${active ? 'Deactivate' : 'Activate'}</button>
+            <button type="button" class="primary-btn cw-agent-launch-btn" data-agent-id="${escapeHtml(a.agent_id)}">Run Agent</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    grid.querySelectorAll('.cw-agent-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const agentId = btn.dataset.agentId;
+        const currentlyActive = btn.dataset.active === '1';
+        try {
+          await api('POST', `/v1/registry/agents/${agentId}/${currentlyActive ? 'deactivate' : 'activate'}`);
+          toast(`Agent ${agentId} ${currentlyActive ? 'deactivated' : 'activated'}`, 'success');
+          await cwHydrateRegistry();
+        } catch (e) {
+          toast(`Agent action blocked: ${e.message}`, 'error');
+        }
+      });
+    });
+
+    grid.querySelectorAll('.cw-agent-launch-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if ($('#cw-run-agent-select')) $('#cw-run-agent-select').value = btn.dataset.agentId;
+        navigateTo('cw-run-console');
+      });
+    });
+  }
+
+  function cwRenderConnectors() {
+    const grid = $('#cw-connectors-grid');
+    if (!grid) return;
+    if (!cwState.connectors.length) {
+      grid.innerHTML = '<div class="empty-state"><p>No connectors returned from registry.</p></div>';
+      return;
+    }
+    grid.innerHTML = cwState.connectors.map(c => `
+      <div class="cw-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div>
+            <div style="font-size:0.72rem;color:var(--cyan);text-transform:uppercase;">${escapeHtml(c.provider || c.connector_id)} • ${escapeHtml(c.environment || 'staging')}</div>
+            <h3 style="margin:2px 0;">${escapeHtml(c.connector_id)}</h3>
+          </div>
+          <span class="cw-pill ${cwStateClass(c.capability_state)}">${escapeHtml(c.capability_state)}</span>
+        </div>
+        <div style="font-size:0.77rem;color:var(--text-muted);">
+          <strong>Category:</strong> ${escapeHtml(c.service_category || '')} • <strong>Auth:</strong> ${escapeHtml(c.authentication_type || '')}<br>
+          <strong>Permissions:</strong> ${escapeHtml((c.required_permissions || []).join(', '))}<br>
+          <strong>Verified:</strong> ${escapeHtml(c.last_verified_at || 'Never')} ${c.last_error ? `<br><span style="color:#fca5a5;">Error: ${escapeHtml(c.last_error)}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input type="text" class="settings-input cw-conn-key-input" data-connector-id="${escapeHtml(c.connector_id)}" placeholder='{"api_key":"..."} or setting value' autocomplete="off" spellcheck="false" style="flex:1;min-width:160px;">
+          <button type="button" class="secondary-btn cw-conn-save-btn" data-connector-id="${escapeHtml(c.connector_id)}">Save Config</button>
+          <button type="button" class="primary-btn cw-conn-verify-btn" data-connector-id="${escapeHtml(c.connector_id)}">Verify Probe</button>
+        </div>
+      </div>
+    `).join('');
+
+    grid.querySelectorAll('.cw-conn-save-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cid = btn.dataset.connectorId;
+        const input = grid.querySelector(`.cw-conn-key-input[data-connector-id="${cid}"]`);
+        const raw = (input?.value || '').trim();
+        let settings = { configured_token: raw };
+        if (raw.startsWith('{')) {
+          try {
+            settings = JSON.parse(raw);
+          } catch (err) {
+            toast(`Invalid connector JSON: ${err.message}`, 'error');
+            return;
+          }
+        }
+        try {
+          await api('POST', `/v1/registry/connectors/${cid}/configure`, { settings });
+          toast(`Connector ${cid} saved as CONFIGURED_UNVERIFIED (verification probe still required)`, 'info');
+          if (input) input.value = '';
+          await cwHydrateRegistry();
+        } catch (e) {
+          toast(`Connector config failed: ${e.message}`, 'error');
+        }
+      });
+    });
+
+    grid.querySelectorAll('.cw-conn-verify-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cid = btn.dataset.connectorId;
+        try {
+          const res = await api('POST', `/v1/registry/connectors/${cid}/verify`, {});
+          toast(`Connector ${cid} status: ${res.status}`, res.status === 'LIVE_VERIFIED' ? 'success' : 'info');
+          await cwHydrateRegistry();
+        } catch (e) {
+          toast(`Connector verify failed: ${e.message}`, 'error');
+        }
+      });
+    });
+  }
+
+  async function cwLoadProfile() {
+    try {
+      const data = await api('GET', '/v1/me/business-profile');
+      const p = data.profile || {};
+      if ($('#cw-prof-name')) $('#cw-prof-name').value = p.business_name || '';
+      if ($('#cw-prof-industry')) $('#cw-prof-industry').value = p.industry || '';
+      if ($('#cw-prof-location')) $('#cw-prof-location').value = p.location || p.city || '';
+      if ($('#cw-prof-website')) $('#cw-prof-website').value = p.website || '';
+      if ($('#cw-prof-email')) $('#cw-prof-email').value = p.contact_info?.email || '';
+      if ($('#cw-prof-phone')) $('#cw-prof-phone').value = p.contact_info?.phone || '';
+      if ($('#cw-prof-employees')) $('#cw-prof-employees').value = p.employee_count || 10;
+      if ($('#cw-prof-products')) $('#cw-prof-products').value = (p.products_and_services || p.products || []).join(', ');
+      if ($('#cw-prof-segments')) $('#cw-prof-segments').value = (p.customer_segments || []).join(', ');
+      if ($('#cw-prof-channels')) $('#cw-prof-channels').value = (p.sales_channels || []).join(', ');
+      if ($('#cw-prof-software')) $('#cw-prof-software').value = (p.current_software || []).join(', ');
+      if ($('#cw-prof-pain')) $('#cw-prof-pain').value = (p.operational_pain_points || []).join(', ');
+      if ($('#cw-prof-objectives')) $('#cw-prof-objectives').value = (p.business_objectives || []).join(', ');
+      if ($('#cw-prof-automations')) $('#cw-prof-automations').value = (p.required_automations || []).join(', ');
+      if ($('#cw-prof-desc')) $('#cw-prof-desc').value = p.description || p.requirements_text || '';
+      if (data.recommendation || data.recommendations || data.structured_requirements) {
+        cwRenderRecommendations(data);
+      }
+    } catch (e) {
+      console.warn('Load profile:', e.message);
+    }
+  }
+
+  function cwRenderRecommendations(data) {
+    const box = $('#cw-recommendations-box');
+    const badge = $('#cw-readiness-badge');
+    const rec = data.recommendation || data.recommendations || {};
+    const readiness = data.assessment?.readiness_score ?? (data.profile?.selection_confirmed ? 95 : 70);
+    if (badge && readiness !== undefined) {
+      badge.textContent = `Readiness: ${readiness}%`;
+    }
+    if (!box) return;
+    const items = rec.explanations || rec.recommended_services || data.structured_requirements || [];
+    const selectedModules = rec.recommended_modules || items.map(i => i.module || i.category).filter(Boolean);
+    const basePlan = rec.recommended_tier || rec.recommended_base_tier || 'growth';
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <div>
+          <h3 style="margin:0;">Explainable Service Recommendations</h3>
+          <div style="font-size:0.8rem;color:var(--text-muted);">Recommended Plan: <code>${escapeHtml(basePlan)}</code> • Est. Credits/mo: ${escapeHtml(String(rec.expected_monthly_credits ?? 0))} • Confirmation required before provisioning</div>
+        </div>
+        <button type="button" class="primary-btn" id="btn-cw-confirm-selection">Confirm &amp; Lock Recommendation Selection</button>
+      </div>
+      <div class="cw-grid-2" style="margin-top:12px;">
+        ${items.map(it => `
+          <div class="cw-card">
+            <strong>${escapeHtml(it.title || it.service_name || it.module || '')}</strong>
+            <div style="font-size:0.8rem;color:var(--text-secondary);">${escapeHtml(it.reason || it.description || it.why || '')}</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">
+              <strong>Agents:</strong> ${escapeHtml((it.agents || it.recommended_agents || []).join(', '))}<br>
+              <strong>Connectors:</strong> ${escapeHtml((it.required_connectors || it.connectors || []).join(', '))}<br>
+              <strong>Est. Credits/mo:</strong> ${escapeHtml(String(it.expected_monthly_credits ?? it.credits ?? '20'))}<br>
+              <strong>Limitation:</strong> ${escapeHtml(Array.isArray(it.limitations) ? it.limitations.join('; ') : (it.limitations || 'Honest mode labels enforced'))}
+            </div>
+          </div>
+        `).join('') || '<div style="color:var(--text-muted);">No module recommendations returned.</div>'}
+      </div>
+    `;
+    $('#btn-cw-confirm-selection')?.addEventListener('click', async () => {
+      try {
+        await api('POST', '/v1/me/business-profile/confirm', {
+          base_plan_key: basePlan,
+          selected_modules: selectedModules,
+          activate_selection: false,
+        });
+        toast('Business requirements & service recommendations confirmed!', 'success');
+      } catch (e) {
+        toast(`Confirmation failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
+  async function cwSaveProfile() {
+    const payload = {
+      business_name: ($('#cw-prof-name')?.value || '').trim() || 'SME Business Profile',
+      industry: ($('#cw-prof-industry')?.value || '').trim() || 'SME Services',
+      description: ($('#cw-prof-desc')?.value || '').trim(),
+      location: ($('#cw-prof-location')?.value || '').trim(),
+      website: ($('#cw-prof-website')?.value || '').trim(),
+      contact_info: {
+        email: ($('#cw-prof-email')?.value || '').trim(),
+        phone: ($('#cw-prof-phone')?.value || '').trim(),
+      },
+      company_size: $('#cw-prof-size')?.value || 'small',
+      employee_count: Number($('#cw-prof-employees')?.value || 10),
+      products_and_services: cwSplitList($('#cw-prof-products')?.value),
+      customer_segments: cwSplitList($('#cw-prof-segments')?.value),
+      sales_channels: cwSplitList($('#cw-prof-channels')?.value),
+      current_software: cwSplitList($('#cw-prof-software')?.value),
+      operational_pain_points: cwSplitList($('#cw-prof-pain')?.value),
+      business_objectives: cwSplitList($('#cw-prof-objectives')?.value),
+      required_automations: cwSplitList($('#cw-prof-automations')?.value),
+      expected_monthly_volume: {
+        executions: Number($('#cw-prof-volume')?.value || 250),
+        monthly_budget_inr: Number($('#cw-prof-budget')?.value || 15000),
+        approval_mode: $('#cw-prof-approval-mode')?.value || 'hitl_required',
+      },
+      requirements_text: ($('#cw-prof-desc')?.value || '').trim() || 'Automate operations',
+    };
+    try {
+      const data = await api('POST', '/v1/me/business-profile', payload);
+      cwRenderRecommendations(data);
+      toast('Business profile saved & AI recommendations generated', 'success');
+    } catch (e) {
+      toast(`Profile save failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function cwExecuteAgent() {
+    const agentId = $('#cw-run-agent-select')?.value;
+    if (!agentId) {
+      toast('Select an agent from the registry first', 'error');
+      return;
+    }
+    const mode = $('#cw-run-mode-select')?.value || 'SIMULATION';
+    const idem = ($('#cw-run-idempotency-key')?.value || '').trim() || null;
+    let inputPayload = {};
+    try {
+      inputPayload = JSON.parse(($('#cw-run-input-json')?.value || '{}').trim() || '{}');
+    } catch (e) {
+      toast(`Invalid JSON payload: ${e.message}`, 'error');
+      return;
+    }
+    const svcId = $('#cw-run-service-select')?.value;
+    if (svcId) inputPayload.service_id = svcId;
+    if ($('#cw-run-mode-indicator')) {
+      $('#cw-run-mode-indicator').textContent = `Mode: ${mode}`;
+    }
+    const card = $('#cw-run-result-card');
+    try {
+      const res = await api('POST', `/v1/registry/agents/${agentId}/execute`, {
+        input_payload: inputPayload,
+        execution_mode: mode,
+        idempotency_key: idem,
+      });
+      const ev = res.evidence || res;
+      const previewOut = ev.metadata?.output_preview || res.output || res;
+      if (card) {
+        card.style.display = 'flex';
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div>
+              <strong>Execution ID:</strong> <code>${escapeHtml(ev.execution_id || res.execution_id || '')}</code>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span class="cw-pill ${cwOriginClass(ev.output_origin || res.output_origin)}">${escapeHtml(ev.output_origin || res.output_origin || 'SIMULATED_SYNTHETIC')}</span>
+              <span class="cw-pill ${cwStateClass(ev.status)}">${escapeHtml(ev.status || 'COMPLETED')}</span>
+            </div>
+          </div>
+          <div style="font-size:0.8rem;color:var(--text-muted);">
+            <strong>Mode:</strong> ${escapeHtml(ev.execution_mode || mode)} • <strong>Credits Consumed:</strong> ${escapeHtml(String(ev.credits_consumed ?? 0))} • <strong>Evidence:</strong> <code>${escapeHtml(ev.evidence_reference || '—')}</code>
+          </div>
+          <pre class="cw-code-box">${escapeHtml(JSON.stringify(previewOut, null, 2))}</pre>
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" class="secondary-btn" id="btn-cw-inspect-last-evidence">Inspect 18-Field Evidence</button>
+          </div>
+        `;
+        $('#btn-cw-inspect-last-evidence')?.addEventListener('click', () => cwOpenEvidenceDrawer(ev));
+      }
+      toast(`Executed ${agentId} (${ev.output_origin || mode})`, 'success');
+      await cwLoadEvidenceHistory();
+    } catch (e) {
+      if (card) {
+        card.style.display = 'flex';
+        card.innerHTML = `<div class="cw-pill blocked">EXECUTION BLOCKED / FAILED</div><pre class="cw-code-box">${escapeHtml(e.message)}</pre>`;
+      }
+      toast(`Agent execution failed: ${e.message}`, 'error');
+    }
+  }
+
+  function cwOpenEvidenceDrawer(rec) {
+    const drawer = $('#cw-evidence-drawer');
+    const body = $('#cw-evidence-drawer-body');
+    const title = $('#cw-evidence-drawer-title');
+    if (!drawer || !body) return;
+    if (title) title.textContent = `Evidence: ${rec.execution_id || 'Record'}`;
+    const fields = [
+      ['execution_id', rec.execution_id],
+      ['tenant_id', rec.tenant_id || rec.org_id],
+      ['workflow_id', rec.workflow_id],
+      ['agent_id', rec.agent_id],
+      ['connector_id', rec.connector_id],
+      ['execution_mode', rec.execution_mode],
+      ['output_origin', rec.output_origin],
+      ['input_reference', rec.input_reference],
+      ['output_reference', rec.output_reference],
+      ['provider_request_id', rec.provider_request_id],
+      ['fallback_used', String(!!rec.fallback_used)],
+      ['approval_id', rec.approval_id],
+      ['status', rec.status],
+      ['failure_reason', rec.failure_reason],
+      ['credits_consumed', rec.credits_consumed],
+      ['started_at', rec.started_at],
+      ['completed_at', rec.completed_at],
+      ['evidence_reference', rec.evidence_reference],
+      ['version', rec.version],
+      ['metadata', JSON.stringify(rec.metadata || {}, null, 2)],
+    ];
+    body.innerHTML = `
+      <div class="cw-evidence-grid">
+        ${fields.map(([k, v]) => `
+          <div class="cw-evidence-field">
+            <div class="cw-evidence-label">${escapeHtml(k)}</div>
+            <div class="cw-evidence-value">${escapeHtml(v !== undefined && v !== null ? String(v) : '—')}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    drawer.style.display = 'flex';
+  }
+
+  async function cwLoadEvidenceHistory() {
+    try {
+      const modeFilter = $('#cw-history-mode-filter')?.value || '';
+      const q = modeFilter ? `?execution_mode=${encodeURIComponent(modeFilter)}` : '';
+      const res = await api('GET', `/v1/registry/evidence${q}`);
+      cwState.evidence = res.records || [];
+      const tbody = $('#cw-history-tbody');
+      if (!tbody) return;
+      if (!cwState.evidence.length) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="empty-state"><p>No execution evidence recorded yet.</p></div></td></tr>';
+        return;
+      }
+      tbody.innerHTML = cwState.evidence.map((rec, idx) => {
+        const durMs = (rec.started_at && rec.completed_at)
+          ? Math.max(0, Date.parse(rec.completed_at) - Date.parse(rec.started_at))
+          : 0;
+        return `
+        <tr>
+          <td><code>${escapeHtml(rec.execution_id)}</code></td>
+          <td><strong>${escapeHtml(rec.agent_id || rec.workflow_id || '—')}</strong></td>
+          <td>
+            <span class="cw-pill sandbox">${escapeHtml(rec.execution_mode)}</span>
+            <span class="cw-pill ${cwOriginClass(rec.output_origin)}">${escapeHtml(rec.output_origin)}</span>
+          </td>
+          <td><span class="cw-pill ${cwStateClass(rec.status)}">${escapeHtml(rec.status)}</span></td>
+          <td>${escapeHtml(String(rec.credits_consumed ?? 0))}</td>
+          <td>${escapeHtml(String(durMs))} ms</td>
+          <td><button type="button" class="secondary-btn cw-inspect-ev-btn" data-idx="${idx}">Inspect 18 Fields</button></td>
+        </tr>
+      `;
+      }).join('');
+      tbody.querySelectorAll('.cw-inspect-ev-btn').forEach(btn => {
+        btn.addEventListener('click', () => cwOpenEvidenceDrawer(cwState.evidence[Number(btn.dataset.idx)]));
+      });
+    } catch (e) {
+      console.warn('Evidence load:', e.message);
+    }
+  }
+
+  async function cwLoadWorkflows() {
+    try {
+      const [defsRes, runsRes] = await Promise.all([
+        api('GET', '/v1/workflows/definitions'),
+        api('GET', '/v1/workflows/runs'),
+      ]);
+      cwState.definitions = defsRes.workflows || defsRes.definitions || [];
+      cwState.runs = runsRes.runs || [];
+
+      const defsList = $('#cw-wf-definitions-list');
+      if (defsList) {
+        defsList.innerHTML = cwState.definitions.length ? cwState.definitions.map(d => `
+          <div class="cw-card" style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${escapeHtml(d.name)}</strong>
+              <span class="cw-pill sandbox">v${escapeHtml(d.version)} • Budget ${escapeHtml(String(d.max_credits_budget))} cr</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);">${(d.steps || []).length} steps • ID: <code>${escapeHtml(d.workflow_id)}</code></div>
+            <button type="button" class="primary-btn cw-wf-start-btn" data-wf-id="${escapeHtml(d.workflow_id)}">Start Workflow Run</button>
+          </div>
+        `).join('') : '<div class="empty-state"><p>No workflow definitions yet.</p></div>';
+        defsList.querySelectorAll('.cw-wf-start-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              await api('POST', '/v1/workflows/runs', { workflow_id: btn.dataset.wfId, start_immediately: true });
+              toast('Workflow run executed', 'success');
+              await cwLoadWorkflows();
+              await cwFetchScopedApprovals();
+            } catch (e) {
+              toast(`Workflow start failed: ${e.message}`, 'error');
+            }
+          });
+        });
+      }
+
+      const runsList = $('#cw-wf-runs-list');
+      if (runsList) {
+        runsList.innerHTML = cwState.runs.length ? cwState.runs.map(r => `
+          <div class="cw-card" style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <div><code>${escapeHtml(r.run_id)}</code> • Step ${escapeHtml(String(r.current_step_index))}/${escapeHtml(String(r.total_steps))}</div>
+              <span class="cw-pill ${cwStateClass(r.status)}">${escapeHtml(r.status)}</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              ${r.status === 'DRAFT' ? `<button type="button" class="secondary-btn cw-run-action" data-run-id="${escapeHtml(r.run_id)}" data-act="ready">Mark Ready</button>` : ''}
+              ${['DRAFT', 'READY'].includes(r.status) ? `<button type="button" class="primary-btn cw-run-action" data-run-id="${escapeHtml(r.run_id)}" data-act="start">Start</button>` : ''}
+              ${r.status === 'WAITING_APPROVAL' ? `<button type="button" class="primary-btn cw-run-action" data-run-id="${escapeHtml(r.run_id)}" data-act="resume">Resume After HITL</button>` : ''}
+              ${['DRAFT', 'READY', 'RUNNING', 'WAITING_APPROVAL'].includes(r.status) ? `<button type="button" class="danger-btn cw-run-action" data-run-id="${escapeHtml(r.run_id)}" data-act="cancel">Cancel Run</button>` : ''}
+            </div>
+          </div>
+        `).join('') : '<div class="empty-state"><p>No workflow runs recorded yet.</p></div>';
+        runsList.querySelectorAll('.cw-run-action').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            try {
+              const body = btn.dataset.act === 'cancel' ? { reason: 'Cancelled via Control Center' } : undefined;
+              await api('POST', `/v1/workflows/runs/${btn.dataset.runId}/${btn.dataset.act}`, body);
+              toast(`Workflow run action '${btn.dataset.act}' completed`, 'success');
+              await cwLoadWorkflows();
+            } catch (e) {
+              toast(`Workflow action failed: ${e.message}`, 'error');
+            }
+          });
+        });
+      }
+    } catch (e) {
+      console.warn('Workflows load:', e.message);
+    }
+  }
+
+  async function cwCreateWorkflow() {
+    const name = ($('#cw-wf-name')?.value || '').trim() || 'Custom SME Workflow';
+    const budget = Number($('#cw-wf-budget')?.value || 10);
+    let steps = [];
+    try {
+      steps = JSON.parse(($('#cw-wf-steps-json')?.value || '[]').trim());
+    } catch (e) {
+      toast(`Invalid workflow steps JSON: ${e.message}`, 'error');
+      return;
+    }
+    try {
+      await api('POST', '/v1/workflows/definitions', {
+        name,
+        max_credits_budget: budget,
+        steps,
+      });
+      toast(`Workflow '${name}' created`, 'success');
+      await cwLoadWorkflows();
+    } catch (e) {
+      toast(`Create workflow failed: ${e.message}`, 'error');
+    }
+  }
+
+  async function cwLoadAnalytics() {
+    await cwLoadEvidenceHistory();
+    await cwLoadBilling();
+    const sumEl = $('#cw-analytics-summary');
+    const brkEl = $('#cw-analytics-breakdown');
+    if (!sumEl || !brkEl) return;
+    const total = cwState.evidence.length;
+    const completed = cwState.evidence.filter(r => r.status === 'COMPLETED').length;
+    const blocked = cwState.evidence.filter(r => r.status === 'BLOCKED' || r.status === 'FAILED').length;
+    const creditsSpent = cwState.evidence.reduce((acc, r) => acc + Number(r.credits_consumed || 0), 0);
+    const byOrigin = {};
+    cwState.evidence.forEach(r => {
+      const k = r.output_origin || 'UNKNOWN';
+      byOrigin[k] = (byOrigin[k] || 0) + 1;
+    });
+    sumEl.innerHTML = `
+      <div class="cw-card"><div class="stat-label">Total Recorded Executions</div><div class="stat-value">${total}</div></div>
+      <div class="cw-card"><div class="stat-label">Completed / Blocked+Failed</div><div class="stat-value">${completed} / ${blocked}</div></div>
+      <div class="cw-card"><div class="stat-label">Verified Credits Consumed</div><div class="stat-value">${creditsSpent}</div></div>
+    `;
+    brkEl.innerHTML = `
+      <h3>Execution Origin Breakdown (Observed Only — Zero Fabricated Metrics)</h3>
+      <pre class="cw-code-box">${escapeHtml(JSON.stringify({ by_output_origin: byOrigin, ledger_entries: cwState.ledger.length }, null, 2))}</pre>
+    `;
+  }
+
+  async function cwLoadBilling() {
+    try {
+      const [contractsRes, ledgerRes] = await Promise.all([
+        api('GET', '/v1/revenue/pricing/contracts'),
+        api('GET', '/v1/me/credits/ledger').catch(() => ({ entries: [] })),
+      ]);
+      const tierMap = contractsRes.modular_tier_contracts || {};
+      cwState.contracts = Object.entries(tierMap).map(([planKey, obj]) => ({
+        plan_key: planKey,
+        ...obj,
+      }));
+      cwState.ledger = ledgerRes.entries || [];
+
+      const tierSel = $('#cw-bill-tier');
+      if (tierSel && cwState.contracts.length) {
+        const curT = tierSel.value;
+        tierSel.innerHTML = cwState.contracts.map(c => (
+          `<option value="${escapeHtml(c.plan_key)}">${escapeHtml(c.plan_name || c.plan_key)} (₹${escapeHtml(String(c.base_price?.inr ?? 0))})</option>`
+        )).join('');
+        if (curT && cwState.contracts.some(c => c.plan_key === curT)) tierSel.value = curT;
+      }
+
+      const cBox = $('#cw-pricing-contracts-list');
+      if (cBox) {
+        cBox.innerHTML = cwState.contracts.map(c => `
+          <div style="border-bottom:1px solid var(--glass-border);padding:8px 0;font-size:0.8rem;">
+            <strong>${escapeHtml(c.plan_name || c.plan_key)}</strong> (<code>${escapeHtml(c.internal_sku || c.plan_key)}</code>) —
+            ₹${escapeHtml(String(c.base_price?.inr ?? 0))} / ${escapeHtml(c.billing_interval || 'monthly')} •
+            Credits: ${escapeHtml(String(c.included_credits || 0))} • Seats: ${escapeHtml(String(c.seat_limit || 0))} • Agents: ${escapeHtml(String((c.entitled_agents || []).length))}
+          </div>
+        `).join('') || '<div class="empty-state"><p>No contracts available.</p></div>';
+      }
+
+      const lBox = $('#cw-credit-ledger-list');
+      if (lBox) {
+        lBox.innerHTML = cwState.ledger.length ? cwState.ledger.map(e => `
+          <div style="border-bottom:1px solid var(--glass-border);padding:6px 0;font-size:0.78rem;display:flex;justify-content:space-between;">
+            <span><strong>${escapeHtml(e.entry_type)}</strong> (${escapeHtml(String(e.delta))} cr) • ${escapeHtml(e.reason || e.idempotency_key || '')}</span>
+            <code>Balance: ${escapeHtml(String(e.balance_after))}</code>
+          </div>
+        `).join('') : '<div class="empty-state"><p>No credit ledger entries yet.</p></div>';
+      }
+    } catch (e) {
+      console.warn('Billing load:', e.message);
+    }
+  }
+
+  async function cwLoadEmergencyStops() {
+    try {
+      const endpoint = cwIsCustomer() ? '/v1/me/emergency-stops' : '/v1/watchdog/emergency-stops';
+      const res = await api('GET', endpoint);
+      cwState.stops = res.emergency_stops || [];
+      const list = $('#cw-estop-active-list');
+      if (list) {
+        list.innerHTML = cwState.stops.length ? cwState.stops.map(s => `
+          <div style="padding:6px 0;border-bottom:1px solid var(--glass-border);font-size:0.78rem;">
+            <span class="cw-pill blocked">${escapeHtml(s.scope_level)}: ${escapeHtml(s.scope_target)}</span>
+            <span style="margin-left:6px;">${escapeHtml(s.state)} — ${escapeHtml(s.reason || '')}</span>
+          </div>
+        `).join('') : '<div style="font-size:0.8rem;color:var(--text-muted);">No active emergency stops (all authorized agents operational).</div>';
+      }
+    } catch (e) {
+      console.warn('Emergency stops load:', e.message);
+    }
+  }
+
+  function cwInitControlCenter() {
+    if (cwState.initialized) return;
+    cwState.initialized = true;
+
+    $('#cw-marketplace-category-filter')?.addEventListener('change', cwRenderMarketplace);
+    $('#btn-cw-refresh-marketplace')?.addEventListener('click', cwHydrateRegistry);
+    $('#btn-cw-refresh-workforce')?.addEventListener('click', cwHydrateRegistry);
+    $('#btn-cw-refresh-connectors')?.addEventListener('click', cwHydrateRegistry);
+    $('#btn-cw-reload-profile')?.addEventListener('click', cwLoadProfile);
+    $('#btn-cw-save-profile')?.addEventListener('click', cwSaveProfile);
+    $('#btn-cw-execute-agent')?.addEventListener('click', cwExecuteAgent);
+    $('#btn-cw-refresh-workflows')?.addEventListener('click', cwLoadWorkflows);
+    $('#btn-cw-create-workflow')?.addEventListener('click', cwCreateWorkflow);
+    $('#btn-cw-refresh-history')?.addEventListener('click', cwLoadEvidenceHistory);
+    $('#cw-history-mode-filter')?.addEventListener('change', cwLoadEvidenceHistory);
+    $('#btn-cw-refresh-analytics')?.addEventListener('click', cwLoadAnalytics);
+    $('#btn-cw-refresh-billing')?.addEventListener('click', cwLoadBilling);
+    $('#btn-cw-close-evidence')?.addEventListener('click', () => { $('#cw-evidence-drawer').style.display = 'none'; });
+    $('#btn-cw-close-evidence-footer')?.addEventListener('click', () => { $('#cw-evidence-drawer').style.display = 'none'; });
+
+    $('#btn-cw-apply-subscription')?.addEventListener('click', async () => {
+      try {
+        await api('POST', '/v1/me/modular-subscription', {
+          base_tier: $('#cw-bill-tier')?.value || 'growth',
+          addon_modules: cwSplitList($('#cw-bill-addons')?.value),
+          credit_packs: Number($('#cw-bill-credits')?.value || 0),
+        });
+        toast('Modular subscription configured!', 'success');
+        await cwLoadBilling();
+        await cwHydrateRegistry();
+      } catch (e) {
+        toast(`Subscription update failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-cw-purchase-credits')?.addEventListener('click', async () => {
+      const packs = Math.max(1, Number($('#cw-bill-credits')?.value || 1));
+      try {
+        await api('POST', '/v1/me/credits/purchase', { credit_packs: packs });
+        toast(`Purchased ${packs} credit pack(s)`, 'success');
+        await cwLoadBilling();
+      } catch (e) {
+        toast(`Credit purchase failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-cw-renew-subscription')?.addEventListener('click', async () => {
+      try {
+        await api('POST', '/v1/me/subscription/renew', {});
+        toast('Subscription renewed cleanly', 'success');
+        await cwLoadBilling();
+      } catch (e) {
+        toast(`Renew failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-cw-cancel-subscription')?.addEventListener('click', async () => {
+      try {
+        await api('POST', '/v1/me/subscription/cancel', { cancel_at_period_end: true });
+        toast('Subscription marked cancel-at-period-end', 'info');
+        await cwLoadBilling();
+      } catch (e) {
+        toast(`Cancel failed: ${e.message}`, 'error');
+      }
+    });
+
+    $('#btn-cw-save-gemini')?.addEventListener('click', async () => {
+      const key = ($('#cw-settings-gemini-key')?.value || '').trim();
+      try {
+        await api('POST', '/v1/me/gemini-key', { gemini_api_key: key });
+        toast('Tenant BYOK Gemini key updated', 'success');
+      } catch (e) {
+        toast(`BYOK save failed: ${e.message}`, 'error');
+      }
+    });
+
+    const handleEstop = async (targetState) => {
+      const scope = $('#cw-estop-scope')?.value || 'tenant';
+      const target = ($('#cw-estop-target')?.value || '').trim() || null;
+      const reason = ($('#cw-estop-reason')?.value || '').trim() || 'Safety control updated';
+      const endpoint = cwIsCustomer() ? '/v1/me/emergency-stop' : '/v1/watchdog/emergency-stop';
+      try {
+        await api('POST', endpoint, { scope_level: scope, scope_target: target, state: targetState, reason });
+        toast(`Emergency stop state set to ${targetState}`, targetState === 'EMERGENCY_STOPPED' ? 'warning' : 'success');
+        await cwLoadEmergencyStops();
+      } catch (e) {
+        toast(`Emergency stop failed: ${e.message}`, 'error');
+      }
+    };
+    $('#btn-cw-trigger-estop')?.addEventListener('click', () => handleEstop('EMERGENCY_STOPPED'));
+    $('#btn-cw-release-estop')?.addEventListener('click', () => handleEstop('ACTIVE'));
+
+    // Sidebar click hook to set clean page title and refresh tab data from backend
+    $('.sidebar-nav')?.addEventListener('click', (ev) => {
+      const item = ev.target.closest('.nav-item[data-page]');
+      if (!item) return;
+      const page = item.dataset.page;
+      if (CW_PAGE_TITLES[page] && $('#page-title')) {
+        $('#page-title').textContent = CW_PAGE_TITLES[page];
+      }
+      if (page === 'cw-profile') cwLoadProfile();
+      if (page === 'cw-marketplace' || page === 'cw-workforce' || page === 'cw-connectors' || page === 'cw-run-console') cwHydrateRegistry();
+      if (page === 'cw-workflows') cwLoadWorkflows();
+      if (page === 'cw-history') cwLoadEvidenceHistory();
+      if (page === 'cw-analytics') cwLoadAnalytics();
+      if (page === 'cw-billing') cwLoadBilling();
+      if (page === 'cw-settings') cwLoadEmergencyStops();
+      if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -3179,6 +4084,13 @@
     checkAuthGate,
     handleLogout,
     triggerLeadDiscovery,
+    cwHydrateRegistry,
+    cwLoadProfile,
+    cwLoadWorkflows,
+    cwLoadEvidenceHistory,
+    cwLoadBilling,
+    cwLoadEmergencyStops,
+    cwFetchScopedApprovals,
     viewLead: (id) => {
       const lead = state.leads.find(l => l.id === id);
       if (lead) {
@@ -3196,9 +4108,15 @@
 
   // Boot
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+      cwInitControlCenter();
+      init();
+      cwHydrateRegistry();
+    });
   } else {
+    cwInitControlCenter();
     init();
+    cwHydrateRegistry();
   }
 })();
 

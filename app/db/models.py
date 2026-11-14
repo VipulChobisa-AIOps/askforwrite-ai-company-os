@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     Index,
@@ -677,3 +678,281 @@ event.listen(ConveyanceClaimRecord, "before_delete", _reject_claim_mutation)
 # Model aliases for supervisory and watchdog frameworks
 ApprovalRequestRecord = ApprovalRequest
 FieldTelemetryRecord = FieldAttendanceRecord
+
+
+# ── P1: Modular SME AI Workforce & Execution Evidence Models ─────────────────
+
+
+class BusinessProfileRecord(Base):
+    """Persisted 13-field SME Business Onboarding Profile and confirmation state."""
+
+    __tablename__ = "business_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    business_name: Mapped[str] = mapped_column(String(250), nullable=False)
+    industry: Mapped[str] = mapped_column(String(150), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    location: Mapped[str] = mapped_column(String(250), default="", nullable=False)
+    website: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    contact_info: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    company_size: Mapped[str] = mapped_column(String(64), default="small", nullable=False)
+    employee_count: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    products_and_services: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    customer_segments: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    sales_channels: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    current_software: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    operational_pain_points: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    business_objectives: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    required_automations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    expected_monthly_volume: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    recommended_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    selection_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class StructuredRequirementRecord(Base):
+    """Structured operational requirements extracted from SME onboarding."""
+
+    __tablename__ = "structured_requirements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    title: Mapped[str] = mapped_column(String(250), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    priority: Mapped[str] = mapped_column(String(32), default="MEDIUM", nullable=False)
+    recommended_modules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    recommended_agents: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    required_connectors: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    expected_monthly_credits: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    limitations: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="RECOMMENDED", index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class TenantSubscriptionRecord(Base):
+    """Canonical modular subscription contract for a tenant organization."""
+
+    __tablename__ = "tenant_subscription_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    internal_sku: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    billing_type: Mapped[str] = mapped_column(String(32), default="recurring", nullable=False)
+    billing_interval: Mapped[str] = mapped_column(String(32), default="monthly", nullable=False)
+    base_price: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
+    provider_plan_id: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    included_modules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    selected_modules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    entitled_agents: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    agent_execution_limit: Mapped[int] = mapped_column(Integer, default=200, nullable=False)
+    included_credits: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    credit_costs: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    seat_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    setup_fee: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    support_level: Mapped[str] = mapped_column(String(64), default="email_standard", nullable=False)
+    customization_allowance: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    renewal_policy: Mapped[str] = mapped_column(String(64), default="auto_renew", nullable=False)
+    extra_agents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    extra_seats: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    credit_packs_purchased: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    integration_addons: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    total_recurring_price: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_setup_price: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True, nullable=False)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    current_period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class TenantAgentConfigRecord(Base):
+    """Per-tenant AI agent activation, configuration, tool allowlist, and execution limit."""
+
+    __tablename__ = "tenant_agent_configs"
+    __table_args__ = (
+        UniqueConstraint("org_id", "agent_id", name="uq_tenant_agent_config"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="DEACTIVATED", index=True, nullable=False)
+    model_override: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(32), default="SIMULATION", nullable=False)
+    custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_allowlist: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    execution_limits: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    activated_by: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class ConnectorStateRecord(Base):
+    """Persistent verification, capability, and masked configuration state per connector."""
+
+    __tablename__ = "connector_states"
+    __table_args__ = (
+        UniqueConstraint("org_id", "connector_id", name="uq_org_connector_state"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), default="__platform__", index=True, nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    service_category: Mapped[str] = mapped_column(String(100), nullable=False)
+    authentication_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(32), default="SIMULATION", nullable=False)
+    connection_status: Mapped[str] = mapped_column(String(32), default="UNVERIFIED", nullable=False)
+    capability_state: Mapped[str] = mapped_column(String(32), default="SIMULATED", nullable=False)
+    config_summary: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class WorkflowDefinitionRecord(Base):
+    """Persisted multi-step SME automation workflow template/definition."""
+
+    __tablename__ = "workflow_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    workflow_key: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    schedule_cron: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    max_credits_budget: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
+    max_retries: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    execution_mode_default: Mapped[str] = mapped_column(String(32), default="SIMULATION", nullable=False)
+    steps_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class WorkflowRunRecord(Base):
+    """Persisted workflow execution instance following the strict 8-state FSM."""
+
+    __tablename__ = "workflow_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workflow_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), index=True, nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(32), default="SIMULATION", index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="DRAFT", index=True, nullable=False)
+    current_step_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_steps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    credits_budget: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    credits_consumed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    input_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    step_results_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    output_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_by: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class ExecutionEvidenceRecord(Base):
+    """Durable 18-field execution evidence ledger with output-origin verification."""
+
+    __tablename__ = "execution_evidence_records"
+
+    execution_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    workflow_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    agent_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    connector_id: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    input_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    output_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credits_consumed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_reference: Mapped[str] = mapped_column(String(500), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    output_origin: Mapped[str] = mapped_column(String(64), default="SIMULATED_SYNTHETIC", nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class CreditLedgerRecord(Base):
+    """Atomic, tenant-scoped, idempotent credit reserve/debit/refund ledger."""
+
+    __tablename__ = "credit_ledger_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    execution_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(200), unique=True, index=True, nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    credit_pool: Mapped[str] = mapped_column(String(64), default="lead_credits", nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="COMMITTED", nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    created_by: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class EmergencyStopRecord(Base):
+    """Persistent 4-level emergency stop and pause governance state."""
+
+    __tablename__ = "emergency_stop_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    scope_level: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    scope_target: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    state: Mapped[str] = mapped_column(String(32), default="EMERGENCY_STOPPED", index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    triggered_by: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )

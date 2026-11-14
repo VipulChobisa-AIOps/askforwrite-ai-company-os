@@ -213,12 +213,38 @@ def get_revenue_funnel(
     active_subscriptions = sum(1 for s in subs_all if s.status == "active")
     churned_subscriptions = sum(1 for s in subs_all if s.status == "cancelled")
 
+    from app.db.models import TenantSubscriptionRecord
+    from app.services.billing_ledger import resolve_internal_sku_for_subscription
+
     mrr_inr = 0
+    sku_breakdown: dict[str, dict[str, int]] = {}
     for s in subs_all:
         if s.status == "active":
-            pkg = get_package(s.plan_id)
-            if pkg:
-                mrr_inr += pkg.price_inr
+            resolved = resolve_internal_sku_for_subscription(s)
+            mrr_inr += int(resolved.get("monthly_mrr_inr", 0))
+            sku = str(resolved.get("internal_sku", "unknown"))
+            bucket = sku_breakdown.setdefault(sku, {"active_count": 0, "mrr_inr": 0})
+            bucket["active_count"] += 1
+            bucket["mrr_inr"] += int(resolved.get("monthly_mrr_inr", 0))
+
+    # Also include active modular TenantSubscriptionRecords not double-counted against provider records
+    mod_sub_q = db.query(TenantSubscriptionRecord)
+    if principal.org_id:
+        mod_sub_q = mod_sub_q.filter(TenantSubscriptionRecord.org_id == principal.org_id)
+    for ts in mod_sub_q.all():
+        if ts.status == "active":
+            monthly_val = (
+                round(int(ts.total_recurring_price) / 12)
+                if ts.billing_interval == "annual"
+                else int(ts.total_recurring_price)
+            )
+            if ts.currency == "USD":
+                monthly_val *= 85
+            if monthly_val > 0:
+                mrr_inr += monthly_val
+                bucket = sku_breakdown.setdefault(ts.internal_sku, {"active_count": 0, "mrr_inr": 0})
+                bucket["active_count"] += 1
+                bucket["mrr_inr"] += monthly_val
 
     # Build persistent prospect-level stage tracking (linked by lead_id / domain)
     preview_by_lead = {p.lead_id: p for p in previews_all if p.lead_id}
@@ -276,6 +302,7 @@ def get_revenue_funnel(
             "payments_completed": payments_completed,
             "active_subscriptions": active_subscriptions,
             "mrr_inr": mrr_inr,
+            "mrr_by_internal_sku": sku_breakdown,
             "churn_count": churned_subscriptions,
         },
         "conversion_rates": {
@@ -285,4 +312,19 @@ def get_revenue_funnel(
             "checkout_to_paid_rate": round(payments_completed / max(1, checkout_initiated), 4),
         },
         "prospect_funnel": prospect_journey,
+    }
+
+
+@router.get("/pricing/contracts", status_code=status.HTTP_200_OK)
+def list_canonical_pricing_contracts() -> dict[str, Any]:
+    """Return canonical 15-field subscription contracts for all packages and modular SME tiers."""
+    from app.services.billing_ledger import build_canonical_package_contract
+    from app.services.catalog import MODULAR_SME_TIERS
+
+    contracts = {key: build_canonical_package_contract(key) for key in CATALOG}
+    tier_contracts = {key: build_canonical_package_contract(key) for key in MODULAR_SME_TIERS}
+    return {
+        "status": "OK",
+        "package_contracts": contracts,
+        "modular_tier_contracts": tier_contracts,
     }
