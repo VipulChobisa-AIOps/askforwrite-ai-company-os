@@ -16,9 +16,9 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -1730,4 +1730,241 @@ def decide_tenant_approval(
         "decided_by": appr.decided_by,
         "decision_note": appr.decision_note,
     }
+
+
+# ── P3 Tenant Self-Service: Onboarding, Deliverables, Support, Privacy ───────
+
+
+class TenantOnboardingTaskRequest(BaseModel):
+    completed: bool = True
+    evidence_summary: str | None = Field(default=None, max_length=1000)
+    evidence_ref: str | None = Field(default=None, max_length=500)
+    blockers: list[str] | None = None
+    sku_key: str | None = Field(default=None, max_length=100)
+
+
+class TenantDeliveryRespondRequest(BaseModel):
+    action: Literal["ACCEPTED", "REVISION_REQUESTED"]
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class TenantSupportTicketCreateRequest(BaseModel):
+    subject: str = Field(min_length=3, max_length=300)
+    description: str = Field(min_length=3, max_length=4000)
+    category: str = Field(default="general", max_length=64)
+    priority: Literal["LOW", "MEDIUM", "HIGH", "URGENT"] = "MEDIUM"
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class TenantSupportReplyRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class TenantTicketCSATRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class TenantConsentUpdateRequest(BaseModel):
+    consent_preferences: dict[str, Any]
+
+
+@router.get("/onboarding", summary="Get tenant onboarding checklist, blockers & readiness state")
+def get_tenant_onboarding(
+    sku_key: str | None = None,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_customer_success import create_or_get_onboarding_workflow
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return create_or_get_onboarding_workflow(db, org_id=principal.org_id, sku_key=sku_key, actor=principal.subject)
+
+
+@router.patch("/onboarding/tasks/{task_key}", summary="Submit tenant onboarding task input & completion")
+def update_tenant_onboarding_task(
+    task_key: str,
+    body: TenantOnboardingTaskRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_customer_success import update_onboarding_task
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    try:
+        return update_onboarding_task(
+            db,
+            org_id=principal.org_id,
+            task_key=task_key,
+            completed=body.completed,
+            evidence_summary=body.evidence_summary,
+            evidence_ref=body.evidence_ref,
+            blockers=body.blockers,
+            sku_key=body.sku_key,
+            actor=principal.subject,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/deliveries", summary="List tenant service deliverables & outcomes")
+def list_tenant_deliveries(
+    quality_state: str | None = None,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_delivery_health import list_service_deliveries
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    rows = list_service_deliveries(db, org_id=principal.org_id, quality_state=quality_state)
+    return {"org_id": principal.org_id, "count": len(rows), "deliveries": rows}
+
+
+@router.post("/deliveries/{delivery_id}/respond", summary="Accept deliverable or request revision (org-scoped)")
+def respond_tenant_delivery(
+    delivery_id: str,
+    body: TenantDeliveryRespondRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.db.models import P3ServiceDeliveryRecord
+    from app.services.p3_delivery_health import transition_delivery_quality_state
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    rec = db.get(P3ServiceDeliveryRecord, delivery_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    if rec.org_id != principal.org_id:
+        raise HTTPException(status_code=403, detail="Deliverable belongs to a different organization")
+    try:
+        return transition_delivery_quality_state(
+            db, delivery_id=delivery_id, target_state=body.action, note=body.note, actor=principal.subject
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/support/tickets", summary="List customer-visible support tickets for tenant org")
+def list_tenant_support_tickets(
+    status_filter: str | None = Query(default=None, alias="status"),
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_support_improvements import list_support_tickets
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    rows = list_support_tickets(db, org_id=principal.org_id, status=status_filter, include_internal=False)
+    return {"org_id": principal.org_id, "count": len(rows), "tickets": rows}
+
+
+@router.post("/support/tickets", summary="Create tenant support ticket")
+def create_tenant_support_ticket(
+    body: TenantSupportTicketCreateRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_support_improvements import create_support_ticket
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    try:
+        return create_support_ticket(
+            db,
+            org_id=principal.org_id,
+            subject=body.subject,
+            description=body.description,
+            category=body.category,
+            priority=body.priority,
+            created_by_user_id=principal.user_id,
+            created_by_email=principal.email,
+            attachments=body.attachments,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/support/tickets/{ticket_id}/messages", summary="Post customer reply on tenant ticket")
+def reply_tenant_support_ticket(
+    ticket_id: str,
+    body: TenantSupportReplyRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_support_improvements import add_ticket_message
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    try:
+        return add_ticket_message(
+            db,
+            ticket_id=ticket_id,
+            body=body.body,
+            visibility="customer_visible",
+            sender_type="customer",
+            sender=principal.email or principal.subject,
+            org_id_scope=principal.org_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/support/tickets/{ticket_id}/csat", summary="Submit tenant CSAT rating for resolved support ticket")
+def submit_tenant_ticket_csat(
+    ticket_id: str,
+    body: TenantTicketCSATRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_support_improvements import submit_ticket_csat
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    try:
+        return submit_ticket_csat(
+            db, ticket_id=ticket_id, rating=body.rating, comment=body.comment, org_id_scope=principal.org_id
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/data-export", summary="Export strictly tenant-scoped secret-redacted data bundle (DPDP/GDPR)")
+def get_tenant_data_export(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_ops_compliance_cc import export_customer_data_bundle
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return export_customer_data_bundle(
+        db, org_id=principal.org_id, requested_by=principal.subject, customer_safe_only=True
+    )
+
+
+@router.patch("/consent-preferences", summary="Update tenant privacy consent preferences")
+def update_tenant_consent_preferences(
+    body: TenantConsentUpdateRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_ops_compliance_cc import update_consent_and_retention
+
+    if not principal.org_id:
+        raise HTTPException(status_code=400, detail="Tenant organization required")
+    return update_consent_and_retention(
+        db,
+        org_id=principal.org_id,
+        consent_preferences=body.consent_preferences,
+        retention_policy=None,
+        actor=principal.subject,
+    )
 

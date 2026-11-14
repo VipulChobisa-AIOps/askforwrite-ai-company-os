@@ -43,9 +43,9 @@ ALLOWED_FSM_TRANSITIONS: dict[str, set[str]] = {
     "RUNNING": {"WAITING_APPROVAL", "COMPLETED", "FAILED", "BLOCKED", "CANCELLED"},
     "WAITING_APPROVAL": {"RUNNING", "BLOCKED", "CANCELLED"},
     "COMPLETED": set(),
-    "FAILED": set(),
+    "FAILED": {"READY"},
     "CANCELLED": set(),
-    "BLOCKED": set(),
+    "BLOCKED": {"READY"},
 }
 
 
@@ -508,6 +508,15 @@ def _execute_steps_from_current_index(
         if has_bad:
             transition_run_state(run, "FAILED")
             run.failure_reason = run.failure_reason or "One or more workflow steps failed"
+            from app.services.p3_ops_compliance_cc import move_failed_run_to_dlq
+
+            move_failed_run_to_dlq(
+                db,
+                run=run,
+                reason=run.failure_reason,
+                incident_type="DEAD_LETTER_JOB",
+                details={"failed_at_step_index": run.current_step_index},
+            )
         else:
             transition_run_state(run, "COMPLETED")
         run.completed_at = datetime.now(UTC)
@@ -592,6 +601,9 @@ def start_workflow_run(
 
     if run.status == "DRAFT":
         transition_run_state(run, "READY")
+    from app.services.p3_ops_compliance_cc import enforce_tenant_concurrency_guard
+
+    enforce_tenant_concurrency_guard(db, org_id=org_scope)
     transition_run_state(run, "RUNNING")
     if run.started_at is None:
         run.started_at = datetime.now(UTC)

@@ -20,6 +20,7 @@ from app.api.v1.audit_export import router as audit_export_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.commercial import router as commercial_router
 from app.api.v1.customer_portal import router as customer_portal_router
+from app.api.v1.customer_success import router as customer_success_router
 from app.api.v1.field_force import router as field_force_router
 from app.api.v1.growth_suite import router as growth_suite_router
 from app.api.v1.inventory_analytics import router as inventory_analytics_router
@@ -201,6 +202,7 @@ app.include_router(inventory_analytics_router)
 app.include_router(registry_router)
 app.include_router(workflows_router)
 app.include_router(commercial_router)
+app.include_router(customer_success_router)
 app.include_router(watchdog_router)
 app.include_router(previews_router)
 app.include_router(scheduler_router)

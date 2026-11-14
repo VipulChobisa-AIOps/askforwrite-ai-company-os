@@ -347,7 +347,8 @@ async def payment_webhook_endpoint(
                     reason=f"Gateway webhook '{event.event_type}' set invoice {inv.id} to {inv.status}",
                 )
 
-    # Step 6c: Subscription renewal cycle credit replenishment or cancellation revoking
+    # Step 6c: Subscription renewal cycle credit replenishment, P3 lifecycle sync, or cancellation revoking
+    p3_subscription_sync = None
     if any(k in raw_ev for k in ("invoice.paid", "subscription.charged", "subscription.renewed")):
         from sqlalchemy.orm.attributes import flag_modified
         sub_id = event.resource_id
@@ -360,6 +361,38 @@ async def payment_webhook_endpoint(
                     sub_org.outreach_credits_used = 0
                     sub_org.updated_at = datetime.now(UTC)
                     logger.info("Replenished monthly credits for org %s on subscription renewal %s", sub_org.id, sub_id)
+                from app.services.p3_revenue_growth import record_subscription_lifecycle_event
+
+                p3_subscription_sync = record_subscription_lifecycle_event(
+                    db,
+                    org_id=sub.org_id,
+                    event_type=event.event_type,
+                    target_state="ACTIVE",
+                    idempotency_key=f"wh-{event.provider.value}-{event.id}",
+                    provider=event.provider.value,
+                    provider_subscription_id=sub_id,
+                    internal_sku=sub.plan_id,
+                    billing_interval="monthly",
+                    is_provider_confirmed=True,
+                    billing_category="RECURRING_SUBSCRIPTION",
+                    actor=f"webhook:{event.provider.value}",
+                )
+    elif any(k in raw_ev for k in ("payment.failed", "invoice.payment_failed")):
+        sub_id = event.resource_id
+        if sub_id:
+            sub = db.query(SubscriptionRecord).filter_by(provider_subscription_id=sub_id).first()
+            if sub and sub.org_id:
+                from app.services.p3_revenue_growth import handle_payment_failure_and_grace_period
+
+                p3_subscription_sync = handle_payment_failure_and_grace_period(
+                    db,
+                    org_id=sub.org_id,
+                    amount=0.0,
+                    reason=f"Provider webhook '{event.event_type}' reported payment failure",
+                    provider=event.provider.value,
+                    idempotency_key=f"wh-fail-{event.provider.value}-{event.id}",
+                    actor=f"webhook:{event.provider.value}",
+                )
     elif any(k in raw_ev for k in ("subscription.cancelled", "subscription.halted")):
         from sqlalchemy.orm.attributes import flag_modified
         sub_id = event.resource_id
@@ -377,6 +410,21 @@ async def payment_webhook_endpoint(
                     sub_org.metadata_json = s_meta
                     flag_modified(sub_org, "metadata_json")
                     logger.warning("Revoked entitlements for org %s due to %s", sub_org.id, event.event_type)
+                from app.services.p3_revenue_growth import record_subscription_lifecycle_event
+
+                p3_subscription_sync = record_subscription_lifecycle_event(
+                    db,
+                    org_id=sub.org_id,
+                    event_type=event.event_type,
+                    target_state="CANCELLED" if "cancel" in raw_ev else "EXPIRED",
+                    idempotency_key=f"wh-{event.provider.value}-{event.id}",
+                    provider=event.provider.value,
+                    provider_subscription_id=sub_id,
+                    internal_sku=sub.plan_id,
+                    is_provider_confirmed=True,
+                    billing_category="RECURRING_SUBSCRIPTION",
+                    actor=f"webhook:{event.provider.value}",
+                )
 
     # Mark event as processed
     event_record.processed = True
@@ -392,6 +440,8 @@ async def payment_webhook_endpoint(
         resp_payload["provisioning"] = provision_result
     if p2_reconciliation:
         resp_payload["p2_reconciliation"] = p2_reconciliation
+    if p3_subscription_sync:
+        resp_payload["p3_subscription_sync"] = p3_subscription_sync
 
     return resp_payload
 

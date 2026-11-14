@@ -156,6 +156,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span>P2 Commercial Revenue OS</span>
       </a>
+      <a href="#" class="nav-item" data-page="customer-success" id="nav-customer-success">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+        <span>P3 Customer Success &amp; Growth</span>
+      </a>
       <div class="sidebar-section-label" id="cw-sidebar-label">Business Control Center</div>
       <a href="#" class="nav-item" data-page="cw-profile" id="nav-cw-profile">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -2488,6 +2492,210 @@
               <div id="p2-acceptance-summary" style="font-size:0.82rem;"></div>
             </div>
             <div id="p2-acceptance-steps-list">Loading 12-step verification checklist...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── P3 Customer Success, Retention & Repeatable Growth Engine ───────── -->
+      <section class="page" id="page-customer-success">
+        <div class="cw-header-bar" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;">P3 Customer Success, Retention &amp; Growth Engine</h2>
+            <p class="cw-subtext" id="p3-cc-meta" style="margin:4px 0 0;">Acquire → Onboard → Activate → Deliver → Measure Results → Support → Retain → Renew → Expand → Refer</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="p3-active-org-id" class="settings-input" placeholder="Selected Customer org_id" style="width:220px;">
+            <button type="button" class="primary-btn" id="btn-p3-refresh-all">Refresh Customer Ops</button>
+          </div>
+        </div>
+
+        <div class="cw-subtabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          <button type="button" class="secondary-btn p3-subtab-btn active" data-p3tab="control-centre">Control Centre KPIs</button>
+          <button type="button" class="secondary-btn p3-subtab-btn" data-p3tab="customers-delivery">Customer 360 &amp; Onboarding/Delivery</button>
+          <button type="button" class="secondary-btn p3-subtab-btn" data-p3tab="health-support">Health, Support &amp; Improvements</button>
+          <button type="button" class="secondary-btn p3-subtab-btn" data-p3tab="subs-growth-ue">Subscriptions, Expansion &amp; Unit Economics</button>
+          <button type="button" class="secondary-btn p3-subtab-btn" data-p3tab="ops-compliance">Ops Readiness, Compliance &amp; 12-Step</button>
+        </div>
+
+        <!-- P3 Subtab 1: Control Centre KPIs -->
+        <div class="p3-subtab-panel" id="p3-panel-control-centre">
+          <div class="cw-card" style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+              <h3 style="margin:0;">Verified Customer Operations Metrics (Live Non-Sandbox Only)</h3>
+              <span class="badge" id="p3-cc-freshness">REALTIME_DB_QUERY</span>
+            </div>
+            <div class="stats-grid" id="p3-cc-live-kpis" style="margin-top:12px;"></div>
+          </div>
+          <div class="cw-card" style="margin-bottom:14px;border-left:3px solid var(--amber);">
+            <h3 style="margin:0 0 8px;">Isolated Simulation &amp; Sandbox Metrics (Excluded from Live KPIs)</h3>
+            <div id="p3-cc-sim-kpis" style="font-size:0.85rem;color:var(--text-muted);">Loading...</div>
+          </div>
+          <div class="cw-card">
+            <h3 style="margin:0 0 8px;">Calculation Method &amp; Metric Honesty Definitions</h3>
+            <div id="p3-cc-methods" style="font-size:0.82rem;color:var(--text-muted);">Loading...</div>
+          </div>
+        </div>
+
+        <!-- P3 Subtab 2: Customer 360, Onboarding & Service Delivery -->
+        <div class="p3-subtab-panel" id="p3-panel-customers-delivery" style="display:none;">
+          <div class="dashboard-grid" style="grid-template-columns:1.1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div class="cw-card">
+              <h3 style="margin:0 0 10px;">Customer Accounts &amp; Lifecycle State</h3>
+              <div class="table-container" style="max-height:260px;overflow:auto;">
+                <table class="data-table">
+                  <thead><tr><th>Org</th><th>Lifecycle</th><th>Progress</th><th>Activated</th><th>Action</th></tr></thead>
+                  <tbody id="p3-customers-tbody"><tr><td colspan="5">No customer accounts yet</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">
+                <h3 style="margin:0;">Onboarding &amp; Readiness Gate</h3>
+                <button type="button" class="primary-btn" id="btn-p3-confirm-activation">Confirm ACTIVE</button>
+              </div>
+              <div id="p3-onboarding-tasks" style="font-size:0.84rem;">Select an organization to inspect onboarding tasks &amp; blockers.</div>
+            </div>
+          </div>
+          <div class="cw-card">
+            <h3 style="margin:0 0 10px;">Service Delivery, QA Verification &amp; Outcomes</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+              <input type="text" id="p3-deliv-title" class="settings-input" placeholder="Deliverable title" style="flex:1;min-width:180px;">
+              <input type="text" id="p3-deliv-req" class="settings-input" placeholder="Customer requirement &amp; scope" style="flex:2;min-width:220px;">
+              <button type="button" class="primary-btn" id="btn-p3-create-delivery">Create Delivery</button>
+            </div>
+            <div class="table-container" style="max-height:260px;overflow:auto;">
+              <table class="data-table">
+                <thead><tr><th>Title</th><th>Org</th><th>Quality State</th><th>Outputs</th><th>Actions</th></tr></thead>
+                <tbody id="p3-deliveries-tbody"><tr><td colspan="5">No service deliveries recorded</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- P3 Subtab 3: Health Engine, Support Desk & Improvement Loop -->
+        <div class="p3-subtab-panel" id="p3-panel-health-support" style="display:none;">
+          <div class="dashboard-grid" style="grid-template-columns:1fr 1.2fr;gap:14px;margin-bottom:14px;">
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                <h3 style="margin:0;">Customer Health Score</h3>
+                <div style="display:flex;gap:6px;">
+                  <button type="button" class="secondary-btn" id="btn-p3-compute-health">Evaluate</button>
+                  <button type="button" class="secondary-btn" id="btn-p3-health-alerts">Run Alerts</button>
+                </div>
+              </div>
+              <div id="p3-health-viewer" style="font-size:0.84rem;">Select an organization and click Evaluate.</div>
+            </div>
+            <div class="cw-card">
+              <h3 style="margin:0 0 10px;">Customer Support Queue &amp; AI Triage</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                <input type="text" id="p3-tkt-subject" class="settings-input" placeholder="Ticket subject" style="flex:1;min-width:160px;">
+                <select id="p3-tkt-cat" class="settings-select" style="width:150px;">
+                  <option value="general">general</option>
+                  <option value="onboarding">onboarding</option>
+                  <option value="delivery">delivery</option>
+                  <option value="billing_renewal">billing_renewal</option>
+                  <option value="refund_dispute">refund_dispute</option>
+                </select>
+                <input type="text" id="p3-tkt-desc" class="settings-input" placeholder="Description" style="flex:2;min-width:180px;">
+                <button type="button" class="primary-btn" id="btn-p3-create-ticket">Open Ticket</button>
+              </div>
+              <div class="table-container" style="max-height:230px;overflow:auto;">
+                <table class="data-table">
+                  <thead><tr><th>Ticket #</th><th>Subject</th><th>Priority</th><th>Status</th><th>CSAT</th><th>Actions</th></tr></thead>
+                  <tbody id="p3-tickets-tbody"><tr><td colspan="6">No support tickets</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="cw-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+              <h3 style="margin:0;">Product &amp; Service Improvement Loop</h3>
+              <button type="button" class="secondary-btn" id="btn-p3-synthesize-improvements">Synthesize Improvements</button>
+            </div>
+            <div class="table-container" style="max-height:220px;overflow:auto;">
+              <table class="data-table">
+                <thead><tr><th>Category</th><th>Issue Summary</th><th>Score</th><th>Freq</th><th>Status</th></tr></thead>
+                <tbody id="p3-improvements-tbody"><tr><td colspan="5">No improvement clusters yet</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- P3 Subtab 4: Subscriptions, Expansion & Unit Economics -->
+        <div class="p3-subtab-panel" id="p3-panel-subs-growth-ue" style="display:none;">
+          <div class="dashboard-grid" style="grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                <h3 style="margin:0;">Subscription Reliability &amp; Grace Enforcement</h3>
+                <button type="button" class="secondary-btn" id="btn-p3-enforce-grace">Enforce Grace</button>
+              </div>
+              <div class="table-container" style="max-height:220px;overflow:auto;">
+                <table class="data-table">
+                  <thead><tr><th>Org</th><th>SKU</th><th>Billing</th><th>Renewal</th><th>Status</th></tr></thead>
+                  <tbody id="p3-renewals-tbody"><tr><td colspan="5">No upcoming renewals</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                <h3 style="margin:0;">Catalog-Grounded Expansion &amp; Referral Engine</h3>
+                <button type="button" class="secondary-btn" id="btn-p3-eval-growth">Evaluate Org</button>
+              </div>
+              <div class="table-container" style="max-height:220px;overflow:auto;">
+                <table class="data-table">
+                  <thead><tr><th>Org</th><th>Opportunity</th><th>Recommended SKU</th><th>Status</th><th>Action</th></tr></thead>
+                  <tbody id="p3-growth-tbody"><tr><td colspan="5">No opportunities evaluated</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="cw-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <h3 style="margin:0;">Unit Economics &amp; Customer Cost Budgets</h3>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input type="number" id="p3-budget-limit" class="settings-input" placeholder="Monthly limit INR" style="width:150px;">
+                <button type="button" class="secondary-btn" id="btn-p3-save-budget">Save Cap</button>
+              </div>
+            </div>
+            <div id="p3-ue-viewer" style="font-size:0.85rem;">Select an organization to view verified revenue, ACTUAL/ALLOCATED/ESTIMATED costs, and margin.</div>
+          </div>
+        </div>
+
+        <!-- P3 Subtab 5: Ops Readiness, Compliance & 12-Step Acceptance -->
+        <div class="p3-subtab-panel" id="p3-panel-ops-compliance" style="display:none;">
+          <div class="dashboard-grid" style="grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                <h3 style="margin:0;">Multi-Tenant Ops Readiness &amp; DLQ Recovery</h3>
+                <button type="button" class="secondary-btn" id="btn-p3-scan-timeouts">Scan Timeouts</button>
+              </div>
+              <div id="p3-ops-summary" style="font-size:0.84rem;margin-bottom:10px;">Loading operational readiness...</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+                <input type="text" id="p3-drill-scope" class="settings-input" value="postgresql_primary_database" style="flex:1;">
+                <input type="text" id="p3-drill-evidence" class="settings-input" placeholder="Backup restore verification evidence ref" style="flex:1;">
+                <button type="button" class="secondary-btn" id="btn-p3-record-drill">Log Backup Drill</button>
+              </div>
+              <div class="table-container" style="max-height:180px;overflow:auto;">
+                <table class="data-table">
+                  <thead><tr><th>Incident</th><th>Resource</th><th>Status</th><th>Retries</th><th>Action</th></tr></thead>
+                  <tbody id="p3-dlq-tbody"><tr><td colspan="5">No open DLQ incidents</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="cw-card">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                <h3 style="margin:0;">GDPR/DPDP Privacy &amp; Compliance Console</h3>
+                <button type="button" class="primary-btn" id="btn-p3-export-data">Export Redacted Bundle</button>
+              </div>
+              <div id="p3-compliance-output" style="font-size:0.84rem;color:var(--text-muted);">Select an organization to export its DPDP/GDPR data portability bundle or inspect legal-hold status.</div>
+            </div>
+          </div>
+          <div class="cw-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <h3 style="margin:0;">12-Step Real-World Customer Success Acceptance Checklist</h3>
+              <div id="p3-acceptance-summary" style="font-size:0.82rem;"></div>
+            </div>
+            <div id="p3-acceptance-steps-list">Loading 12-step P3 verification checklist...</div>
           </div>
         </div>
       </section>

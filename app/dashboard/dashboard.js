@@ -121,6 +121,7 @@
       mobility: 'Urban Mobility AI — Fleet Demand & Station Rebalancing',
       inventory: 'Warehouse StockSense AI — ABC-XYZ & Inventory Automation',
       'commercial-os': 'P2 Commercial Acquisition & Revenue OS (India Agencies Pilot)',
+      'customer-success': 'P3 Customer Success, Retention & Repeatable Growth Engine',
     };
     $('#page-title').textContent = titles[pageName] || pageName;
 
@@ -133,6 +134,8 @@
       initInventoryPage();
     } else if (pageName === 'commercial-os' && typeof p2LoadControlCentre === 'function') {
       p2LoadControlCentre();
+    } else if (pageName === 'customer-success' && typeof p3LoadControlCentre === 'function') {
+      p3LoadControlCentre();
     }
 
     // Update URL hash
@@ -2261,7 +2264,7 @@
     const ownerTabs = [
       'dashboard', 'leads', 'outreach', 'organizations', 'revenue',
       'field-force', 'growth', 'mobile', 'trust-chain', 'quality', 'mobility', 'inventory',
-      'commercial-os',
+      'commercial-os', 'customer-success',
     ];
     const customerTabs = [
       'portal', 'approvals', 'cw-profile', 'cw-marketplace', 'cw-workforce',
@@ -3235,6 +3238,7 @@
     'cw-billing': 'Subscription & Credit Ledger',
     'cw-settings': 'Settings & 4-Level Emergency Stop',
     'commercial-os': 'P2 Commercial Acquisition & Revenue OS',
+    'customer-success': 'P3 Customer Success, Retention & Growth Engine',
   };
 
   function cwIsCustomer() {
@@ -4075,9 +4079,11 @@
       if (page === 'cw-billing') cwLoadBilling();
       if (page === 'cw-settings') cwLoadEmergencyStops();
       if (page === 'commercial-os') p2LoadControlCentre();
+      if (page === 'customer-success') p3LoadControlCentre();
       if (page === 'approvals' && cwIsCustomer()) cwFetchScopedApprovals();
     });
     p2BindEvents();
+    p3BindEvents();
   }
 
   // ── P2 Commercial Revenue OS Controller ───────────────────
@@ -4435,6 +4441,399 @@
     });
   }
 
+  // ── P3 Customer Success & Growth Engine Controller ─────────
+  function p3SwitchSubtab(tabKey) {
+    $$('.p3-subtab-btn').forEach(btn => {
+      const isAct = btn.dataset.p3tab === tabKey;
+      btn.classList.toggle('active', isAct);
+      btn.classList.toggle('primary-btn', isAct);
+      btn.classList.toggle('secondary-btn', !isAct);
+    });
+    $$('.p3-subtab-panel').forEach(panel => {
+      panel.style.display = panel.id === `p3-panel-${tabKey}` ? 'block' : 'none';
+    });
+  }
+
+  async function p3LoadOrgDetails(orgId) {
+    if (!orgId) return;
+    try {
+      const [onbRes, healthRes, ueRes] = await Promise.all([
+        api('GET', `/v1/cs/customers/${encodeURIComponent(orgId)}/onboarding`),
+        api('GET', `/v1/cs/customers/${encodeURIComponent(orgId)}/health`),
+        api('GET', `/v1/cs/unit-economics/${encodeURIComponent(orgId)}`),
+      ]);
+      if ($('#p3-onboarding-tasks')) {
+        const tasks = onbRes.tasks || [];
+        const blockers = onbRes.blockers || [];
+        $('#p3-onboarding-tasks').innerHTML = `
+          <div style="margin-bottom:8px;">
+            <strong>SKU:</strong> ${escapeHtml(onbRes.sku_key || '')} •
+            <strong>Progress:</strong> ${onbRes.progress_pct || 0}% •
+            <strong>Status:</strong> ${escapeHtml(onbRes.status || '')}
+          </div>
+          ${blockers.length ? `<div style="color:var(--amber);margin-bottom:8px;"><strong>Blockers:</strong> ${blockers.map(escapeHtml).join(', ')}</div>` : ''}
+          <div style="display:flex;flex-direction:column;gap:4px;max-height:190px;overflow:auto;">
+            ${tasks.map(t => `<div>${t.completed ? '✅' : '⬜'} <strong>${escapeHtml(t.title || t.key)}</strong> <span style="color:var(--text-muted)">(${escapeHtml(t.owner || '')})</span></div>`).join('')}
+          </div>
+        `;
+      }
+      if ($('#p3-health-viewer')) {
+        const bd = healthRes.breakdown || [];
+        $('#p3-health-viewer').innerHTML = `
+          <div style="margin-bottom:8px;">
+            <strong>State:</strong> <span class="badge">${escapeHtml(healthRes.health_state || 'INSUFFICIENT_DATA')}</span> •
+            <strong>Score:</strong> ${healthRes.overall_score ?? 'INSUFFICIENT_DATA'} •
+            <strong>Freshness:</strong> ${escapeHtml(healthRes.data_freshness || '')}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            ${bd.map(d => `<div><code>${escapeHtml(d.dimension)}</code>: ${d.score ?? 'N/A'} — <span style="color:var(--text-muted)">${escapeHtml(d.evidence || '')}</span></div>`).join('')}
+          </div>
+        `;
+      }
+      if ($('#p3-ue-viewer')) {
+        const rev = ueRes.revenue_summary || {};
+        const cost = ueRes.cost_summary || {};
+        const lbl = cost.costs_by_quality_label || {};
+        const prof = ueRes.profitability || {};
+        const acq = ueRes.acquisition_and_ltv || {};
+        $('#p3-ue-viewer').innerHTML = `
+          <div><strong>Net Verified Revenue:</strong> ₹${rev.net_verified_revenue_inr ?? 0} | <strong>Operating Cost:</strong> ₹${cost.total_operating_cost_inr ?? 0} | <strong>Gross Margin:</strong> ${prof.gross_margin_pct ?? 'INSUFFICIENT_DATA'}%</div>
+          <div style="margin-top:4px;color:var(--text-muted);">Labels — ACTUAL: ₹${lbl.ACTUAL ?? 0}, ALLOCATED: ₹${lbl.ALLOCATED ?? 0}, ESTIMATED: ₹${lbl.ESTIMATED ?? 0} | Historical CAC/LTV: ${escapeHtml(String(acq.ltv_data_quality || 'INSUFFICIENT_DATA'))}</div>
+        `;
+      }
+    } catch (e) {
+      toast(`Customer detail load error: ${e.message}`, 'error');
+    }
+  }
+
+  async function p3LoadControlCentre() {
+    if (cwIsCustomer()) return;
+    try {
+      const [ccRes, custRes, delivRes, tktRes, impRes, relRes, growthRes, opsRes, accRes] = await Promise.all([
+        api('GET', '/v1/cs/control-centre'),
+        api('GET', '/v1/cs/customers'),
+        api('GET', '/v1/cs/deliveries'),
+        api('GET', '/v1/cs/support/tickets'),
+        api('GET', '/v1/cs/improvements'),
+        api('GET', '/v1/cs/subscriptions/reliability'),
+        api('GET', '/v1/cs/growth'),
+        api('GET', '/v1/cs/ops/readiness'),
+        api('GET', '/v1/cs/acceptance'),
+      ]);
+
+      const vco = ccRes.verified_customer_ops || {};
+      const act = vco.activation || {};
+      const del = vco.delivery || {};
+      const ret = vco.retention_and_subscriptions || {};
+      const rev = vco.revenue_and_unit_economics || {};
+      const sup = vco.support_and_improvements || {};
+      const sim = ccRes.simulation_and_test_metrics || {};
+
+      if ($('#p3-cc-freshness')) {
+        $('#p3-cc-freshness').textContent = `${ccRes.data_freshness || 'REALTIME'} • ${ccRes.reporting_period?.period_days || 30}d`;
+      }
+      if ($('#p3-cc-live-kpis')) {
+        const cards = [
+          ['Active Customers', `${ret.active_customers ?? 0} (At-Risk: ${ret.at_risk_customers ?? 0})`],
+          ['Activation Rate', `${act.activation_rate_pct ?? 0}% (${act.activated_customers ?? 0}/${act.total_customers ?? 0})`],
+          ['Verified Recurring MRR', `₹${rev.verified_recurring_mrr_inr ?? 0}`],
+          ['Verified ARR (Recurring Only)', String(rev.verified_arr_inr ?? 'INSUFFICIENT_DATA')],
+          ['One-Time Pilot Revenue', `₹${rev.verified_one_time_revenue_inr ?? 0}`],
+          ['Deliveries & QA Pass Rate', `${del.total_deliveries ?? 0} (${del.qa_pass_rate_pct ?? 'INSUFFICIENT_DATA'}%)`],
+          ['Open Support & Avg CSAT', `${sup.open_tickets ?? 0} open • ${sup.avg_csat_out_of_5 ?? 'INSUFFICIENT_DATA'}/5`],
+          ['Outstanding Receivables', `₹${rev.outstanding_receivables_inr ?? 0}`],
+        ];
+        $('#p3-cc-live-kpis').innerHTML = cards
+          .map(([k, v]) => `<div class="stat-card"><div class="stat-header"><span class="stat-label">${escapeHtml(k)}</span></div><div class="stat-value" style="font-size:1.15rem;">${escapeHtml(String(v))}</div></div>`)
+          .join('');
+      }
+      if ($('#p3-cc-sim-kpis')) {
+        $('#p3-cc-sim-kpis').textContent = `Policy: ${sim.exclusion_policy || 'EXCLUDED'} | Synthetic Prospects: ${sim.synthetic_prospects_count ?? 0} | Sandbox Accounts: ${sim.sandbox_customer_accounts_count ?? 0} | Simulation Runs: ${sim.simulation_workflow_runs_count ?? 0}`;
+      }
+      if ($('#p3-cc-methods')) {
+        const cm = ccRes.calculation_method || {};
+        $('#p3-cc-methods').innerHTML = Object.entries(cm)
+          .map(([k, v]) => `<div><strong>${escapeHtml(k)}:</strong> ${escapeHtml(String(v))}</div>`)
+          .join('');
+      }
+
+      const customers = custRes.customers || [];
+      if ($('#p3-customers-tbody')) {
+        $('#p3-customers-tbody').innerHTML = customers.length
+          ? customers.map(c => `<tr>
+              <td><code>${escapeHtml(c.org_id)}</code></td>
+              <td><span class="badge">${escapeHtml(c.lifecycle_state)}</span></td>
+              <td>${c.onboarding_progress_pct ?? 0}%</td>
+              <td>${c.activation_ready ? 'Ready' : 'Blocked/Pending'}</td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p3SelectOrg('${escapeHtml(c.org_id)}')">Select</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No customer accounts yet</td></tr>';
+      }
+
+      if ($('#p3-deliveries-tbody')) {
+        const dels = delivRes.deliveries || [];
+        $('#p3-deliveries-tbody').innerHTML = dels.length
+          ? dels.map(d => `<tr>
+              <td>${escapeHtml(d.title)}</td>
+              <td><code>${escapeHtml(d.org_id)}</code></td>
+              <td><span class="badge">${escapeHtml(d.quality_state)}</span></td>
+              <td>${Object.keys(d.output_artifacts || {}).length} artifact(s)</td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p3QaPass('${escapeHtml(d.delivery_id)}', true)">QA Pass</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No service deliveries recorded</td></tr>';
+      }
+
+      if ($('#p3-tickets-tbody')) {
+        const tkts = tktRes.tickets || [];
+        $('#p3-tickets-tbody').innerHTML = tkts.length
+          ? tkts.map(t => `<tr>
+              <td><code>${escapeHtml(t.ticket_number)}</code></td>
+              <td>${escapeHtml(t.subject)}</td>
+              <td>${escapeHtml(t.priority)}</td>
+              <td><span class="badge">${escapeHtml(t.status)}</span></td>
+              <td>${t.csat_rating ?? '-'}</td>
+              <td style="display:flex;gap:4px;">
+                <button type="button" class="secondary-btn" onclick="window.app.p3AiAssistTicket('${escapeHtml(t.ticket_id)}')">AI Triage</button>
+                <button type="button" class="secondary-btn" onclick="window.app.p3ResolveTicket('${escapeHtml(t.ticket_id)}')">Resolve</button>
+              </td>
+            </tr>`).join('')
+          : '<tr><td colspan="6">No support tickets</td></tr>';
+      }
+
+      if ($('#p3-improvements-tbody')) {
+        const imps = impRes.improvements || [];
+        $('#p3-improvements-tbody').innerHTML = imps.length
+          ? imps.map(i => `<tr>
+              <td>${escapeHtml(i.source_category)}</td>
+              <td>${escapeHtml(i.title)}</td>
+              <td>${i.priority_score}</td>
+              <td>${i.frequency_count}</td>
+              <td><span class="badge">${escapeHtml(i.status)}</span></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No improvement clusters yet</td></tr>';
+      }
+
+      if ($('#p3-renewals-tbody')) {
+        const rens = relRes.upcoming_renewals || [];
+        $('#p3-renewals-tbody').innerHTML = rens.length
+          ? rens.map(r => `<tr>
+              <td><code>${escapeHtml(r.org_id)}</code></td>
+              <td>${escapeHtml(r.internal_sku || '')}</td>
+              <td>${escapeHtml(r.billing_type || '')}</td>
+              <td>${escapeHtml((r.renewal_date || '').slice(0, 10))} (${r.days_remaining}d)</td>
+              <td>${escapeHtml(r.status || '')}</td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No upcoming renewals in 30d window</td></tr>';
+      }
+
+      if ($('#p3-growth-tbody')) {
+        const opps = growthRes.opportunities || [];
+        $('#p3-growth-tbody').innerHTML = opps.length
+          ? opps.map(o => `<tr>
+              <td><code>${escapeHtml(o.org_id)}</code></td>
+              <td>${escapeHtml(o.title)}</td>
+              <td>${escapeHtml(o.recommended_sku_key || '-')}</td>
+              <td><span class="badge">${escapeHtml(o.status)}</span></td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p3ShareOpportunity('${escapeHtml(o.opportunity_id)}')">HITL Share</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No expansion/referral opportunities yet</td></tr>';
+      }
+
+      if ($('#p3-ops-summary')) {
+        const dbh = opsRes.database_health || {};
+        const conc = opsRes.concurrency_limits || {};
+        $('#p3-ops-summary').innerHTML = `DB Status: <strong>${escapeHtml(dbh.status || 'UNKNOWN')}</strong> (${escapeHtml(dbh.dialect || '')}, ping ${dbh.ping_latency_ms ?? '-'}ms) | Active Workflows: ${conc.active_runs_total ?? 0} (Cap/org: ${conc.max_concurrent_runs_per_org ?? 5})`;
+      }
+      if ($('#p3-dlq-tbody')) {
+        const dlqs = opsRes.dlq_summary?.open_items || [];
+        $('#p3-dlq-tbody').innerHTML = dlqs.length
+          ? dlqs.map(i => `<tr>
+              <td>${escapeHtml(i.incident_type)}</td>
+              <td><code>${escapeHtml(i.resource_ref || '')}</code></td>
+              <td>${escapeHtml(i.status)}</td>
+              <td>${i.retry_attempts}</td>
+              <td><button type="button" class="secondary-btn" onclick="window.app.p3RetryDlq('${escapeHtml(i.id)}')">Retry</button></td>
+            </tr>`).join('')
+          : '<tr><td colspan="5">No open DLQ incidents</td></tr>';
+      }
+
+      if ($('#p3-acceptance-summary')) {
+        const smr = accRes.summary || {};
+        $('#p3-acceptance-summary').textContent = `Live: ${smr.live_verified_count || 0} | Sandbox: ${smr.sandbox_verified_count || 0} | Not Tested: ${smr.not_tested_count ?? 12}`;
+      }
+      if ($('#p3-acceptance-steps-list')) {
+        const steps = accRes.steps || [];
+        $('#p3-acceptance-steps-list').innerHTML = steps.map(s => `
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border-subtle);">
+            <div style="flex:1;min-width:220px;">
+              <strong>#${s.step_number} ${escapeHtml(s.title)}</strong>
+              <div style="font-size:0.78rem;color:var(--text-muted);">${escapeHtml(s.description)}</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <select id="p3-step-status-${s.step_number}" class="settings-select" style="width:165px;">
+                ${['NOT_TESTED', 'SANDBOX_VERIFIED', 'LIVE_VERIFIED'].map(opt => `<option value="${opt}" ${s.verification_status === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+              </select>
+              <input type="text" id="p3-step-evidence-${s.step_number}" class="settings-input" value="${escapeHtml(s.evidence_summary || '')}" placeholder="Evidence summary" style="width:200px;">
+              <button type="button" class="secondary-btn" onclick="window.app.p3SaveStep(${s.step_number})">Save</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      const activeOrg = ($('#p3-active-org-id')?.value || '').trim() || (customers[0]?.org_id || '');
+      if (activeOrg) {
+        if ($('#p3-active-org-id') && !$('#p3-active-org-id').value) $('#p3-active-org-id').value = activeOrg;
+        await p3LoadOrgDetails(activeOrg);
+      }
+    } catch (e) {
+      toast(`P3 Control Centre load error: ${e.message}`, 'error');
+    }
+  }
+
+  function p3BindEvents() {
+    $$('.p3-subtab-btn').forEach(btn => {
+      btn.addEventListener('click', () => p3SwitchSubtab(btn.dataset.p3tab));
+    });
+    $('#btn-p3-refresh-all')?.addEventListener('click', p3LoadControlCentre);
+    $('#btn-p3-confirm-activation')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      if (!oid) return toast('Enter or select an org_id first', 'error');
+      try {
+        await api('POST', `/v1/cs/customers/${encodeURIComponent(oid)}/onboarding/confirm-activation`, { confirmation_note: 'Confirmed from P3 console' });
+        toast('Customer confirmed ACTIVE', 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Activation blocked: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-create-delivery')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      const title = ($('#p3-deliv-title')?.value || '').trim();
+      const req = ($('#p3-deliv-req')?.value || '').trim();
+      if (!oid || !title || !req) return toast('Provide org_id, title & requirement', 'error');
+      try {
+        await api('POST', '/v1/cs/deliveries', { org_id: oid, title, original_requirement: req });
+        toast('Service delivery record created', 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Delivery creation failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-compute-health')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      if (!oid) return toast('Select an org_id first', 'error');
+      await p3LoadOrgDetails(oid);
+      toast('Customer health re-evaluated', 'success');
+    });
+    $('#btn-p3-health-alerts')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      if (!oid) return toast('Select an org_id first', 'error');
+      try {
+        const res = await api('POST', `/v1/cs/customers/${encodeURIComponent(oid)}/health/alerts`, {});
+        toast(`Generated ${res.count || 0} internal alert(s)`, 'info');
+      } catch (e) {
+        toast(`Alert scan failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-create-ticket')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      const subject = ($('#p3-tkt-subject')?.value || '').trim();
+      const desc = ($('#p3-tkt-desc')?.value || '').trim();
+      if (!oid || !subject || !desc) return toast('Provide org_id, subject & description', 'error');
+      try {
+        await api('POST', '/v1/cs/support/tickets', {
+          org_id: oid,
+          subject,
+          description: desc,
+          category: $('#p3-tkt-cat')?.value || 'general',
+        });
+        toast('Support ticket opened', 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Ticket creation failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-synthesize-improvements')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/cs/improvements/synthesize', {});
+        toast(`Synthesized ${res.count || 0} improvement item(s)`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Synthesis failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-enforce-grace')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/cs/subscriptions/enforce-grace', {});
+        toast(`Grace check complete: ${res.suspended_count || 0} suspended`, 'info');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Grace enforcement failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-eval-growth')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      if (!oid) return toast('Select an org_id first', 'error');
+      try {
+        const res = await api('POST', `/v1/cs/growth/${encodeURIComponent(oid)}/evaluate`, {});
+        toast(`Evaluated ${res.count || 0} growth opportunity(ies)`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Growth evaluation failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-save-budget')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      const lim = Number($('#p3-budget-limit')?.value || 0);
+      if (!oid || lim <= 0) return toast('Enter org_id and positive monthly limit INR', 'error');
+      try {
+        await api('PUT', `/v1/cs/unit-economics/${encodeURIComponent(oid)}/budget`, { monthly_cost_limit_inr: lim });
+        toast('Customer monthly cost budget saved', 'success');
+        await p3LoadOrgDetails(oid);
+      } catch (e) {
+        toast(`Save budget failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-scan-timeouts')?.addEventListener('click', async () => {
+      try {
+        const res = await api('POST', '/v1/cs/ops/workflows/scan-timeouts', {});
+        toast(`Scanned ${res.checked_running_count} running jobs; timed out: ${res.timed_out_count}`, 'info');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Scan failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-record-drill')?.addEventListener('click', async () => {
+      const scope = ($('#p3-drill-scope')?.value || 'postgresql_primary_database').trim();
+      const ev = ($('#p3-drill-evidence')?.value || '').trim();
+      try {
+        await api('POST', '/v1/cs/ops/backup-drill', {
+          target_scope: scope,
+          restore_tested: true,
+          evidence_ref: ev || null,
+          notes: 'Verified via P3 Founder Operations Console',
+        });
+        toast('Backup verification drill recorded', 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Record drill failed: ${e.message}`, 'error');
+      }
+    });
+    $('#btn-p3-export-data')?.addEventListener('click', async () => {
+      const oid = ($('#p3-active-org-id')?.value || '').trim();
+      if (!oid) return toast('Select an org_id first', 'error');
+      try {
+        const res = await api('POST', `/v1/cs/compliance/${encodeURIComponent(oid)}/export`, {});
+        if ($('#p3-compliance-output')) {
+          $('#p3-compliance-output').textContent = `Export ID: ${res.compliance_request?.id} | Counts: ${JSON.stringify(res.compliance_request?.export_manifest?.record_counts || {})}`;
+        }
+        toast('DPDP/GDPR redacted bundle exported & audited', 'success');
+      } catch (e) {
+        toast(`Export failed: ${e.message}`, 'error');
+      }
+    });
+  }
+
   // ── Public API (for onclick handlers) ────────────────────
   window.app = {
     openApprovalModal,
@@ -4521,6 +4920,87 @@
         await p2LoadControlCentre();
       } catch (e) {
         toast(`Step update failed: ${e.message}`, 'error');
+      }
+    },
+    p3LoadAll: p3LoadControlCentre,
+    p3SelectOrg: async (orgId) => {
+      if ($('#p3-active-org-id')) $('#p3-active-org-id').value = orgId;
+      toast(`Selected customer org ${orgId}`, 'info');
+      await p3LoadOrgDetails(orgId);
+    },
+    p3QaPass: async (deliveryId, passed) => {
+      try {
+        await api('POST', `/v1/cs/deliveries/${encodeURIComponent(deliveryId)}/qa-review`, {
+          passed: !!passed,
+          checks: { manual_founder_qa: !!passed, scope_verified: !!passed },
+        });
+        toast(`Deliverable QA ${passed ? 'PASSED' : 'FAILED (Revision Requested)'}`, passed ? 'success' : 'error');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`QA update failed: ${e.message}`, 'error');
+      }
+    },
+    p3AiAssistTicket: async (ticketId) => {
+      try {
+        const res = await api('POST', `/v1/cs/support/tickets/${encodeURIComponent(ticketId)}/ai-assist`, {});
+        toast(
+          res.triage?.requires_human_approval
+            ? 'AI Triage paused: Sensitive topic gated by Owner HITL approval'
+            : `AI Triage completed (${res.triage?.suggested_category || 'general'})`,
+          res.triage?.requires_human_approval ? 'info' : 'success'
+        );
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`AI assist failed: ${e.message}`, 'error');
+      }
+    },
+    p3ResolveTicket: async (ticketId) => {
+      try {
+        await api('POST', `/v1/cs/support/tickets/${encodeURIComponent(ticketId)}/transition`, {
+          target_state: 'RESOLVED',
+          reason: 'Resolved from Customer Operations console',
+        });
+        toast('Support ticket resolved', 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Resolve failed: ${e.message}`, 'error');
+      }
+    },
+    p3ShareOpportunity: async (oppId) => {
+      try {
+        const res = await api('POST', `/v1/cs/growth/opportunities/${encodeURIComponent(oppId)}/share`, {});
+        toast(
+          res.status === 'APPROVAL_REQUIRED'
+            ? `Owner HITL approval staged (${res.approval_id})`
+            : 'Growth offer authorized & shared',
+          'info'
+        );
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`Share blocked: ${e.message}`, 'error');
+      }
+    },
+    p3RetryDlq: async (incidentId) => {
+      try {
+        const res = await api('POST', `/v1/cs/ops/dlq/${encodeURIComponent(incidentId)}/retry`, {});
+        toast(`DLQ job requeued (${res.workflow_run_status})`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`DLQ retry failed: ${e.message}`, 'error');
+      }
+    },
+    p3SaveStep: async (stepNumber) => {
+      try {
+        const st = $(`#p3-step-status-${stepNumber}`)?.value || 'NOT_TESTED';
+        const ev = ($(`#p3-step-evidence-${stepNumber}`)?.value || '').trim();
+        await api('POST', `/v1/cs/acceptance/${stepNumber}`, {
+          verification_status: st,
+          evidence_summary: ev || 'Verified by owner',
+        });
+        toast(`P3 Step ${stepNumber} updated to ${st}`, 'success');
+        await p3LoadControlCentre();
+      } catch (e) {
+        toast(`P3 step update failed: ${e.message}`, 'error');
       }
     },
     viewLead: (id) => {

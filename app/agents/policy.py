@@ -12,6 +12,10 @@ APPROVAL_REQUIRED = frozenset({
     "live_publishing",
     "external_messaging",
     "sovereign_payment_verification",
+    "support_sensitive_external_reply",
+    "subscription_pricing_or_refund_action",
+    "expansion_offer_or_referral",
+    "customer_offboarding_and_deletion",
 })
 
 

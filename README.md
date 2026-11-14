@@ -19,12 +19,24 @@ Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-ge
 
 ---
 
-## P1 Modular SME Platform & P2 Commercial Revenue OS Index
+## P1 Modular SME Platform, P2 Commercial & P3 Customer Success Index
 
 - **Hosting:** Deployed via Render Blueprint ([`render.yaml`](render.yaml)) (`askforwrite-ai-company-os` production & `askforwrite-ai-company-os-staging` sandbox).
-- **Dashboard & PWA (`/app`):** Role-separated interface (`sw.js`: `afw-os-shell-v4.0-p1-workforce`) with 12 P1 Modular SME sections plus the **P2 Commercial Revenue OS** owner control centre (`Prospects & Briefs`, `Outreach (HITL) & Responses`, `12-Stage Pipeline, Proposals & Payment`, `Activation, Delivery & Renewal`, and `12-Step Acceptance Checklist`).
-- **Unified Registry Counts:** `9` Service Categories, `16` Services, `20` Specialist AI Agents (`13` P0/P1 + `7` P2 Commercial), `11` Connectors, and a strict 7-state capability model (`LIVE_VERIFIED`, `LOCAL_ENGINE_VERIFIED`, `SANDBOX_VERIFIED`, `HUMAN_ASSISTED`, `SIMULATED`, `BLOCKED`, `ROADMAP`).
+- **Dashboard & PWA (`/app`):** Role-separated interface (`sw.js`: `afw-os-shell-v4.0-p1-workforce`) with 12 P1 Modular SME sections, **P2 Commercial Revenue OS**, and **P3 Customer Success & Growth** (5 tabs covering Customer 360 & Onboarding, Delivery & Health, Support & Improvement Loop, Subscriptions/Retention/Compliance, and Growth/Unit Economics/12-Step Acceptance Checklist).
+- **Unified Registry Counts:** `9` Service Categories, `16` Services, `28` Specialist AI Agents (`13` P0/P1 + `7` P2 Commercial + `8` P3 Customer Success), `11` Connectors, and a strict 7-state capability model (`LIVE_VERIFIED`, `LOCAL_ENGINE_VERIFIED`, `SANDBOX_VERIFIED`, `HUMAN_ASSISTED`, `SIMULATED`, `BLOCKED`, `ROADMAP`).
 - **P2 Commercial Entry Offer:** Verified catalog offer `managed_seo_content_pilot` (*AskforWrite Managed SEO & Content Pilot (14-Day)*, `INR 4,999` / `USD 59`, `billing_type="managed_pilot_14d"`) supporting India SMB digital marketing & SEO agency acquisition under strict HITL outreach/proposal gates, simulation-vs-live KPI separation, opt-out suppression, and webhook/DirectPay reconciliation.
+- **P3 Customer Success & Growth Engine:** Manages post-sale lifecycle (`LEAD -> ONBOARDING -> ACTIVATION_PENDING -> ACTIVE -> AT_RISK -> SUSPENDED -> CHURNED -> CLOSED`), strict onboarding activation gates, delivery QA & GSC outcome guards, explainable Customer Health scores, org-scoped Support + HITL + Improvement Loop, idempotent subscription grace/suspension/recovery, HITL-gated refunds/upsells/referrals, `ACTUAL`/`ALLOCATED`/`ESTIMATED` unit economics & spend caps, DPDP/GDPR exports & legal-hold deletions, multi-tenant DLQ/concurrency readiness, and 12-step P3 real-world acceptance tracking.
+
+### P3 Customer Success & Growth Documentation Suite (`docs/`)
+
+| Document | Coverage |
+|---|---|
+| [P3 Customer Success Architecture](docs/P3_CUSTOMER_SUCCESS_ARCHITECTURE.md) | 10-stage lifecycle, P0/P1/P2 reuse, 8 CS agents (`28` total), epistemic & HITL safeguards |
+| [P3 Lifecycle & Data Model](docs/P3_LIFECYCLE_AND_DATA_MODEL.md) | Alembic revision `i9d4e5f6a7b8` (12 P3 tables), FSMs, `/v1/cs/*` & `/v1/me/*` API reference |
+| [P3 Operations & Runbook](docs/P3_OPERATIONS_AND_RUNBOOK.md) | Onboarding templates, QA & attribution guard, health alerts, HITL support/refunds/growth/deletion |
+| [P3 Operational Readiness Report](docs/P3_OPERATIONAL_READINESS_REPORT.md) | Concurrency ceiling, timeout DLQ recovery, DB probe, backup drills & live constraints |
+| [P3 Real-World Acceptance Checklist](docs/P3_REAL_WORLD_ACCEPTANCE_CHECKLIST.md) | 12-step live verification tracker (`NOT_TESTED` / `SANDBOX_VERIFIED` / `LIVE_VERIFIED`) |
+| [P3 Test & Limitations Report](docs/P3_TEST_AND_LIMITATIONS_REPORT.md) | Exact verification outputs (`454 passed`), sandbox vs live boundaries & deployment constraints |
 
 ### P2 Commercial Documentation Suite (`docs/`)
 
@@ -43,7 +55,7 @@ Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-ge
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | 6-layer P1 architecture, RBAC & tenant isolation, P0/P1 schema foundations |
 | [API Reference](docs/API_REFERENCE.md) | `/v1/registry/*`, `/v1/workflows/*`, `/v1/me/*`, `/v1/revenue/*`, `/v1/watchdog/*`, `/v1/commercial/*` |
-| [Agent Registry](docs/AGENT_REGISTRY.md) | All 20 registered agents (`13` P0/P1 + `7` P2), tool allowlists, HITL gates, and lifecycle |
+| [Agent Registry](docs/AGENT_REGISTRY.md) | All 28 registered agents (`13` P0/P1 + `7` P2 + `8` P3), tool allowlists, HITL gates, and lifecycle |
 | [Service Catalog](docs/SERVICE_CATALOG.md) | 9 service categories, 16 services, and preserved commercial catalog SKUs |
 | [Connector Setup](docs/CONNECTOR_SETUP.md) | 11 external/internal connectors, verification checks, and secret redaction |
 | [Subscription Model](docs/SUBSCRIPTION_MODEL.md) | 5 modular SME tiers, 6 modules, 15+ field contracts, atomic credit ledger |
@@ -191,10 +203,9 @@ All protected endpoints require `X-API-Key` (Owner or Manager key). Requests sup
 | **Urban Mobility** | `POST /v1/mobility/forecast-demand` | Manager | OLS econometrics rental forecasting with VIF diagnostic suite |
 | | `POST /v1/mobility/rebalance-plan` | Manager | High-churn station inventory fleet rebalancing routing |
 | **Warehouse AI** | `POST /v1/inventory/audit` | Manager | Pareto ABC stock classification, dynamic EOQ, and dead-stock alerts |
-| **Customer Portal** | `GET /v1/me/profile` | Customer JWT | Customer profile and company metadata |
-| | `GET /v1/me/subscriptions` | Customer JWT | Active catalog tier, renewal date, and entitled capabilities |
-| | `GET /v1/me/usage` | Customer JWT | Real-time lead and outreach credit consumption |
-| | `POST /v1/me/use-service` | Customer JWT | Programmatic catalog capability execution gated by monthly quota |
+| **Customer Portal** | `GET /v1/me/profile`, `/onboarding`, `/deliveries`, `/support/tickets`, `/data-export` | Customer JWT | Profile, onboarding, deliveries, support tickets, CSAT, DPDP export & consent |
+| | `GET /v1/me/subscriptions`, `GET /v1/me/usage`, `POST /v1/me/use-service` | Customer JWT | Active catalog tier, credit consumption, and quota-gated capability execution |
+| **Customer Success (P3)** | `GET /v1/cs/control-centre`, `/customers/{org_id}`, `/ops/readiness`, `/acceptance` | Manager / Owner | P3 lifecycle, readiness gates, delivery QA, health alerts, HITL support/growth, unit economics & DLQ |
 | **Trust Ledger** | `GET /v1/trust/verify` | Public | Cryptographic verification of NIST P-256 Merkle chain integrity |
 | | `GET /v1/trust/blocks` | Manager | Export verified blocks and provenance metadata |
 | **System** | `GET /health` | None | Service liveness, database connectivity, and uptime telemetry |
@@ -229,8 +240,8 @@ uvicorn app.main:app --reload --port 8000
 # Full test discovery suite
 python -m pytest -q
 
-# P1 Modular SME Workforce suite
-python -m pytest tests/test_p1_modular_sme_workforce.py -v
+# P1 Modular SME Workforce & P3 Customer Success suites
+python -m pytest tests/test_p1_modular_sme_workforce.py tests/test_p3_customer_success_engine.py -v
 
 # Ruff linting & style enforcement
 python -m ruff check app tests migrations

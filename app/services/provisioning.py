@@ -446,6 +446,19 @@ def auto_provision_tenant_on_payment(
     except Exception as exc:
         logger.warning("Lead seeding fallback during tenant provisioning: %s", exc)
 
+    # 5b. Ensure P3 Customer Success Account exists atomically in ONBOARDING state
+    from app.services.p3_customer_success import ensure_customer_account
+
+    ensure_customer_account(
+        db,
+        org_id=org_id,
+        human_owner="owner",
+        acquisition_source=f"payment_{event.provider.value}",
+        initial_state="ONBOARDING",
+        sku_key=pkg.key,
+        commit=False,
+    )
+
     # 6. Audit Log
     db.add(
         AuditLog(

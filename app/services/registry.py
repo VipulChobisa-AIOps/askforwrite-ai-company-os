@@ -707,6 +707,153 @@ AGENT_REGISTRY: dict[str, RegisteredAgent] = {
         default_connector_id="project_api",
         credit_cost=1,
     ),
+    # ------------------------------------------------------------------
+    # P3 — Customer Success, Retention & Repeatable Growth AI Workforce (8)
+    # ------------------------------------------------------------------
+    "cs_onboarding_specialist_agent": RegisteredAgent(
+        agent_id="cs_onboarding_specialist_agent",
+        agent_name="Customer Onboarding Specialist Agent",
+        description="Guides agency onboarding tasks, surfaces connector/input blockers, and verifies activation readiness criteria without prematurely activating accounts.",
+        business_function="customer_support",
+        capabilities=("customer_onboarding", "readiness_verification", "support_followup"),
+        supported_tools=("onboarding_tracker", "connector_verifier", "readiness_gate"),
+        input_schema={"type": "object", "required": ["org_id"], "properties": {"org_id": {"type": "string"}, "sku_key": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"workflow": {"type": "object"}, "blockers": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Never mark an account ACTIVE until every required onboarding criterion, connector check, and training item is verified.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_bypass_activation_gate": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "cs_manager_agent": RegisteredAgent(
+        agent_id="cs_manager_agent",
+        agent_name="Customer Success Manager Agent",
+        description="Evaluates evidence-backed Customer Health scores (HEALTHY/NEEDS_ATTENTION/AT_RISK/INSUFFICIENT_DATA) and raises internal churn/blocker alerts.",
+        business_function="customer_support",
+        capabilities=("customer_health", "churn_early_warning", "customer_360"),
+        supported_tools=("health_scorer", "customer_360_reader", "internal_alert_dispatcher"),
+        input_schema={"type": "object", "required": ["org_id"], "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"health": {"type": "object"}, "alerts_created": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Use only observed multi-dimension customer evidence; output INSUFFICIENT_DATA when <3 dimensions exist and send alerts internally only.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "internal_alerts_only": True, "cannot_modify_pricing": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "service_delivery_coordinator_agent": RegisteredAgent(
+        agent_id="service_delivery_coordinator_agent",
+        agent_name="Service Delivery Coordinator Agent",
+        description="Coordinates deliverables, quality states, workflow execution links, and separates factual outputs from Search Console outcome metrics.",
+        business_function="operations",
+        capabilities=("delivery_management", "workflow_coordination", "outcome_tracking"),
+        supported_tools=("delivery_tracker", "workflow_linker", "artifact_ledger"),
+        input_schema={"type": "object", "required": ["org_id"], "properties": {"org_id": {"type": "string"}, "title": {"type": "string"}, "requirement": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"deliveries": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Track scope, inputs, and deliverables faithfully; never assert causal SEO outcome claims without verified GSC connection and baseline data.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_fabricate_outcomes": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 45},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "qa_review_agent": RegisteredAgent(
+        agent_id="qa_review_agent",
+        agent_name="Quality Assurance Review Agent",
+        description="Performs structured quality verification checks and records evidence gates before deliverables move from QUALITY_REVIEW to customer delivery.",
+        business_function="operations",
+        capabilities=("quality_assurance", "evidence_audit", "revision_control"),
+        supported_tools=("qa_checklist_validator", "evidence_verifier"),
+        input_schema={"type": "object", "properties": {"delivery_id": {"type": "string"}, "org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"qa_status": {"type": "string"}, "checks": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Fail QA whenever required evidence or deliverables are missing; never rubber-stamp incomplete outputs.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_bypass_qa_gate": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "cs_support_specialist_agent": RegisteredAgent(
+        agent_id="cs_support_specialist_agent",
+        agent_name="Customer Support Specialist Agent",
+        description="Triages support tickets against authorized platform documentation and forces Owner HITL gating for refunds, pricing, legal, or account access changes.",
+        business_function="customer_support",
+        capabilities=("support_triage", "docs_rag", "hitl_escalation"),
+        supported_tools=("authorized_docs_search", "ticket_triager", "approval_gate"),
+        input_schema={"type": "object", "required": ["ticket_id"], "properties": {"ticket_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"classification": {"type": "object"}, "requires_hitl_approval": {"type": "boolean"}}},
+        model_configuration={"model": "gemini-3.8-flash", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Answer strictly from verified docs/state; escalate immediately and block external send if refund, pricing, discount, legal, or access change is involved.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_issue_refunds": True, "cannot_modify_pricing": True, "cannot_send_sensitive_external_replies_without_hitl": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=("support_sensitive_external_reply",),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "renewal_management_agent": RegisteredAgent(
+        agent_id="renewal_management_agent",
+        agent_name="Renewal Management Agent",
+        description="Monitors upcoming renewals, grace windows, failed recurring charges, and enforces grace-period expirations without issuing unauthorized charges or refunds.",
+        business_function="finance_ops",
+        capabilities=("renewal_tracking", "grace_period_monitoring", "subscription_audit"),
+        supported_tools=("subscription_reliability_inspector", "grace_period_enforcer"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}, "days_ahead": {"type": "integer"}}},
+        output_schema={"type": "object", "properties": {"upcoming_renewals": {"type": "array"}, "expired_grace_suspensions": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.0, "fallback": "local_deterministic"},
+        system_instructions="Distinguish RECURRING_SUBSCRIPTION from ONE_TIME_PURCHASE and MANUAL_PAYMENT_PROOF; never process refunds or alter billing terms without HITL.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_issue_refunds": True, "cannot_modify_pricing": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=("subscription_pricing_or_refund_action",),
+        entitlement_key="support_followup",
+        default_connector_id="razorpay",
+        credit_cost=0,
+    ),
+    "expansion_opportunity_agent": RegisteredAgent(
+        agent_id="expansion_opportunity_agent",
+        agent_name="Expansion Opportunity Agent",
+        description="Identifies evidence-backed catalog upgrades (credit exhaustion, seat growth, multi-module adoption) and stages Owner HITL approvals before external sharing.",
+        business_function="sales",
+        capabilities=("expansion_detection", "catalog_matching", "referral_staging"),
+        supported_tools=("catalog_pricing_lookup", "usage_signal_analyzer", "approval_gate"),
+        input_schema={"type": "object", "required": ["org_id"], "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"opportunities": {"type": "array"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Quote ONLY catalog-verified SKUs and pricing; never invent discounts or send expansion/referral offers externally without Owner HITL approval.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "cannot_modify_pricing": True, "requires_hitl_to_share": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=("expansion_offer_or_referral",),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
+    "customer_insights_analyst_agent": RegisteredAgent(
+        agent_id="customer_insights_analyst_agent",
+        agent_name="Customer Insights Analyst Agent",
+        description="Clusters recurring support issues, revision causes, low CSAT patterns, and unit economics metrics into prioritized product & service improvements.",
+        business_function="research_intelligence",
+        capabilities=("improvement_synthesis", "unit_economics_analysis", "feedback_clustering"),
+        supported_tools=("improvement_loop_engine", "unit_economics_calculator"),
+        input_schema={"type": "object", "properties": {"org_id": {"type": "string"}}},
+        output_schema={"type": "object", "properties": {"improvement_items": {"type": "array"}, "unit_economics": {"type": "object"}}},
+        model_configuration={"model": "local_deterministic", "temperature": 0.1, "fallback": "local_deterministic"},
+        system_instructions="Prioritize improvements strictly from observed tickets/deliveries/onboarding blockers; never modify production code or invent LTV/CAC actuals.",
+        permission_policy={"tenant_scoped": True, "requires_entitlement": True, "read_and_recommend_only": True},
+        execution_limits={"max_credits_per_run": 1, "timeout_seconds": 30},
+        required_approvals=(),
+        entitlement_key="support_followup",
+        default_connector_id="project_api",
+        credit_cost=0,
+    ),
 }
 
 
@@ -1378,6 +1525,160 @@ def _dispatch_domain_agent(
             actor=actor,
         )
         return {"output": res, "uses_external_provider": False, "fallback_used": exec_mode == "SIMULATION"}
+
+    if agent_id == "cs_onboarding_specialist_agent":
+        from app.services.p3_customer_success import create_or_get_onboarding_workflow, get_customer_360_profile
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        wf = create_or_get_onboarding_workflow(
+            db,
+            org_id=org_id,
+            sku_key=input_payload.get("sku_key"),
+            actor=actor,
+        )
+        prof = get_customer_360_profile(db, org_id=org_id)
+        return {
+            "output": {"workflow": wf, "blockers": wf.get("blockers", []), "activation_ready": prof["customer_account"]["activation_ready"]},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-onboard-{wf['onboarding_id'][:10]}",
+        }
+
+    if agent_id == "cs_manager_agent":
+        from app.services.p3_delivery_health import compute_customer_health, generate_internal_health_alerts
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        health = compute_customer_health(db, org_id=org_id, save_snapshot=True)
+        alerts = generate_internal_health_alerts(db, org_id=org_id)
+        return {
+            "output": {"health": health, "alerts_created": alerts},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-health-{org_id[:10]}",
+        }
+
+    if agent_id == "service_delivery_coordinator_agent":
+        from app.services.p3_delivery_health import create_service_delivery, list_service_deliveries
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        title = str(input_payload.get("title") or "").strip()
+        if title:
+            created = create_service_delivery(
+                db,
+                org_id=org_id,
+                title=title,
+                original_requirement=str(input_payload.get("requirement") or "Customer service engagement deliverable"),
+                sku_key=str(input_payload.get("sku_key") or "managed_seo_content_pilot"),
+                service_id=str(input_payload.get("service_id") or "seo_blog_copilot"),
+                assigned_owner=actor,
+                assigned_agent_id=agent_id,
+                actor=actor,
+            )
+            return {
+                "output": {"deliveries": [created], "created": True},
+                "uses_external_provider": False,
+                "fallback_used": False,
+                "provider_request_id": f"cs-deliv-{created['id'][:10]}",
+            }
+        rows = list_service_deliveries(db, org_id=org_id)
+        return {
+            "output": {"deliveries": rows, "created": False},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-deliv-list-{org_id[:10]}",
+        }
+
+    if agent_id == "qa_review_agent":
+        from app.db.models import P3ServiceDeliveryRecord
+        from app.services.p3_delivery_health import submit_delivery_quality_check
+
+        deliv_id = str(input_payload.get("delivery_id") or "").strip()
+        if not deliv_id:
+            org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+            candidate = db.query(P3ServiceDeliveryRecord).filter_by(org_id=org_id).order_by(P3ServiceDeliveryRecord.created_at.desc()).first()
+            if not candidate:
+                return {"output": {"qa_status": "NO_DELIVERABLE_FOUND", "checks": {}}, "uses_external_provider": False, "fallback_used": False}
+            deliv_id = candidate.id
+        target = db.get(P3ServiceDeliveryRecord, deliv_id)
+        has_artifacts = bool(target and target.output_artifacts_json)
+        has_evidence = bool(target and target.source_evidence_json)
+        checks = {
+            "has_output_artifacts": has_artifacts,
+            "has_source_evidence": has_evidence,
+            "scope_present": bool(target and target.approved_scope_json),
+        }
+        passed = bool(input_payload.get("passed")) if "passed" in input_payload else (has_artifacts or has_evidence)
+        res = submit_delivery_quality_check(
+            db,
+            delivery_id=deliv_id,
+            passed=passed,
+            checks=checks,
+            reviewer=actor,
+        )
+        return {
+            "output": {"qa_status": res["quality_state"], "checks": res["quality_checks"], "delivery": res},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-qa-{deliv_id[:10]}",
+        }
+
+    if agent_id == "cs_support_specialist_agent":
+        from app.services.p3_support_improvements import list_support_tickets, run_ai_support_assistant
+
+        ticket_id = str(input_payload.get("ticket_id") or "").strip()
+        if not ticket_id:
+            org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+            open_tickets = list_support_tickets(db, org_id=org_id, include_internal=False)
+            if not open_tickets:
+                return {"output": {"status": "NO_OPEN_TICKETS", "requires_hitl_approval": False}, "uses_external_provider": False, "fallback_used": False}
+            ticket_id = open_tickets[0]["ticket_id"]
+        res = run_ai_support_assistant(db, ticket_id=ticket_id, actor=actor)
+        return {
+            "output": res,
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-triage-{ticket_id[:10]}",
+        }
+
+    if agent_id == "renewal_management_agent":
+        from app.services.p3_revenue_growth import enforce_grace_period_expirations, get_subscription_reliability_summary
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip() or None
+        days = int(input_payload.get("days_ahead", 30))
+        suspensions = enforce_grace_period_expirations(db, org_id=org_id)
+        summary = get_subscription_reliability_summary(db, org_id=org_id, days_ahead=days)
+        return {
+            "output": {**summary, "expired_grace_suspensions": suspensions},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-renewal-{len(summary['upcoming_renewals'])}",
+        }
+
+    if agent_id == "expansion_opportunity_agent":
+        from app.services.p3_revenue_growth import evaluate_expansion_opportunities
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        opps = evaluate_expansion_opportunities(db, org_id=org_id)
+        return {
+            "output": {"org_id": org_id, "opportunities": opps},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-expand-{org_id[:10]}",
+        }
+
+    if agent_id == "customer_insights_analyst_agent":
+        from app.services.p3_revenue_growth import compute_customer_unit_economics
+        from app.services.p3_support_improvements import synthesize_improvement_loop
+
+        org_id = str(input_payload.get("org_id") or tenant_id or "").strip() or None
+        items = synthesize_improvement_loop(db, org_id=org_id)
+        ue = compute_customer_unit_economics(db, org_id=org_id) if org_id and org_id != "__platform__" else {}
+        return {
+            "output": {"improvement_items": items, "unit_economics": ue},
+            "uses_external_provider": False,
+            "fallback_used": False,
+            "provider_request_id": f"cs-insights-{len(items)}",
+        }
 
     # Default ceo_manager_agent orchestrator
     from app.services.manager import execute_manager_workflow
