@@ -400,12 +400,15 @@ def run_ai_support_assistant(
     db: Session,
     *,
     ticket_id: str,
+    org_id_scope: str | None = None,
     actor: str = "cs_support_specialist_agent",
 ) -> dict[str, Any]:
     """Classify support ticket, retrieve authorized docs, suggest troubleshooting & HITL-flagged response draft."""
     ticket = db.get(P3SupportTicketRecord, ticket_id)
     if not ticket:
         raise ValueError(f"Support ticket '{ticket_id}' not found")
+    if org_id_scope and ticket.org_id != org_id_scope:
+        raise PermissionError("Cross-tenant support ticket access denied")
 
     text = f"{ticket.subject} {ticket.description}".strip()
     low = text.lower()

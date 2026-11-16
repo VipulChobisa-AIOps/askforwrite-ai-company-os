@@ -67,6 +67,8 @@ def auto_dispatch_task(
     task = db.query(FieldTaskRecord).filter(FieldTaskRecord.id == task_id).first()
     if not task:
         raise ValueError(f"Field task {task_id} not found")
+    if org_id is not None and task.org_id != org_id:
+        raise PermissionError(f"Field task {task_id} belongs to another organization")
 
     # Get available executives in this org
     query = db.query(UserRecord).filter(UserRecord.is_active.is_(True))

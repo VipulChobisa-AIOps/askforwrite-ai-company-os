@@ -134,13 +134,14 @@ def test_p7_delegation_dag_cycle_depth_budget_and_execution(p7_client) -> None:
     assert deep.status_code == 422
     assert "depth" in deep.text.lower()
 
-    # 3. Credit budget breach
+    # 3. Three-control budget breach: non-billable agents track execution_budget_limit separately (Decision 2)
     over_budget = client.post(
         "/v1/p7/workforce/dag-plans",
         headers=owner_hdrs,
         json={
-            "name": "Over Budget Plan",
+            "name": "Over Execution Budget Plan",
             "credit_budget": 1,
+            "execution_budget_limit": 1,
             "nodes": [
                 {"node_id": "n1", "agent_id": "competitive_intel_agent", "depends_on": []},
                 {"node_id": "n2", "agent_id": "gtm_strategist_agent", "depends_on": ["n1"]},
@@ -184,8 +185,11 @@ def test_p7_delegation_dag_cycle_depth_budget_and_execution(p7_client) -> None:
     assert sim_ok.status_code == 200, sim_ok.text
     executed = sim_ok.json()
     assert executed["status"] == "EXECUTED"
-    assert executed["credits_consumed"] == 2
+    assert executed["credits_consumed"] == 0
+    assert executed["execution_budget_units_used"] == 2
     assert len(executed["execution_results"]) == 2
+    assert executed["execution_results"][0]["execution_id"] is not None
+    assert executed["execution_results"][0]["evidence_id"] == executed["execution_results"][0]["execution_id"]
 
 
 def test_p7_tenant_memory_isolation_secret_redaction_ttl_and_dpdp_purge(p7_client) -> None:

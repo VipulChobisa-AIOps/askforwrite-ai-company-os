@@ -524,7 +524,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         user = self.db.query(UserRecord).filter_by(id=user_id).first()
         self.assertIsNotNone(user)
         self.assertEqual(user.email, unique_email)
-        self.assertEqual(user.role, "admin")
+        self.assertEqual(user.role, "tenant_admin")
         self.assertTrue(user.is_active)
 
         invoice = self.db.query(InvoiceRecord).filter_by(org_id=org_id).first()
@@ -638,7 +638,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         # Step 5: Verify multi-tenant Organization, User, and Invoice auto-provisioned
         user = self.db.query(UserRecord).filter_by(email=unique_email).first()
         self.assertIsNotNone(user)
-        self.assertEqual(user.role, "admin")
+        self.assertEqual(user.role, "tenant_admin")
         self.assertTrue(user.is_active)
 
         org = self.db.query(OrganizationRecord).filter_by(id=user.org_id).first()

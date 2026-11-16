@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, require_owner, require_tenant_manager
 from app.services.catalog import CATALOG, get_package
 from app.services.sovereign_pay import (
     confirm_sovereign_payment_by_owner,
@@ -872,7 +872,7 @@ def reconcile_settlement_endpoint(
 
 @router.get("/reconciliation-ledger")
 def get_reconciliation_ledger_endpoint(
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return financial reconciliation summary across all invoices."""

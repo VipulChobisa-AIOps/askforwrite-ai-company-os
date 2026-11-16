@@ -119,7 +119,7 @@ class TestSubscriptionLifecycleAndRolePermissions(unittest.TestCase):
         self.token_tenant_a_owner = create_access_token(
             user_id="user-a-owner",
             email="owner@alpha.com",
-            role="owner",
+            role="tenant_admin",
             org_id="org-sub-a",
         )
         self.token_tenant_a_manager = create_access_token(
@@ -137,7 +137,7 @@ class TestSubscriptionLifecycleAndRolePermissions(unittest.TestCase):
         self.token_tenant_b_owner = create_access_token(
             user_id="user-b-owner",
             email="owner@beta.com",
-            role="owner",
+            role="tenant_admin",
             org_id="org-sub-b",
         )
 

@@ -138,6 +138,8 @@ def verify_client_visit(
     task = db.query(FieldTaskRecord).filter(FieldTaskRecord.id == req.task_id).first()
     if not task:
         raise ValueError(f"Field task {req.task_id} not found")
+    if org_id is not None and task.org_id != org_id:
+        raise PermissionError(f"Field task {req.task_id} belongs to another organization")
 
     # 1. Calculate physical proximity to client destination
     dist_m = calculate_haversine_distance(
@@ -240,7 +242,12 @@ def process_voice_debrief(
         .first()
     )
     if not visit:
+        task = db.query(FieldTaskRecord).filter(FieldTaskRecord.id == req.task_id).first()
+        if task and org_id is not None and task.org_id != org_id:
+            raise PermissionError(f"Task {req.task_id} belongs to another organization")
         raise ValueError(f"No completed visit record found for task {req.task_id} to attach debrief")
+    if org_id is not None and visit.org_id != org_id:
+        raise PermissionError(f"Visit record for task {req.task_id} belongs to another organization")
 
     audio_hash = hashlib.sha256(req.raw_audio_transcript_or_base64.encode("utf-8")).hexdigest()
     crm_data = synthesize_voice_transcript_to_crm(req.raw_audio_transcript_or_base64)

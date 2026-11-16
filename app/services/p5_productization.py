@@ -170,6 +170,18 @@ DEFAULT_P5_TEMPLATES: tuple[dict[str, Any], ...] = (
 )
 
 
+def _ensure_active_org(db: Session, org_id: str | None) -> OrganizationRecord | None:
+    """Validate tenant organization existence and active status."""
+    if org_id is None:
+        return None
+    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
+    if not org:
+        raise ValueError(f"Organization '{org_id}' not found")
+    if not org.is_active:
+        raise PermissionError(f"Organization '{org_id}' is inactive")
+    return org
+
+
 def _normalize_mode(requested_mode: str | None) -> str:
     raw = (requested_mode or "SIMULATION").strip().upper()
     canonical = "PRODUCTION" if raw == "LIVE" else raw
@@ -410,9 +422,7 @@ def upsert_tenant_policy(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Create or update rate limit, quota, budget, and SLA policies for an organization."""
-    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
-    if not org:
-        raise ValueError(f"Organization '{org_id}' not found")
+    org = _ensure_active_org(db, org_id)
 
     resolved_tier = (tier_id or org.tier or "launch").strip().lower()
     if resolved_tier not in MODULAR_SME_TIERS:
@@ -551,6 +561,7 @@ def evaluate_quota_event(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Evaluate a tenant usage observation against its policy limit and record an audit event."""
+    _ensure_active_org(db, org_id)
     clean_metric = metric_type.strip().lower()
     if clean_metric not in QUOTA_METRICS:
         raise ValueError(f"Unsupported metric_type '{metric_type}'; allowed: {QUOTA_METRICS}")
@@ -788,6 +799,7 @@ def start_provisioning_run(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Start or idempotently replay a catalog-grounded tenant provisioning FSM run."""
+    _ensure_active_org(db, org_id)
     if db.query(P5TenantTemplateRecord).count() == 0:
         seed_default_p5_templates(db, actor=actor)
 
@@ -857,6 +869,7 @@ def retry_provisioning_run(
     run = db.get(P5ProvisioningRunRecord, run_id)
     if not run or (org_id is not None and run.org_id != org_id):
         raise ValueError(f"Provisioning run '{run_id}' not found")
+    _ensure_active_org(db, run.org_id)
     if run.state not in ("FAILED", "RECOVERING"):
         raise ValueError(f"Provisioning run is in state '{run.state}' and cannot be retried")
     if run.attempt_count >= run.max_attempts:
@@ -921,6 +934,7 @@ def create_operational_incident(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Open a multi-tenant SLA/quota/provisioning operational incident with tier SLA deadline."""
+    _ensure_active_org(db, org_id)
     clean_sev = severity.strip().upper()
     clean_cat = category.strip().upper()
     if clean_sev not in INCIDENT_SEVERITIES:
@@ -971,6 +985,7 @@ def transition_operational_incident(
     assigned_to: str | None = None,
 ) -> dict[str, Any]:
     """Transition an operational incident cleanly along the incident lifecycle."""
+    _ensure_active_org(db, org_id)
     rec = db.get(P5OperationalIncidentRecord, incident_id)
     if not rec or (org_id is not None and rec.org_id != org_id):
         raise ValueError(f"Incident '{incident_id}' not found")

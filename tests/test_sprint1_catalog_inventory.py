@@ -72,7 +72,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
             org_id=self.org_id,
             email=self.user_email,
             full_name="Sprint One Test Admin",
-            role="owner",
+            role="tenant_admin",
             password_hash=hash_password("SuperSecret2026!"),
             is_active=True,
         )
@@ -84,7 +84,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         self.token = create_access_token(
             user_id=self.user_id,
             email=self.user_email,
-            role="owner",
+            role="tenant_admin",
             org_id=self.org_id,
         )
         self.portal_headers = {"Authorization": f"Bearer {self.token}"}

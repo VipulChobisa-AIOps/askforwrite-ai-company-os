@@ -12,6 +12,7 @@ import os
 import sys
 from contextvars import ContextVar
 from functools import lru_cache
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -26,6 +27,75 @@ DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 # ── BYOK Tenant Isolation State ──────────────────────────────────────────────
 _REQUEST_GEMINI_KEY: ContextVar[str | None] = ContextVar("request_gemini_key", default=None)
 _REQUEST_IS_OWNER: ContextVar[bool] = ContextVar("request_is_owner", default=True)
+_REQUEST_USAGE_TELEMETRY: ContextVar[dict[str, Any] | None] = ContextVar("request_usage_telemetry", default=None)
+
+_DEFAULT_INR_PER_TOKEN = 0.00001
+
+
+def reset_last_llm_usage() -> None:
+    """Reset accumulated per-execution LLM token/cost telemetry."""
+    _REQUEST_USAGE_TELEMETRY.set(None)
+
+
+def get_last_llm_usage() -> dict[str, Any] | None:
+    """Return accumulated LLM token and INR cost telemetry for the current execution context."""
+    val = _REQUEST_USAGE_TELEMETRY.get()
+    return dict(val) if val else None
+
+
+def _record_llm_usage(
+    *,
+    model_name: str,
+    tokens_total: int,
+    used_fallback: bool,
+    actual_cost_inr: float | None = None,
+) -> None:
+    cur = dict(_REQUEST_USAGE_TELEMETRY.get() or {})
+    prev_tokens = int(cur.get("provider_tokens_total") or 0)
+    prev_cost = float(cur.get("provider_cost_inr") or 0.0)
+    prev_est = float(cur.get("estimated_provider_cost_inr") or 0.0)
+    prev_actual = cur.get("actual_provider_cost_inr", 0.0 if cur else 0.0)
+    added_tokens = max(0, int(tokens_total))
+
+    if used_fallback or added_tokens == 0:
+        est_added = 0.0
+        step_actual: float | None = 0.0
+        step_source = "DETERMINISTIC_FALLBACK_ZERO"
+    elif actual_cost_inr is not None:
+        step_actual = round(float(actual_cost_inr), 6)
+        est_added = step_actual
+        step_source = "LIVE_PROVIDER_REPORTED"
+    else:
+        step_actual = None
+        est_added = round(added_tokens * _DEFAULT_INR_PER_TOKEN, 6)
+        step_source = "TOKEN_USAGE_ESTIMATE"
+
+    if prev_actual is None or step_actual is None:
+        merged_actual: float | None = None
+    else:
+        merged_actual = round(float(prev_actual) + float(step_actual), 6)
+
+    prev_source = cur.get("provider_cost_source")
+    if not cur:
+        merged_source = step_source
+    elif prev_source == step_source:
+        merged_source = step_source
+    else:
+        merged_source = "MIXED_ESTIMATE_AND_ACTUAL"
+
+    total_est = round(prev_est + est_added, 6)
+    total_metered = round(prev_cost + (step_actual if step_actual is not None else est_added), 6)
+    _REQUEST_USAGE_TELEMETRY.set(
+        {
+            "provider_model": model_name,
+            "provider_tokens_total": prev_tokens + added_tokens,
+            "provider_cost_inr": total_metered,
+            "estimated_provider_cost_inr": total_est,
+            "actual_provider_cost_inr": merged_actual,
+            "provider_cost_source": merged_source,
+            "used_fallback": bool(used_fallback) if not cur else (bool(cur.get("used_fallback")) and used_fallback),
+        }
+    )
 
 
 def set_request_llm_context(gemini_key: str | None, is_owner: bool) -> None:
@@ -143,17 +213,20 @@ def generate(
     """
     req_key = _REQUEST_GEMINI_KEY.get()
     is_owner = _REQUEST_IS_OWNER.get()
+    eff_model = model or DEFAULT_MODEL
 
     if req_key:
         client = get_gemini_client_for_key(req_key)
     elif not is_owner:
         # Commercial tenant without BYOK key: zero quota consumption of Owner's key
         logger.info("Non-owner request with no BYOK Gemini key. Utilizing deterministic fallback.")
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
     else:
         client = get_gemini_client()
 
     if client is None:
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
 
 
@@ -182,14 +255,37 @@ def generate(
                 config=config,
             )
 
+        used_model = eff_model
         try:
-            response = call_gemini(model or DEFAULT_MODEL)
+            response = call_gemini(used_model)
         except (ServerError, APIError, ClientError) as e:
             logger.warning(f"Primary model failed ({type(e).__name__}). Falling back to gemini-2.5-flash...")
-            response = call_gemini("gemini-2.5-flash")
+            used_model = "gemini-2.5-flash"
+            response = call_gemini(used_model)
 
+        usage = getattr(response, "usage_metadata", None)
+        total_tok = 0
+        reported_actual_cost: float | None = None
+        if usage is not None:
+            total_tok = int(
+                getattr(usage, "total_token_count", None)
+                or ((getattr(usage, "prompt_token_count", 0) or 0) + (getattr(usage, "candidates_token_count", 0) or 0))
+                or 0
+            )
+            raw_actual = getattr(usage, "actual_cost_inr", None)
+            if raw_actual is None:
+                raw_actual = getattr(response, "actual_cost_inr", None)
+            if raw_actual is not None:
+                reported_actual_cost = float(raw_actual)
+        _record_llm_usage(
+            model_name=used_model,
+            tokens_total=total_tok,
+            used_fallback=False,
+            actual_cost_inr=reported_actual_cost,
+        )
         return response.text or ""
     except Exception as exc:
         logger.warning(f"Gemini generation failed: {exc}. Utilizing deterministic fallback.")
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
 

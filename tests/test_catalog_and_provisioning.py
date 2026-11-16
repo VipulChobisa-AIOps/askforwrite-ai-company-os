@@ -173,7 +173,7 @@ class TestProvisioningService(unittest.TestCase):
         user = self.db.query(UserRecord).filter_by(id=result["user_id"]).first()
         self.assertIsNotNone(user)
         self.assertEqual(user.email, "sarah.connor@cyberdyne.io")
-        self.assertEqual(user.role, "admin")
+        self.assertEqual(user.role, "tenant_admin")
         self.assertTrue(user.is_active)
 
         invoice = self.db.query(InvoiceRecord).filter_by(org_id=org.id).first()

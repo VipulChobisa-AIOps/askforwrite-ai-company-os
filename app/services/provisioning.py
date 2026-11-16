@@ -202,10 +202,13 @@ def auto_provision_tenant_on_payment(
         logger.info("User %s already exists in org %s. Upgrading org entitlements & recording invoice.", email, existing_user.org_id)
         existing_org = db.get(OrganizationRecord, existing_user.org_id)
         if existing_org:
+            from app.security.auth import TENANT_ADMIN_ROLES
+
             existing_org.tier = pkg.tier
             existing_org.lead_credits_limit = max(existing_org.lead_credits_limit or 0, pkg.lead_credits_monthly)
             existing_org.outreach_credits_limit = max(existing_org.outreach_credits_limit or 0, pkg.outreach_credits_monthly)
             existing_org.is_active = True
+            existing_user.is_active = True
             meta = dict(existing_org.metadata_json or {})
             meta.update({
                 "package_key": pkg.key,
@@ -213,8 +216,33 @@ def auto_provision_tenant_on_payment(
                 "category": pkg.category,
                 "entitled_capabilities": list(pkg.entitled_capabilities),
                 "payment_provider": event.provider.value,
+                "subscription_status": "ACTIVE",
             })
             existing_org.metadata_json = meta
+
+            existing_admin_count = (
+                db.query(UserRecord)
+                .filter(UserRecord.org_id == existing_org.id, UserRecord.role.in_(list(TENANT_ADMIN_ROLES)))
+                .count()
+            )
+            user_meta = dict(existing_user.metadata_json or {})
+            if existing_admin_count == 0 and (
+                user_meta.get("first_owner_candidate")
+                or db.query(UserRecord).filter_by(org_id=existing_org.id).count() == 1
+            ):
+                existing_user.role = "tenant_admin"
+                db.add(
+                    AuditLog(
+                        task_id=str(uuid.uuid4()),
+                        correlation_id=str(uuid.uuid4()),
+                        agent_id="provisioning_engine",
+                        capability_name="tenant_identity",
+                        action="payment_verified_tenant_admin_bootstrap",
+                        input_payload={"email": email, "org_id": existing_org.id, "event_id": event.id},
+                        output_payload={"user_id": existing_user.id, "granted_role": "tenant_admin"},
+                        status="COMPLETED",
+                    )
+                )
 
             customer = db.query(CustomerRecord).filter_by(
                 provider=event.provider.value,
@@ -306,7 +334,7 @@ def auto_provision_tenant_on_payment(
     activation_token = create_access_token(
         user_id=user_id,
         email=email,
-        role="admin",
+        role="tenant_admin",
         org_id=org_id,
         expires_delta=timedelta(hours=48),
     )
@@ -317,7 +345,7 @@ def auto_provision_tenant_on_payment(
         org_id=org_id,
         email=email,
         full_name=customer_name,
-        role="admin",
+        role="tenant_admin",
         password_hash=hash_password(temp_password),
         is_active=True,
         metadata_json={
@@ -326,9 +354,22 @@ def auto_provision_tenant_on_payment(
             "activation_token": activation_token,
             "activation_url": activation_url,
             "onboarding_delivery_status": "DELIVERED",
+            "first_owner_candidate": True,
         },
     )
     db.add(user)
+    db.add(
+        AuditLog(
+            task_id=str(uuid.uuid4()),
+            correlation_id=str(uuid.uuid4()),
+            agent_id="provisioning_engine",
+            capability_name="tenant_identity",
+            action="webhook_provisioned_tenant_admin",
+            input_payload={"email": email, "org_id": org_id, "event_id": event.id},
+            output_payload={"user_id": user_id, "granted_role": "tenant_admin"},
+            status="COMPLETED",
+        )
+    )
 
     # 3. Create Customer and Invoice Records
     customer = db.query(CustomerRecord).filter_by(

@@ -64,6 +64,10 @@ def record_execution_evidence(
     status: str = "COMPLETED",
     failure_reason: str | None = None,
     credits_consumed: int = 0,
+    execution_budget_units: int = 0,
+    provider_cost_inr: float = 0.0,
+    provider_tokens_total: int = 0,
+    provider_model: str | None = None,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
     evidence_reference: str | None = None,
@@ -115,6 +119,10 @@ def record_execution_evidence(
             status=status.upper(),
             failure_reason=failure_reason,
             credits_consumed=int(credits_consumed),
+            execution_budget_units=int(execution_budget_units),
+            provider_cost_inr=float(provider_cost_inr),
+            provider_tokens_total=int(provider_tokens_total),
+            provider_model=provider_model,
             started_at=started,
             completed_at=completed,
             evidence_reference=ev_ref,
@@ -128,6 +136,10 @@ def record_execution_evidence(
         rec.completed_at = completed
         rec.failure_reason = failure_reason
         rec.credits_consumed = int(credits_consumed)
+        rec.execution_budget_units = int(execution_budget_units)
+        rec.provider_cost_inr = float(provider_cost_inr)
+        rec.provider_tokens_total = int(provider_tokens_total)
+        rec.provider_model = provider_model or rec.provider_model
         rec.provider_request_id = provider_request_id or rec.provider_request_id
         rec.approval_id = approval_id or rec.approval_id
         rec.fallback_used = bool(fallback_used)
@@ -139,7 +151,9 @@ def record_execution_evidence(
 
 
 def serialize_evidence(rec: ExecutionEvidenceRecord) -> dict[str, Any]:
-    """Serialize all 18 required ExecutionEvidenceRecord attributes plus origin metadata."""
+    """Serialize all 18 required ExecutionEvidenceRecord attributes plus origin and cost telemetry metadata."""
+    meta = redact_secrets(rec.metadata_json or {})
+    cost_acct = dict(meta.get("cost_accounting") or {}) if isinstance(meta, dict) else {}
     return {
         "execution_id": rec.execution_id,
         "tenant_id": rec.tenant_id,
@@ -155,12 +169,19 @@ def serialize_evidence(rec: ExecutionEvidenceRecord) -> dict[str, Any]:
         "status": rec.status,
         "failure_reason": rec.failure_reason,
         "credits_consumed": rec.credits_consumed,
+        "execution_budget_units": int(getattr(rec, "execution_budget_units", 0) or 0),
+        "provider_cost_inr": float(getattr(rec, "provider_cost_inr", 0.0) or 0.0),
+        "estimated_provider_cost_inr": cost_acct.get("estimated_provider_cost_inr"),
+        "actual_provider_cost_inr": cost_acct.get("actual_provider_cost_inr"),
+        "provider_cost_source": cost_acct.get("provider_cost_source"),
+        "provider_tokens_total": int(getattr(rec, "provider_tokens_total", 0) or 0),
+        "provider_model": getattr(rec, "provider_model", None),
         "started_at": rec.started_at.isoformat() if rec.started_at else None,
         "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
         "evidence_reference": rec.evidence_reference,
         "version": rec.version,
         "output_origin": rec.output_origin,
-        "metadata": redact_secrets(rec.metadata_json or {}),
+        "metadata": meta,
     }
 
 

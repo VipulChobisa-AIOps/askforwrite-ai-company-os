@@ -317,9 +317,12 @@
         }
 
         // Update sidebar info
-        if (CONFIG.userRole === 'customer') {
+        if (['customer', 'member', 'tenant_admin'].includes(CONFIG.userRole) || (!CONFIG.ownerApiKey && !!CONFIG.accessToken)) {
           if ($('#sidebar-user-name')) $('#sidebar-user-name').textContent = me.full_name || me.email || 'Customer';
-          if ($('#sidebar-user-role')) $('#sidebar-user-role').textContent = 'Customer (' + (me.tier || 'Starter') + ')';
+          if ($('#sidebar-user-role')) {
+            const labelPrefix = me.role === 'tenant_admin' ? 'Tenant Admin' : 'Workspace';
+            $('#sidebar-user-role').textContent = `${labelPrefix} (${me.tier || 'Starter'})`;
+          }
           if ($('#sidebar-user-avatar')) {
             const initials = (me.full_name || me.email || 'CU').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
             $('#sidebar-user-avatar').textContent = initials;
@@ -2715,6 +2718,16 @@
         });
       }
 
+      if (!res.access_token) {
+        if (res.checkout_url) {
+          toast('Workspace created. Complete checkout to activate your workspace!', 'info');
+          window.open(res.checkout_url, '_blank', 'noopener');
+        } else {
+          showAuthGateError('Payment verification is pending before sign-in.');
+        }
+        return;
+      }
+
       CONFIG.accessToken = res.access_token;
       CONFIG.userRole = res.role || 'customer';
       CONFIG.userName = res.full_name || fullName;
@@ -3320,7 +3333,7 @@
       return;
     }
 
-    const initialPage = window.location.hash.replace('#', '') || (CONFIG.userRole === 'customer' ? 'portal' : 'dashboard');
+    const initialPage = window.location.hash.replace('#', '') || ((['customer', 'member', 'tenant_admin'].includes(CONFIG.userRole) || (!CONFIG.ownerApiKey && !!CONFIG.accessToken)) ? 'portal' : 'dashboard');
     navigateTo(initialPage);
 
     // Initial load (only after authentication passes)

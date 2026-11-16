@@ -1,6 +1,8 @@
+import atexit
 import os
 import pathlib
 import sys
+import tempfile
 
 import pytest
 
@@ -11,6 +13,13 @@ os.environ.setdefault("GOOGLE_API_KEY", "mock-gemini-key")
 os.environ.setdefault("OUTREACH_DISPATCH_PROVIDER", "mock")
 os.environ.setdefault("WEB3_RPC_URL", "")
 os.environ.setdefault("RAZORPAY_WEBHOOK_SECRET", "")
+
+_pytest_db_path: str | None = None
+if not os.environ.get("DATABASE_URL") and not os.environ.get("NEON_DATABASE_URL"):
+    _tmp_db = tempfile.NamedTemporaryFile(prefix="askforwrite_pytest_", suffix=".db", delete=False)
+    _tmp_db.close()
+    _pytest_db_path = _tmp_db.name
+    os.environ["DATABASE_URL"] = f"sqlite:///{_pytest_db_path.replace(chr(92), '/')}"
 
 # Ensure the os_gateway package root is on sys.path for both `app` and `tests` imports
 _project_root = pathlib.Path(__file__).resolve().parents[1]
@@ -25,6 +34,19 @@ import app.db.models  # noqa: E402, F401
 from app.db.database import Base as _Base, engine as _default_engine  # noqa: E402
 
 _Base.metadata.create_all(bind=_default_engine, checkfirst=True)
+
+if _pytest_db_path is not None:
+    def _cleanup_pytest_db() -> None:
+        try:
+            _default_engine.dispose()
+        except Exception:
+            pass
+        try:
+            os.remove(_pytest_db_path)
+        except OSError:
+            pass
+
+    atexit.register(_cleanup_pytest_db)
 
 # Database session fixture for tests that need DB access
 @pytest.fixture

@@ -43,7 +43,14 @@ from app.db.models import (
     SubscriptionRecord,
 )
 from app.main import app
-from app.security.auth import APIPrincipal, create_access_token, require_manager, require_owner
+from app.security.auth import (
+    APIPrincipal,
+    create_access_token,
+    require_manager,
+    require_owner,
+    require_platform_manager,
+    require_tenant_manager,
+)
 from app.services.approvals import decide_approval
 from app.services.outreach import dispatch_outreach, draft_outreach
 from app.services.payment import PaymentProvider, WebhookEvent
@@ -71,6 +78,8 @@ class TestCommercialPilot12StepAcceptance(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_db
         app.dependency_overrides[require_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
+        app.dependency_overrides[require_platform_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
+        app.dependency_overrides[require_tenant_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
         app.dependency_overrides[require_owner] = lambda: APIPrincipal(subject="test-owner", role="owner")
         cls.client = TestClient(app)
 
@@ -79,6 +88,8 @@ class TestCommercialPilot12StepAcceptance(unittest.TestCase):
         Base.metadata.drop_all(bind=cls.engine)
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(require_manager, None)
+        app.dependency_overrides.pop(require_platform_manager, None)
+        app.dependency_overrides.pop(require_tenant_manager, None)
         app.dependency_overrides.pop(require_owner, None)
 
     def setUp(self):

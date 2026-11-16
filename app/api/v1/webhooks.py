@@ -31,7 +31,7 @@ from app.db.models import (
     SubscriptionRecord,
     WebhookEventRecord,
 )
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, require_platform_manager
 from app.services.payment import (
     PaymentProvider,
     PaymentValidationError,
@@ -541,7 +541,7 @@ async def list_webhook_events(
     provider: str | None = None,
     event_type: str | None = None,
     limit: int = 50,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """List recent webhook events (for debugging/audit)."""

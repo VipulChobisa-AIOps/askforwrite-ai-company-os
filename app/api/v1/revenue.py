@@ -38,7 +38,7 @@ from app.schemas.catalog import (
     PitchLeadRequest,
     PitchLeadResponse,
 )
-from app.security.auth import APIPrincipal, enforce_tenant_access, require_manager
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_tenant_manager
 from app.services.catalog import (
     CATALOG,
     build_payment_link,
@@ -101,7 +101,7 @@ def diagnose_prospect(payload: DiagnoseRequest) -> DiagnoseResponse:
 def pitch_lead_endpoint(
     payload: PitchLeadRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> PitchLeadResponse:
     """Diagnose lead pain, draft commercial proposal with Razorpay/PayPal link, and submit for Owner approval."""
@@ -159,7 +159,7 @@ def pitch_lead_endpoint(
 
 @router.get("/funnel", status_code=status.HTTP_200_OK)
 def get_revenue_funnel(
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Retrieve the unified 14-stage CEO commercial acquisition and revenue funnel (Finding 9)."""
@@ -176,6 +176,7 @@ def get_revenue_funnel(
 
     leads = lead_q.all()
     leads_discovered = len(leads)
+    lead_ids = {ld.id for ld in leads}
 
     # Verified prospects: leads whose email is not a generic contact@domain fallback
     verified_prospects = sum(
@@ -186,7 +187,14 @@ def get_revenue_funnel(
         and ld.public_contact_channel.lower().strip() != f"contact@{ld.domain.lower().strip()}"
     )
 
-    previews_all = db.query(PreviewRecord).all()
+    if principal.org_id:
+        previews_all = (
+            db.query(PreviewRecord).filter(PreviewRecord.lead_id.in_(lead_ids)).all()
+            if lead_ids
+            else []
+        )
+    else:
+        previews_all = db.query(PreviewRecord).all()
     previews_generated = len(previews_all)
     previews_viewed = sum(1 for p in previews_all if (p.views_count or 0) > 0)
 
@@ -195,18 +203,49 @@ def get_revenue_funnel(
     outreach_delivered = sum(1 for o in outreach_all if o.status in ("DELIVERED", "SENT"))
     replies_received = sum(1 for o in outreach_all if o.status == "REPLIED")
 
-    approvals_approved = (
-        db.query(ApprovalRequest)
-        .filter(ApprovalRequest.action == "external_sales_outreach", ApprovalRequest.status == "APPROVED")
-        .count()
-    )
+    if principal.org_id:
+        approvals_approved = (
+            db.query(ApprovalRequest)
+            .filter(
+                ApprovalRequest.action == "external_sales_outreach",
+                ApprovalRequest.status == "APPROVED",
+                ApprovalRequest.lead_id.in_(lead_ids),
+            )
+            .count()
+            if lead_ids
+            else 0
+        )
+    else:
+        approvals_approved = (
+            db.query(ApprovalRequest)
+            .filter(ApprovalRequest.action == "external_sales_outreach", ApprovalRequest.status == "APPROVED")
+            .count()
+        )
 
     qualified_opportunities = sum(1 for ld in leads if (ld.fit_score or 0.0) >= 0.75 and not ld.do_not_contact)
 
-    checkouts_all = db.query(SovereignPaymentSessionRecord).all()
+    invoices_all = invoice_q.all()
+    if principal.org_id:
+        org_session_ids = {
+            sid
+            for inv in invoices_all
+            for sid in (
+                inv.provider_invoice_id,
+                (inv.metadata_json or {}).get("session_id") if isinstance(inv.metadata_json, dict) else None,
+            )
+            if sid
+        }
+        checkouts_all = [
+            s
+            for s in db.query(SovereignPaymentSessionRecord).all()
+            if (isinstance(s.metadata_json, dict) and s.metadata_json.get("org_id") == principal.org_id)
+            or s.session_id in org_session_ids
+        ]
+    else:
+        checkouts_all = db.query(SovereignPaymentSessionRecord).all()
     checkout_initiated = len(checkouts_all)
 
-    invoices_paid = [inv for inv in invoice_q.all() if inv.status == "paid"]
+    invoices_paid = [inv for inv in invoices_all if inv.status == "paid"]
     payments_completed = len(invoices_paid)
 
     subs_all = sub_q.all()

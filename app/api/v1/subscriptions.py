@@ -34,9 +34,9 @@ from app.db.models import (
 from app.security.auth import (
     APIPrincipal,
     enforce_tenant_access,
-    require_manager,
     require_platform_owner,
     require_subscription_owner,
+    require_tenant_manager,
 )
 from app.services.payment import (
     PaymentError,
@@ -125,7 +125,7 @@ def _resolve_provider(provider_str: str) -> PaymentProvider:
 async def create_customer_endpoint(
     payload: CreateCustomerRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """Create a customer on the payment provider and persist locally."""
@@ -239,7 +239,7 @@ async def create_plan_endpoint(
 async def create_subscription_endpoint(
     payload: CreateSubscriptionRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """Create a new subscription for a customer."""
@@ -251,6 +251,10 @@ async def create_subscription_endpoint(
         raise HTTPException(status_code=404, detail=f"Customer {payload.customer_id} not found")
     if principal.org_id:
         enforce_tenant_access(principal, customer.org_id or "__platform__")
+        if payload.org_id:
+            enforce_tenant_access(principal, payload.org_id)
+    if payload.org_id and customer.org_id and payload.org_id != customer.org_id:
+        raise HTTPException(status_code=400, detail="payload.org_id does not match customer.org_id")
 
     provider_enum = _resolve_provider(payload.provider)
     provider = get_payment_provider(provider_enum)
@@ -310,7 +314,7 @@ async def create_subscription_endpoint(
 @router.get("/{subscription_id}")
 async def get_subscription_endpoint(
     subscription_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """Retrieve subscription status (syncs with provider)."""
@@ -416,14 +420,15 @@ async def cancel_subscription_endpoint(
 @router.get("/customer/{customer_id}")
 async def list_customer_subscriptions(
     customer_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """List all subscriptions for a customer."""
     if principal.org_id:
         customer = db.query(CustomerRecord).filter_by(id=customer_id).first()
-        if customer:
-            enforce_tenant_access(principal, customer.org_id or "__platform__")
+        if not customer:
+            raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+        enforce_tenant_access(principal, customer.org_id or "__platform__")
     query = db.query(SubscriptionRecord).filter_by(customer_id=customer_id)
     if principal.org_id:
         query = query.filter_by(org_id=principal.org_id)

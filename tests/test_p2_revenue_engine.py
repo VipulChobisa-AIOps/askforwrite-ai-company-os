@@ -261,6 +261,7 @@ class P2CommercialRevenueEngineTests(unittest.TestCase):
         # 6. Suppression / Opt-out persists in DB and blocks all future outreach
         unsub = self.client.post(
             "/v1/outreach/unsubscribe",
+            headers=self.manager_headers,
             json={"email": "hello@deccandigital.in", "lead_id": lead_id},
         )
         self.assertEqual(unsub.status_code, 200, unsub.text)

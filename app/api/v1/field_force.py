@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.db.models import UserRecord
 from app.schemas.field_force import (
     AttendanceCheckInRequest,
     AttendanceCheckOutRequest,
@@ -35,8 +36,8 @@ from app.schemas.field_force import (
 from app.security.auth import (
     APIPrincipal,
     check_tenant_entitlement,
-    require_authenticated_user,
-    require_manager,
+    require_tenant_manager,
+    require_tenant_member,
 )
 from app.services.field_conveyance import (
     calculate_fraud_proof_distance,
@@ -67,6 +68,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/field-force", tags=["field-force"])
 
 
+def require_field_member(
+    principal: APIPrincipal = Depends(require_tenant_member),
+) -> APIPrincipal:
+    """Reject customer-only accounts from internal field-force operational routes."""
+    if not principal.is_platform_operator and principal.role == "customer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Field staff or manager role required for field-force operations",
+        )
+    return principal
+
+
 def _is_matching_user(principal: APIPrincipal, candidate_id: str | None) -> bool:
     """Check if candidate_id matches authenticated principal's user_id, subject, or email."""
     if not candidate_id:
@@ -75,13 +88,25 @@ def _is_matching_user(principal: APIPrincipal, candidate_id: str | None) -> bool
     return candidate_id in allowed
 
 
+def _ensure_target_user_in_org(db: Session, principal: APIPrincipal, candidate_user_id: str | None) -> None:
+    """Block tenant principals from referencing a user account belonging to a different organization."""
+    if not candidate_user_id or not principal.org_id:
+        return
+    target_user = db.get(UserRecord, candidate_user_id)
+    if target_user is not None and target_user.org_id != principal.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: target user belongs to another organization",
+        )
+
+
 # ── Geofence Management ────────────────────────────────────────────────
 
 
 @router.post("/geofences", response_model=GeofenceResponse, status_code=status.HTTP_201_CREATED)
 def create_geofence_endpoint(
     payload: GeofenceCreate,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """Creates a new verified geofence boundary for a client site or branch office."""
@@ -96,7 +121,7 @@ def create_geofence_endpoint(
 
 @router.get("/geofences", response_model=list[GeofenceResponse])
 def list_geofences_endpoint(
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Lists active geofences configured for the tenant."""
@@ -114,7 +139,7 @@ def list_geofences_endpoint(
 )
 def checkin_endpoint(
     payload: AttendanceCheckInRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Performs zero-trust presence verification and cryptographically seals check-in.
@@ -123,14 +148,18 @@ def checkin_endpoint(
     verifies geofence boundaries, and seals into the ECDSA P-256 trust chain.
     """
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     if principal.user_id:
         payload.user_id = principal.user_id
 
-    record = record_attendance_checkin(
-        db=db,
-        org_id=principal.org_id,
-        req=payload,
-    )
+    try:
+        record = record_attendance_checkin(
+            db=db,
+            org_id=principal.org_id,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     if record.status == "SPOOF_REJECTED":
         logger.warning(
@@ -171,19 +200,23 @@ def checkin_endpoint(
 )
 def checkout_endpoint(
     payload: AttendanceCheckOutRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Performs end-of-shift check-out and cryptographic sealing."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     if principal.user_id:
         payload.user_id = principal.user_id
 
-    record = record_attendance_checkout(
-        db=db,
-        org_id=principal.org_id,
-        req=payload,
-    )
+    try:
+        record = record_attendance_checkout(
+            db=db,
+            org_id=principal.org_id,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return record
 
 
@@ -191,7 +224,7 @@ def checkout_endpoint(
 def attendance_history_endpoint(
     user_id: str | None = Query(None, description="Optional user filter"),
     limit: int = Query(50, ge=1, le=200),
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Returns append-only attendance records sealed in the ledger."""
@@ -214,11 +247,12 @@ def attendance_history_endpoint(
 @router.post("/tasks", response_model=FieldTaskResponse, status_code=status.HTTP_201_CREATED)
 def create_task_endpoint(
     payload: FieldTaskCreate,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """Creates a new field service, client visit, or delivery task."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.assigned_to_user_id)
     return create_field_task(
         db=db,
         org_id=principal.org_id,
@@ -231,7 +265,7 @@ def list_tasks_endpoint(
     user_id: str | None = Query(None, description="Filter by assigned user"),
     task_status: str | None = Query(None, alias="status", description="Filter by task status"),
     limit: int = Query(50, ge=1, le=200),
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Lists field tasks. Members only see their own assigned tasks."""
@@ -251,7 +285,7 @@ def list_tasks_endpoint(
 @router.post("/tasks/{task_id}/auto-dispatch")
 def auto_dispatch_endpoint(
     task_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """Autonomously matches the optimal field executive based on real-time GPS proximity and workload."""
@@ -268,6 +302,8 @@ def auto_dispatch_endpoint(
             "assigned_to": task.assigned_to_user_id,
             "telemetry": telemetry,
         }
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -278,7 +314,7 @@ def auto_dispatch_endpoint(
 @router.post("/routes/optimize", response_model=RouteOptimizationResponse)
 def optimize_route_endpoint(
     payload: RouteOptimizationRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Sequences an executive's daily client visits using TSP Nearest-Neighbor with priority weighting.
@@ -287,6 +323,7 @@ def optimize_route_endpoint(
     """
     # Members can only optimize their own route; Managers can optimize any employee
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -310,11 +347,12 @@ def optimize_route_endpoint(
 )
 def verify_visit_endpoint(
     payload: ClientVisitVerifyRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Verifies a physical client visit using geo-proximity, client Geo-OTP, and AI Vision inspection."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     try:
         record = verify_client_visit(
             db=db,
@@ -322,6 +360,8 @@ def verify_visit_endpoint(
             req=payload,
         )
         return record
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e))
 
@@ -329,11 +369,12 @@ def verify_visit_endpoint(
 @router.post("/visits/debrief")
 def voice_debrief_endpoint(
     payload: VoiceDebriefRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Processes a spoken voice debrief and extracts structured CRM meeting fields."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     try:
         visit, result = process_voice_debrief(
             db=db,
@@ -346,6 +387,8 @@ def voice_debrief_endpoint(
             "task_id": payload.task_id,
             "structured_crm_data": result["crm_debrief"],
         }
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -354,7 +397,7 @@ def voice_debrief_endpoint(
 def list_visits_endpoint(
     user_id: str | None = Query(None, description="Filter by user"),
     limit: int = Query(50, ge=1, le=200),
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Lists completed client visits and their cryptographic proofs."""
@@ -376,7 +419,7 @@ def list_visits_endpoint(
 @router.post("/conveyance/calculate")
 def calculate_conveyance_endpoint(
     payload: ConveyanceCalculateRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
 ):
     """Calculates road-snapped travel distance and eliminates fake indoor stationary GPS jitter."""
     result = calculate_fraud_proof_distance(payload.gps_breadcrumbs)
@@ -395,11 +438,12 @@ def calculate_conveyance_endpoint(
 )
 def submit_conveyance_endpoint(
     payload: ConveyanceClaimSubmitRequest,
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Submits a conveyance and expense claim for automated policy verification and settlement."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
     if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -418,7 +462,7 @@ def submit_conveyance_endpoint(
 def list_conveyance_endpoint(
     user_id: str | None = Query(None, description="Filter by user"),
     limit: int = Query(50, ge=1, le=200),
-    principal: APIPrincipal = Depends(require_authenticated_user),
+    principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
     """Lists conveyance claims and audit records."""

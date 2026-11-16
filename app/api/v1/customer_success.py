@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import P3GrowthOpportunityRecord, P3ImprovementItemRecord
-from app.security.auth import APIPrincipal, require_manager, require_owner, require_platform_manager
+from app.security.auth import (
+    APIPrincipal,
+    enforce_tenant_access,
+    require_owner,
+    require_platform_manager,
+    require_tenant_manager,
+)
 from app.services.p3_customer_success import (
     confirm_customer_activation,
     create_or_get_onboarding_workflow,
@@ -85,6 +91,8 @@ router = APIRouter(prefix="/v1/cs", tags=["P3 Customer Success & Growth Engine"]
 
 
 def _handle_service_err(exc: Exception) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
     if isinstance(exc, GscIntegrationError):
         return HTTPException(status_code=exc.status_code, detail=f"{exc.code}: {exc.message}")
     if isinstance(exc, CostBudgetExceededError):
@@ -330,7 +338,7 @@ class AcceptanceStepUpdateRequest(BaseModel):
 @router.get("/control-centre", summary="Founder Control Centre: Customer Operations KPIs")
 def cs_control_centre(
     period_days: int = Query(default=30, ge=1, le=365),
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return get_p3_customer_ops_control_centre(db, period_days=period_days)
@@ -339,7 +347,7 @@ def cs_control_centre(
 @router.get("/customers", summary="List Customer Success accounts")
 def cs_list_customers(
     lifecycle_state: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     rows = list_customer_accounts(db, lifecycle_state=lifecycle_state)
@@ -350,7 +358,7 @@ def cs_list_customers(
 def cs_ensure_customer(
     org_id: str,
     body: EnsureCustomerRequest,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -373,9 +381,10 @@ def cs_ensure_customer(
 @router.get("/customers/{org_id}", summary="Customer 360 profile")
 def cs_get_customer_360(
     org_id: str,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return get_customer_360_profile(db, org_id=org_id)
     except Exception as exc:
@@ -386,7 +395,7 @@ def cs_get_customer_360(
 def cs_transition_lifecycle(
     org_id: str,
     body: LifecycleTransitionRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -401,7 +410,7 @@ def cs_transition_lifecycle(
 def cs_update_customer_profile(
     org_id: str,
     body: CustomerProfileUpdateRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -424,9 +433,10 @@ def cs_get_onboarding(
     org_id: str,
     sku_key: str | None = None,
     template_key: str | None = None,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return create_or_get_onboarding_workflow(
             db, org_id=org_id, sku_key=sku_key, template_key=template_key, actor=principal.subject
@@ -440,9 +450,10 @@ def cs_update_onboarding_task(
     org_id: str,
     task_key: str,
     body: OnboardingTaskUpdateRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return update_onboarding_task(
             db,
@@ -464,9 +475,10 @@ def cs_update_onboarding_task(
 def cs_confirm_activation(
     org_id: str,
     body: ConfirmActivationRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return confirm_customer_activation(
             db, org_id=org_id, sku_key=body.sku_key, confirmation_note=body.confirmation_note, actor=principal.subject
@@ -479,19 +491,23 @@ def cs_confirm_activation(
 def cs_list_deliveries(
     org_id: str | None = None,
     quality_state: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_service_deliveries(db, org_id=org_id, quality_state=quality_state)
+    if org_id is not None:
+        enforce_tenant_access(principal, org_id)
+    effective_org_id = principal.org_id if not principal.is_platform_operator else org_id
+    rows = list_service_deliveries(db, org_id=effective_org_id, quality_state=quality_state)
     return {"count": len(rows), "deliveries": rows}
 
 
 @router.post("/deliveries", summary="Create service delivery engagement & scope record")
 def cs_create_delivery(
     body: CreateDeliveryRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, body.org_id)
     try:
         return create_service_delivery(
             db,
@@ -518,7 +534,7 @@ def cs_create_delivery(
 def cs_transition_delivery(
     delivery_id: str,
     body: DeliveryTransitionRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -531,6 +547,7 @@ def cs_transition_delivery(
             approval_checkpoint=body.approval_checkpoint,
             source_evidence_item=body.source_evidence_item,
             actor=principal.subject,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -540,7 +557,7 @@ def cs_transition_delivery(
 def cs_qa_review_delivery(
     delivery_id: str,
     body: DeliveryQARequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -551,6 +568,7 @@ def cs_qa_review_delivery(
             checks=body.checks,
             reviewer=principal.subject,
             output_artifacts=body.output_artifacts,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -560,7 +578,7 @@ def cs_qa_review_delivery(
 def cs_record_delivery_metrics(
     delivery_id: str,
     body: DeliveryMetricsRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -570,6 +588,7 @@ def cs_record_delivery_metrics(
             output_metrics=body.output_metrics,
             outcome_metrics=body.outcome_metrics,
             actor=principal.subject,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -579,9 +598,10 @@ def cs_record_delivery_metrics(
 def cs_get_health(
     org_id: str,
     save_snapshot: bool = True,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return compute_customer_health(db, org_id=org_id, save_snapshot=save_snapshot)
     except Exception as exc:
@@ -591,7 +611,7 @@ def cs_get_health(
 @router.post("/customers/{org_id}/health/alerts", summary="Generate internal early-warning churn/blocker alerts")
 def cs_generate_health_alerts(
     org_id: str,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -605,19 +625,28 @@ def cs_generate_health_alerts(
 def cs_list_tickets(
     org_id: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_support_tickets(db, org_id=org_id, status=status_filter, include_internal=True)
+    if org_id is not None:
+        enforce_tenant_access(principal, org_id)
+    effective_org_id = principal.org_id if not principal.is_platform_operator else org_id
+    rows = list_support_tickets(
+        db,
+        org_id=effective_org_id,
+        status=status_filter,
+        include_internal=bool(principal.is_platform_operator),
+    )
     return {"count": len(rows), "tickets": rows}
 
 
 @router.post("/support/tickets", summary="Open support ticket for customer org")
 def cs_create_ticket(
     body: CreateTicketRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, body.org_id)
     try:
         return create_support_ticket(
             db,
@@ -639,7 +668,7 @@ def cs_create_ticket(
 def cs_transition_ticket(
     ticket_id: str,
     body: TicketTransitionRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -651,6 +680,7 @@ def cs_transition_ticket(
             escalation_reason=body.reason if body.target_state.upper() == "ESCALATED" else None,
             internal_note=body.reason,
             actor=principal.subject,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -660,9 +690,14 @@ def cs_transition_ticket(
 def cs_add_ticket_message(
     ticket_id: str,
     body: TicketMessageRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if not principal.is_platform_operator and body.visibility != "customer_visible":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform operators may post internal ticket notes",
+        )
     try:
         return add_ticket_message(
             db,
@@ -672,6 +707,7 @@ def cs_add_ticket_message(
             sender_type=body.sender_type,
             sender=principal.subject,
             approval_id=body.approval_id,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -680,11 +716,11 @@ def cs_add_ticket_message(
 @router.post("/support/tickets/{ticket_id}/ai-assist", summary="Run docs-grounded AI Support Assistant triage")
 def cs_ai_assist_ticket(
     ticket_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return run_ai_support_assistant(db, ticket_id=ticket_id, actor=principal.subject)
+        return run_ai_support_assistant(db, ticket_id=ticket_id, actor=principal.subject, org_id_scope=principal.org_id)
     except Exception as exc:
         raise _handle_service_err(exc) from exc
 
@@ -693,11 +729,17 @@ def cs_ai_assist_ticket(
 def cs_submit_ticket_csat(
     ticket_id: str,
     body: TicketCSATRequest,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return submit_ticket_csat(db, ticket_id=ticket_id, rating=body.rating, comment=body.comment)
+        return submit_ticket_csat(
+            db,
+            ticket_id=ticket_id,
+            rating=body.rating,
+            comment=body.comment,
+            org_id_scope=principal.org_id,
+        )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
 
@@ -706,17 +748,20 @@ def cs_submit_ticket_csat(
 def cs_subscription_reliability(
     org_id: str | None = None,
     days_ahead: int = Query(default=30, ge=1, le=365),
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    return get_subscription_reliability_summary(db, org_id=org_id, days_ahead=days_ahead)
+    if org_id is not None:
+        enforce_tenant_access(principal, org_id)
+    effective_org_id = principal.org_id if not principal.is_platform_operator else org_id
+    return get_subscription_reliability_summary(db, org_id=effective_org_id, days_ahead=days_ahead)
 
 
 @router.post("/subscriptions/{org_id}/events", summary="Record idempotent subscription lifecycle event")
 def cs_record_subscription_event(
     org_id: str,
     body: SubscriptionEventRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -748,7 +793,7 @@ def cs_record_subscription_event(
 def cs_payment_failure(
     org_id: str,
     body: PaymentFailureRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -770,7 +815,7 @@ def cs_payment_failure(
 @router.post("/subscriptions/enforce-grace", summary="Suspend expired PAST_DUE subscriptions")
 def cs_enforce_grace(
     org_id: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     suspended = enforce_grace_period_expirations(db, org_id=org_id)
@@ -781,7 +826,7 @@ def cs_enforce_grace(
 def cs_restore_subscription(
     org_id: str,
     body: RestoreSubscriptionRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -825,9 +870,10 @@ def cs_refund_workflow(
 def cs_plan_change(
     org_id: str,
     body: PlanChangeRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return change_subscription_plan(
             db,
@@ -851,9 +897,10 @@ def cs_plan_change(
 @router.post("/growth/{org_id}/evaluate", summary="Identify catalog-grounded expansion & referral opportunities")
 def cs_evaluate_growth(
     org_id: str,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         opps = evaluate_expansion_opportunities(db, org_id=org_id)
         return {"org_id": org_id, "count": len(opps), "opportunities": opps}
@@ -864,12 +911,15 @@ def cs_evaluate_growth(
 @router.get("/growth", summary="List expansion & referral opportunities")
 def cs_list_growth(
     org_id: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    if org_id is not None:
+        enforce_tenant_access(principal, org_id)
+    effective_org_id = principal.org_id if not principal.is_platform_operator else org_id
     q = db.query(P3GrowthOpportunityRecord)
-    if org_id:
-        q = q.filter(P3GrowthOpportunityRecord.org_id == org_id)
+    if effective_org_id:
+        q = q.filter(P3GrowthOpportunityRecord.org_id == effective_org_id)
     rows = q.order_by(P3GrowthOpportunityRecord.created_at.desc()).all()
     return {"count": len(rows), "opportunities": [serialize_growth_opportunity(r) for r in rows]}
 
@@ -878,7 +928,7 @@ def cs_list_growth(
 def cs_share_growth_opportunity(
     opp_id: str,
     body: ShareGrowthOpportunityRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -888,6 +938,7 @@ def cs_share_growth_opportunity(
             approval_id=body.approval_id,
             referred_company=body.referred_company,
             actor=principal.subject,
+            org_id_scope=principal.org_id,
         )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
@@ -919,9 +970,10 @@ def cs_set_cost_budget(
 def cs_record_cost(
     org_id: str,
     body: RecordUnitCostRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return record_unit_economics_cost(
             db,
@@ -948,9 +1000,10 @@ def cs_record_cost(
 @router.get("/unit-economics/{org_id}", summary="Customer unit economics & margin summary")
 def cs_get_unit_economics(
     org_id: str,
-    _principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return compute_customer_unit_economics(db, org_id=org_id)
     except Exception as exc:
@@ -960,7 +1013,7 @@ def cs_get_unit_economics(
 @router.post("/improvements/synthesize", summary="Cluster tickets, revisions, CSAT & blockers into Improvement Loop")
 def cs_synthesize_improvements(
     org_id: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     items = synthesize_improvement_loop(db, org_id=org_id)
@@ -970,7 +1023,7 @@ def cs_synthesize_improvements(
 @router.get("/improvements", summary="List prioritized Product & Service Improvement Loop items")
 def cs_list_improvements(
     status_filter: str | None = Query(default=None, alias="status"),
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     q = db.query(P3ImprovementItemRecord)
@@ -984,7 +1037,7 @@ def cs_list_improvements(
 def cs_update_improvement_status(
     item_id: str,
     body: ImprovementStatusRequest,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     item = db.get(P3ImprovementItemRecord, item_id)
@@ -1001,9 +1054,10 @@ def cs_update_improvement_status(
 def cs_update_consent_retention(
     org_id: str,
     body: ConsentRetentionUpdateRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
         return update_consent_and_retention(
             db,
@@ -1019,11 +1073,17 @@ def cs_update_consent_retention(
 @router.post("/compliance/{org_id}/export", summary="Export org-scoped secret-redacted customer data bundle")
 def cs_export_customer_data(
     org_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    enforce_tenant_access(principal, org_id)
     try:
-        return export_customer_data_bundle(db, org_id=org_id, requested_by=principal.subject, customer_safe_only=False)
+        return export_customer_data_bundle(
+            db,
+            org_id=org_id,
+            requested_by=principal.subject,
+            customer_safe_only=not principal.is_platform_operator,
+        )
     except Exception as exc:
         raise _handle_service_err(exc) from exc
 
@@ -1051,7 +1111,7 @@ def cs_offboard_or_delete(
 @router.get("/ops/readiness", summary="Multi-tenant concurrency, DB latency, connectors, DLQ & backup drills")
 def cs_ops_readiness(
     org_id: str | None = None,
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return get_operational_readiness_summary(db, org_id=org_id)
@@ -1061,7 +1121,7 @@ def cs_ops_readiness(
 def cs_scan_timeouts(
     timeout_seconds: int | None = Query(default=None, ge=10, le=86400),
     org_id: str | None = None,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return scan_and_recover_stale_workflows(db, timeout_seconds=timeout_seconds, org_id=org_id, actor=principal.subject)
@@ -1070,7 +1130,7 @@ def cs_scan_timeouts(
 @router.post("/ops/dlq/{incident_id}/retry", summary="Re-queue failed/timed-out workflow run from DLQ")
 def cs_retry_dlq(
     incident_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -1101,7 +1161,7 @@ def cs_record_backup_drill(
 def cs_run_scheduled_maintenance(
     org_id: str | None = None,
     stale_timeout_seconds: int = Query(default=600, ge=10, le=86400),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return run_scheduled_p3_maintenance(
@@ -1114,7 +1174,7 @@ def cs_run_scheduled_maintenance(
 
 @router.get("/acceptance", summary="Get 12-step P3 real-world verification checklist")
 def cs_get_acceptance(
-    _principal: APIPrincipal = Depends(require_manager),
+    _principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     steps = seed_and_get_p3_acceptance_checklist(db)

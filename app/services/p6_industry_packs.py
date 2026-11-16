@@ -124,6 +124,18 @@ DEFAULT_P6_INDUSTRY_PACKS: tuple[dict[str, Any], ...] = (
 )
 
 
+def _ensure_active_org(db: Session, org_id: str | None) -> OrganizationRecord | None:
+    """Validate tenant organization existence and active status."""
+    if org_id is None:
+        return None
+    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
+    if not org:
+        raise ValueError(f"Organization '{org_id}' not found")
+    if not org.is_active:
+        raise PermissionError(f"Organization '{org_id}' is inactive")
+    return org
+
+
 def _normalize_mode(requested_mode: str | None) -> str:
     raw = (requested_mode or "SIMULATION").strip().upper()
     canonical = "PRODUCTION" if raw == "LIVE" else raw
@@ -336,9 +348,7 @@ def deploy_industry_pack_for_tenant(
     """Deploy a configuration-driven industry pack into a tenant organization."""
     if db.query(P6IndustryPackRecord).count() == 0:
         seed_default_p6_packs(db, actor=actor)
-    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
-    if not org:
-        raise ValueError(f"Organization '{org_id}' not found")
+    org = _ensure_active_org(db, org_id)
     pack = db.query(P6IndustryPackRecord).filter_by(pack_key=pack_key.strip().lower(), is_active=True).first()
     if not pack:
         raise ValueError(f"Industry pack '{pack_key}' not found")
@@ -382,6 +392,7 @@ def run_pack_diagnostics(
     dep = db.get(P6TenantPackDeploymentRecord, deployment_id)
     if not dep or (org_id is not None and dep.org_id != org_id):
         raise ValueError(f"Pack deployment '{deployment_id}' not found")
+    _ensure_active_org(db, dep.org_id)
     pack = db.query(P6IndustryPackRecord).filter_by(pack_key=dep.pack_key).first()
     if not pack:
         raise ValueError(f"Industry pack '{dep.pack_key}' missing")
@@ -489,6 +500,7 @@ def create_india_seo_baseline(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Generate a claim-checked India local SME SEO baseline grounded strictly in a real CATALOG SKU."""
+    _ensure_active_org(db, org_id)
     clean_sku = primary_catalog_sku.strip()
     if clean_sku not in CATALOG:
         raise ValueError(f"Unknown primary_catalog_sku '{primary_catalog_sku}'; must exist in CATALOG")

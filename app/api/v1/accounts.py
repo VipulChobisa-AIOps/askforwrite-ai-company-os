@@ -9,23 +9,28 @@ Endpoints for:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.database import get_db
 from app.db.models import (
+    ApprovalRequest,
     AuditLog,
     CreditLedgerRecord,
     InvoiceRecord,
     OrganizationRecord,
     SubscriptionRecord,
+    TenantInvitationRecord,
     UserRecord,
 )
 from app.schemas.account import (
@@ -39,10 +44,14 @@ from app.schemas.account import (
     UserResponse,
 )
 from app.security.auth import (
+    INVITABLE_TENANT_ROLES,
+    TENANT_ADMIN_ROLES,
     APIPrincipal,
     enforce_tenant_access,
-    require_manager,
     require_owner,
+    require_platform_manager,
+    require_tenant_admin,
+    require_tenant_manager,
     revoke_user,
 )
 
@@ -73,7 +82,7 @@ def _slugify(text: str) -> str:
 @router.post("/orgs", response_model=OrgResponse, status_code=status.HTTP_201_CREATED)
 def create_organization(
     payload: OrgCreate,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ):
     """Create a new multi-tenant organization."""
@@ -120,12 +129,12 @@ def create_organization(
 def list_organizations(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
-    """List registered organizations (scoped to tenant if principal is org-bound)."""
+    """List registered organizations (strictly scoped to caller's tenant unless platform operator)."""
     query = db.query(OrganizationRecord)
-    if principal.org_id:
+    if not principal.is_platform_operator:
         query = query.filter(OrganizationRecord.id == principal.org_id)
     return query.offset(skip).limit(limit).all()
 
@@ -133,7 +142,7 @@ def list_organizations(
 @router.get("/orgs/{org_id}", response_model=OrgSummaryResponse)
 def get_organization_summary(
     org_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """Retrieve organization summary including active subscription and recent invoices."""
@@ -218,40 +227,295 @@ def update_organization(
 # ── Team User Endpoints ───────────────────────────────────────────────
 
 
+def _verify_tenant_admin_approval(
+    db: Session,
+    *,
+    org_id: str,
+    approval_id: str | None,
+    target_email: str | None = None,
+    target_user_id: str | None = None,
+) -> ApprovalRequest:
+    if not approval_id or not approval_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Subsequent tenant_admin grants require an approved ApprovalRequest (approval_id).",
+        )
+    appr = db.get(ApprovalRequest, approval_id.strip())
+    if not appr or appr.status != "APPROVED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ApprovalRequest for tenant_admin grant not found or not APPROVED.",
+        )
+    detail = appr.detail or {}
+    if detail.get("consumed_by_user_id") or detail.get("consumed_by_invitation_id"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ApprovalRequest for tenant_admin grant has already been consumed.",
+        )
+    if detail.get("org_id") != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ApprovalRequest org_id does not match target organization.",
+        )
+    approved_email = (detail.get("email") or "").lower().strip()
+    if approved_email and target_email and approved_email != target_email.lower().strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ApprovalRequest email does not match target user.",
+        )
+    approved_uid = detail.get("user_id")
+    if approved_uid and target_user_id and approved_uid != target_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ApprovalRequest user_id does not match target user.",
+        )
+    return appr
+
+
+class InvitationCreateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=250)
+    role: str = Field(default="member", max_length=32)
+    expires_hours: int = Field(default=72, ge=1, le=720)
+    approval_id: str | None = Field(default=None, max_length=64)
+
+
+class InvitationCreateResponse(BaseModel):
+    invitation_id: str
+    org_id: str
+    email: str
+    invited_role: str
+    status: str
+    expires_at: datetime
+    invitation_token: str
+
+
+class UserRoleUpdateRequest(BaseModel):
+    role: str = Field(max_length=32)
+    approval_id: str | None = Field(default=None, max_length=64)
+
+
 @router.post("/orgs/{org_id}/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def add_user_to_org(
     org_id: str,
     payload: UserCreate,
-    principal: APIPrincipal = Depends(require_manager),
+    approval_id: str | None = Query(default=None, max_length=64),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
-    """Add a new member to an organization."""
+    """Add a new member to an organization (tenant_admin elevation requires bootstrap/approval)."""
     enforce_tenant_access(principal, org_id)
 
     role_clean = payload.role.lower().strip()
-    if role_clean in {"owner", "manager"} and principal.role != "owner":
+    if role_clean in {"owner", "platform_owner", "platform_admin", "manager"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only platform owners can assign owner or manager roles",
+            detail="Platform roles ('owner', 'platform_admin', 'manager') cannot be assigned on organization users",
         )
 
     org = db.query(OrganizationRecord).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+    if not org.is_active and not principal.is_platform_operator:
+        raise HTTPException(status_code=403, detail="Organization account is inactive or suspended")
 
-    existing = db.query(UserRecord).filter_by(org_id=org_id, email=payload.email).first()
+    email_clean = payload.email.lower().strip()
+    existing = db.query(UserRecord).filter_by(org_id=org_id, email=email_clean).first()
     if existing:
-        raise HTTPException(status_code=409, detail=f"User with email '{payload.email}' already exists in this org")
+        raise HTTPException(status_code=409, detail=f"User with email '{email_clean}' already exists in this org")
+
+    approved_req: ApprovalRequest | None = None
+    if role_clean in {"admin", "tenant_admin"}:
+        existing_admin_count = (
+            db.query(UserRecord)
+            .filter(UserRecord.org_id == org_id, UserRecord.role.in_(list(TENANT_ADMIN_ROLES)))
+            .count()
+        )
+        if principal.is_platform_operator and existing_admin_count == 0:
+            role_clean = "tenant_admin"
+        else:
+            approved_req = _verify_tenant_admin_approval(
+                db,
+                org_id=org_id,
+                approval_id=approval_id,
+                target_email=email_clean,
+            )
+            role_clean = "tenant_admin"
+    elif role_clean not in {"member", "customer"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported organization role. Allowed: 'customer', 'member', or approved 'tenant_admin'",
+        )
 
     user = UserRecord(
         org_id=org_id,
-        email=payload.email.lower().strip(),
+        email=email_clean,
         full_name=payload.full_name.strip(),
         role=role_clean,
         is_active=True,
         metadata_json=payload.metadata,
     )
     db.add(user)
+    db.flush()
+    if approved_req is not None:
+        approved_req.detail = {
+            **dict(approved_req.detail or {}),
+            "consumed_by_user_id": user.id,
+            "consumed_at": datetime.now(UTC).isoformat(),
+        }
+        flag_modified(approved_req, "detail")
+    db.add(
+        AuditLog(
+            task_id=str(uuid.uuid4()),
+            correlation_id=str(uuid.uuid4()),
+            agent_id="accounts_api",
+            capability_name="tenant_identity",
+            action="org_user_added",
+            input_payload={"org_id": org_id, "email": email_clean, "requested_role": payload.role},
+            output_payload={"user_id": user.id, "granted_role": role_clean, "actor": principal.subject},
+            status="COMPLETED",
+        )
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/orgs/{org_id}/invitations", response_model=InvitationCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_org_invitation(
+    org_id: str,
+    payload: InvitationCreateRequest,
+    principal: APIPrincipal = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    """Create a single-use hashed invitation token for joining an organization."""
+    enforce_tenant_access(principal, org_id)
+
+    org = db.query(OrganizationRecord).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail=f"Organization {org_id} not found")
+    if not org.is_active and not principal.is_platform_operator:
+        raise HTTPException(status_code=403, detail="Organization account is inactive or suspended")
+
+    invited_role = payload.role.lower().strip()
+    if invited_role not in INVITABLE_TENANT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invitations can only grant 'customer', 'member', or approved 'tenant_admin'",
+        )
+
+    email_clean = payload.email.lower().strip()
+    approved_req: ApprovalRequest | None = None
+    if invited_role == "tenant_admin":
+        approved_req = _verify_tenant_admin_approval(
+            db,
+            org_id=org_id,
+            approval_id=payload.approval_id,
+            target_email=email_clean,
+        )
+
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(hours=payload.expires_hours)
+
+    inv = TenantInvitationRecord(
+        org_id=org_id,
+        email=email_clean,
+        invited_role=invited_role,
+        token_hash=token_hash,
+        status="PENDING",
+        approval_id=payload.approval_id.strip() if payload.approval_id else None,
+        invited_by_user_id=principal.user_id if (principal.user_id and db.get(UserRecord, principal.user_id)) else None,
+        invited_by_subject=principal.subject,
+        expires_at=expires_at,
+    )
+    db.add(inv)
+    db.flush()
+    if approved_req is not None:
+        approved_req.detail = {
+            **dict(approved_req.detail or {}),
+            "consumed_by_invitation_id": inv.id,
+        }
+        flag_modified(approved_req, "detail")
+    db.add(
+        AuditLog(
+            task_id=str(uuid.uuid4()),
+            correlation_id=str(uuid.uuid4()),
+            agent_id="accounts_api",
+            capability_name="tenant_identity",
+            action="org_invitation_created",
+            input_payload={"org_id": org_id, "email": email_clean, "invited_role": invited_role},
+            output_payload={"invitation_id": inv.id, "actor": principal.subject},
+            status="COMPLETED",
+        )
+    )
+    db.commit()
+    db.refresh(inv)
+    return InvitationCreateResponse(
+        invitation_id=inv.id,
+        org_id=inv.org_id,
+        email=inv.email,
+        invited_role=inv.invited_role,
+        status=inv.status,
+        expires_at=inv.expires_at,
+        invitation_token=raw_token,
+    )
+
+
+@router.post("/orgs/{org_id}/users/{user_id}/role", response_model=UserResponse)
+def update_org_user_role(
+    org_id: str,
+    user_id: str,
+    payload: UserRoleUpdateRequest,
+    principal: APIPrincipal = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+):
+    """Update a member's organization role; promoting to tenant_admin requires an approved ApprovalRequest."""
+    enforce_tenant_access(principal, org_id)
+
+    user = db.query(UserRecord).filter_by(org_id=org_id, id=user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=404, detail=f"Active user {user_id} not found in org {org_id}")
+
+    target_role = payload.role.lower().strip()
+    if target_role not in INVITABLE_TENANT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Role must be 'customer', 'member', or approved 'tenant_admin'",
+        )
+
+    approved_req: ApprovalRequest | None = None
+    if target_role == "tenant_admin":
+        approved_req = _verify_tenant_admin_approval(
+            db,
+            org_id=org_id,
+            approval_id=payload.approval_id,
+            target_email=user.email,
+            target_user_id=user.id,
+        )
+
+    old_role = user.role
+    user.role = target_role
+    user.updated_at = datetime.now(UTC)
+    if approved_req is not None:
+        approved_req.detail = {
+            **dict(approved_req.detail or {}),
+            "consumed_by_user_id": user.id,
+            "consumed_at": datetime.now(UTC).isoformat(),
+        }
+        flag_modified(approved_req, "detail")
+    db.add(
+        AuditLog(
+            task_id=str(uuid.uuid4()),
+            correlation_id=str(uuid.uuid4()),
+            agent_id="accounts_api",
+            capability_name="tenant_identity",
+            action="org_user_role_updated",
+            input_payload={"org_id": org_id, "user_id": user_id, "old_role": old_role, "new_role": target_role},
+            output_payload={"actor": principal.subject, "approval_id": payload.approval_id},
+            status="COMPLETED",
+        )
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -260,7 +524,7 @@ def add_user_to_org(
 @router.get("/orgs/{org_id}/users", response_model=list[UserResponse])
 def list_org_users(
     org_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """List active members of an organization."""
@@ -277,7 +541,7 @@ def list_org_users(
 def remove_org_user(
     org_id: str,
     user_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_admin),
     db: Session = Depends(get_db),
 ):
     """Deactivate/remove an organization member."""
@@ -300,7 +564,7 @@ def remove_org_user(
 def record_invoice(
     org_id: str,
     payload: InvoiceCreate,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ):
     """Record an invoice or payment receipt for an organization."""
@@ -335,7 +599,7 @@ def record_invoice(
 @router.get("/orgs/{org_id}/invoices", response_model=list[InvoiceResponse])
 def list_org_invoices(
     org_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """List billing invoices for an organization."""
@@ -377,7 +641,7 @@ class ConsumeCreditsResponse(BaseModel):
 def consume_org_credits(
     org_id: str,
     payload: ConsumeCreditsRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ):
     """Verify and atomically consume monthly feature credits for an organization, recording an immutable ledger entry."""
@@ -498,7 +762,7 @@ class ReconcileSettlementRequest(BaseModel):
 
 @router.get("/reconciliation")
 def get_payment_settlement_reconciliation(
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict:
     """Return separated payment lifecycle states: checkout created, payment captured, eligible for settlement, settled to bank, and refunded."""

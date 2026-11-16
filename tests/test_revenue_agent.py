@@ -262,11 +262,11 @@ class RevenueAgentTests(unittest.TestCase):
         self.assertEqual(org.lead_credits_limit, 150)
         self.assertEqual(org.outreach_credits_limit, 75)
 
-        # Verify User created with role manager
+        # Verify User created with org-scoped tenant_admin role
         user = self.db.query(UserRecord).filter_by(email="founder@techstartup.in").first()
         self.assertIsNotNone(user)
         self.assertEqual(user.org_id, org.id)
-        self.assertIn(user.role, {"admin", "manager"})
+        self.assertEqual(user.role, "tenant_admin")
         self.assertIsNotNone(user.password_hash)
         self.assertTrue(user.is_active)
 

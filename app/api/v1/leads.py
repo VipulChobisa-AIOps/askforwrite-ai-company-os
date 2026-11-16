@@ -34,7 +34,7 @@ from app.schemas.lead import (
     LeadUpdateRequest,
     SmbLeadDiscoverRequest,
 )
-from app.security.auth import APIPrincipal, check_tenant_entitlement, enforce_tenant_access, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, enforce_tenant_access, require_tenant_manager
 from app.security.trust_chain import seal_task_to_block
 from app.services.discovery import IdempotencyConflict, execute_discovery
 
@@ -47,7 +47,7 @@ router = APIRouter(prefix="/v1/leads", tags=["leads"])
 def discover_leads(
     payload: LeadDiscoverRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Execute customer discovery with organizational quota checking and domain deduplication."""
@@ -55,8 +55,6 @@ def discover_leads(
     target_org_id = payload.org_id or principal.org_id
     if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
         enforce_tenant_access(principal, payload.org_id)
-    if principal.org_id:
-        check_tenant_entitlement(principal, "lead_generation", db)
     if principal.org_id:
         check_tenant_entitlement(principal, "lead_generation", db)
 
@@ -99,7 +97,7 @@ def discover_leads(
 def discover_smb_leads_endpoint(
     payload: SmbLeadDiscoverRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Execute high-converting SMB lead discovery across the 8 catalog verticals.
@@ -263,14 +261,15 @@ def list_leads(
     search: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> LeadListResponse:
     """List and filter leads with multi-tenant scoping and search."""
     # Scope to principal org if tenant-bound
     effective_org_id = org_id
     if principal.org_id:
-        enforce_tenant_access(principal, org_id)
+        if org_id is not None:
+            enforce_tenant_access(principal, org_id)
         effective_org_id = principal.org_id
 
     query = db.query(LeadRecordRow).filter(LeadRecordRow.fit_score >= min_fit)
@@ -307,7 +306,7 @@ def list_leads(
 @router.get("/{lead_id}", response_model=LeadResponse)
 def get_lead(
     lead_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> LeadResponse:
     """Retrieve full details of a single lead."""
@@ -323,7 +322,7 @@ def get_lead(
 def update_lead(
     lead_id: str,
     payload: LeadUpdateRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> LeadResponse:
     """Update lead status lifecycle, recommended next step, or contact channel."""
@@ -368,7 +367,7 @@ def update_lead(
 @router.post("/enrich", status_code=status.HTTP_200_OK)
 def enrich_lead(
     payload: LeadEnrichRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Perform real-time web scraping and signal enrichment on a company domain, URL, or lead record."""
@@ -498,7 +497,7 @@ def enrich_lead(
 @router.delete("/{lead_id}", status_code=status.HTTP_200_OK)
 def delete_lead(
     lead_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     """Delete a lead record."""

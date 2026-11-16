@@ -75,7 +75,8 @@ class TestCustomerSignupOnboarding(unittest.TestCase):
         # Verify DB records
         user = self.db.query(UserRecord).filter_by(id=data["user_id"]).first()
         self.assertIsNotNone(user)
-        self.assertEqual(user.role, "admin")
+        self.assertEqual(user.role, "tenant_admin")
+        self.assertEqual(data["role"], "tenant_admin")
         self.assertTrue(verify_password("SecurePassword123!", user.password_hash))
 
         org = self.db.query(OrganizationRecord).filter_by(id=data["org_id"]).first()

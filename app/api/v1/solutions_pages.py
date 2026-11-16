@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import require_manager
+from app.security.auth import require_platform_manager
 from app.services.catalog import CATALOG
 
 router = APIRouter(tags=["Solutions & Ops Readiness"])
@@ -447,7 +447,7 @@ def _get_alembic_expected_heads() -> list[str]:
         return []
 
 
-@router.get("/v1/ops/preflight", dependencies=[Depends(require_manager)])
+@router.get("/v1/ops/preflight", dependencies=[Depends(require_platform_manager)])
 def get_ops_preflight_status(db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Non-sensitive Production Readiness & Ops Preflight Auditor (P0/P1/P2/P3 checklist).

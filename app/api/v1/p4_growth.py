@@ -13,7 +13,7 @@ from app.db.database import get_db
 from app.security.auth import (
     APIPrincipal,
     enforce_tenant_access,
-    get_current_principal,
+    require_tenant_operator,
 )
 from app.services.p4_growth_gtm import (
     check_gtm_copy_safety,
@@ -35,11 +35,13 @@ router = APIRouter(prefix="/v1/p4/growth", tags=["p4-growth-gtm"])
 
 
 def _resolve_scope_org(principal: APIPrincipal, requested_org_id: str | None) -> str | None:
-    if principal.org_id:
-        if requested_org_id and requested_org_id != principal.org_id:
-            enforce_tenant_access(principal, requested_org_id)
-        return principal.org_id
-    return requested_org_id
+    if principal.is_platform_operator:
+        return requested_org_id
+    if not principal.org_id:
+        raise HTTPException(status_code=403, detail="Tenant organization scope is required")
+    if requested_org_id and requested_org_id != principal.org_id:
+        enforce_tenant_access(principal, requested_org_id)
+    return principal.org_id
 
 
 class IcpCreateRequest(BaseModel):
@@ -121,7 +123,7 @@ class CopySafetyRequest(BaseModel):
 @router.get("/overview")
 def p4_growth_overview(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return P4 GTM analytics, ICPs, provenance intel, campaigns, and deals for UI hydration."""
@@ -138,7 +140,7 @@ def p4_growth_overview(
 @router.post("/icps")
 def p4_create_icp(
     body: IcpCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -156,6 +158,8 @@ def p4_create_icp(
             disqualifiers=body.disqualifiers,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -164,7 +168,7 @@ def p4_create_icp(
 @router.get("/icps")
 def p4_list_icps(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -176,19 +180,22 @@ def p4_list_icps(
 def p4_score_icp(
     icp_id: str,
     body: IcpScoreRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    scope_org = _resolve_scope_org(principal, None)
     try:
         return score_prospect_against_icp(
             db,
             icp_id=icp_id,
-            org_id=principal.org_id,
+            org_id=scope_org,
             company_name=body.company_name,
             industry=body.industry,
             geography=body.geography,
             signals=body.signals,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -196,7 +203,7 @@ def p4_score_icp(
 @router.post("/intel")
 def p4_create_intel(
     body: MarketIntelRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -217,6 +224,8 @@ def p4_create_intel(
             inferences=body.inferences,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -226,7 +235,7 @@ def p4_create_intel(
 def p4_list_intel(
     org_id: str | None = Query(default=None),
     intel_type: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -237,7 +246,7 @@ def p4_list_intel(
 @router.post("/campaigns")
 def p4_create_campaign(
     body: CampaignCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -256,6 +265,8 @@ def p4_create_campaign(
             custom_copy_overrides=body.custom_copy_overrides,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -264,7 +275,7 @@ def p4_create_campaign(
 @router.get("/campaigns")
 def p4_list_campaigns(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -276,14 +287,15 @@ def p4_list_campaigns(
 def p4_execute_campaign(
     campaign_id: str,
     body: CampaignExecuteRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    scope_org = _resolve_scope_org(principal, None)
     try:
         return execute_approved_campaign(
             db,
             campaign_id=campaign_id,
-            org_id=principal.org_id,
+            org_id=scope_org,
             execution_mode=body.execution_mode,
             actor=principal.subject,
         )
@@ -296,7 +308,7 @@ def p4_execute_campaign(
 @router.post("/deals")
 def p4_create_deal(
     body: DealCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -316,6 +328,8 @@ def p4_create_deal(
             next_action=body.next_action,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -325,7 +339,7 @@ def p4_create_deal(
 def p4_list_deals(
     org_id: str | None = Query(default=None),
     evidence_status: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -337,19 +351,22 @@ def p4_list_deals(
 def p4_transition_deal(
     deal_id: str,
     body: DealTransitionRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    scope_org = _resolve_scope_org(principal, None)
     try:
         return transition_pipeline_deal(
             db,
             deal_id=deal_id,
-            org_id=principal.org_id,
+            org_id=scope_org,
             target_stage=body.target_stage,
             lost_reason=body.lost_reason,
             note=body.note,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -358,7 +375,7 @@ def p4_transition_deal(
 @router.get("/analytics")
 def p4_funnel_analytics(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -368,6 +385,6 @@ def p4_funnel_analytics(
 @router.post("/copy-safety-check")
 def p4_copy_safety_check(
     body: CopySafetyRequest,
-    _principal: APIPrincipal = Depends(get_current_principal),
+    _principal: APIPrincipal = Depends(require_tenant_operator),
 ) -> dict[str, Any]:
     return check_gtm_copy_safety(body.payload, subject=body.subject)

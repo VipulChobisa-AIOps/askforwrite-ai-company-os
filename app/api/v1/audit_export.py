@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import AuditLog
-from app.security.auth import APIPrincipal, require_manager, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_owner, require_tenant_manager
 
 logger = logging.getLogger(__name__)
 
@@ -192,19 +192,32 @@ def export_audit_logs(
     operation_id="get_audit_summary",
 )
 def get_audit_summary(
+    org_id: str | None = Query(default=None, description="Filter by organization ID"),
     since: datetime | None = Query(default=None, description="Summarize events after this UTC datetime"),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> AuditSummaryResponse:
     """Return aggregate counts of audit events grouped by capability and action.
 
     Useful for governance dashboards and activity monitoring.
-    Accessible to both Manager and Owner roles.
+    Accessible to both platform operators and tenant managers (strictly scoped to own org).
     """
+    effective_org_id = org_id
+    if principal.org_id:
+        if org_id:
+            enforce_tenant_access(principal, org_id)
+        effective_org_id = principal.org_id
+
     q = db.query(AuditLog)
     if since:
         q = q.filter(AuditLog.created_at >= since)
     rows = q.all()
+    if effective_org_id:
+        rows = [
+            r for r in rows
+            if (r.input_payload or {}).get("org_id") == effective_org_id
+            or (r.output_payload or {}).get("org_id") == effective_org_id
+        ]
 
     # Aggregate in Python for DB-dialect portability
     counts: dict[tuple[str, str], int] = {}

@@ -89,6 +89,8 @@ def draft_outreach(
     lead = db.get(LeadRecordRow, lead_id)
     if not lead:
         raise ValueError(f"Lead '{lead_id}' not found")
+    if org_id and lead.org_id and lead.org_id != org_id:
+        raise ValueError("Lead belongs to another organization")
     if lead.do_not_contact or lead.status == "DO_NOT_CONTACT":
         raise ValueError("Cannot draft outreach for do-not-contact leads")
 

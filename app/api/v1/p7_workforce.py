@@ -9,8 +9,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, enforce_tenant_access, get_current_principal, require_owner
+from app.security.auth import (
+    TENANT_MANAGER_ROLES,
+    APIPrincipal,
+    enforce_tenant_access,
+    get_current_principal,
+    require_owner,
+    require_tenant_manager,
+)
 from app.services.p7_autonomy_workforce import (
+    cancel_delegation_plan,
     compute_p7_overview,
     create_delegation_plan,
     execute_delegation_plan,
@@ -28,8 +36,10 @@ router = APIRouter(prefix="/v1/p7/workforce", tags=["P7 Controlled Autonomous Wo
 
 
 def _resolve_scope_org(principal: APIPrincipal, requested_org_id: str | None) -> str | None:
-    if principal.role == "owner" and not principal.org_id:
+    if principal.is_platform_operator:
         return requested_org_id
+    if not principal.org_id:
+        raise HTTPException(status_code=403, detail="Organization context is required")
     if requested_org_id:
         enforce_tenant_access(principal, requested_org_id)
         return requested_org_id
@@ -42,11 +52,27 @@ class DagPlanCreateRequest(BaseModel):
     objective: str = Field(default="", max_length=1000)
     nodes: list[dict[str, Any]] = Field(..., min_length=1)
     max_depth: int = Field(default=4, ge=1, le=12)
-    credit_budget: int = Field(default=20, ge=1, le=10000)
+    credit_budget: int = Field(default=20, ge=0, le=10000)
+    execution_budget_limit: int = Field(default=100, ge=1, le=100000)
+    timeout_seconds: int = Field(default=30, ge=1, le=300)
+    approval_id: str | None = None
 
 
 class DagPlanExecuteRequest(BaseModel):
     execution_mode: str = Field(default="SIMULATION", max_length=24)
+    approval_id: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1, le=300)
+    resume: bool = False
+
+
+class DagPlanCancelRequest(BaseModel):
+    reason: str = Field(default="Cancelled by operator", max_length=240)
+
+
+class DagPlanRecoverRequest(BaseModel):
+    execution_mode: str = Field(default="SIMULATION", max_length=24)
+    approval_id: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1, le=300)
 
 
 class MemoryWriteRequest(BaseModel):
@@ -71,7 +97,9 @@ class AutonomyPolicyUpsertRequest(BaseModel):
     autonomy_level: str = Field(..., min_length=3, max_length=48)
     requires_hitl_for_external: bool = True
     max_daily_budget_credits: int = Field(default=100, gt=0)
+    max_daily_execution_units: int = Field(default=500, gt=0)
     min_eval_threshold: float = Field(default=0.75, ge=0.5, le=1.0)
+    approval_id: str | None = None
 
 
 class AutonomyResumeRequest(BaseModel):
@@ -103,7 +131,7 @@ def p7_workforce_overview(
 @router.post("/dag-plans")
 def p7_create_dag_plan(
     body: DagPlanCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -116,17 +144,23 @@ def p7_create_dag_plan(
             nodes=body.nodes,
             max_depth=body.max_depth,
             credit_budget=body.credit_budget,
+            execution_budget_limit=body.execution_budget_limit,
+            timeout_seconds=body.timeout_seconds,
+            approval_id=body.approval_id,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @router.post("/dag-plans/{plan_id}/execute")
 def p7_execute_dag_plan(
     plan_id: str,
     body: DagPlanExecuteRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, None)
@@ -137,12 +171,70 @@ def p7_execute_dag_plan(
             org_id=scope_org,
             principal=principal,
             execution_mode=body.execution_mode,
+            approval_id=body.approval_id,
+            timeout_seconds=body.timeout_seconds,
+            resume=body.resume,
         )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/dag-plans/{plan_id}/cancel")
+def p7_cancel_dag_plan(
+    plan_id: str,
+    body: DagPlanCancelRequest,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    scope_org = _resolve_scope_org(principal, None)
+    try:
+        return cancel_delegation_plan(
+            db,
+            plan_id=plan_id,
+            org_id=scope_org,
+            reason=body.reason,
+            actor=principal.subject,
+        )
+    except ValueError as exc:
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.post("/dag-plans/{plan_id}/recover")
+def p7_recover_dag_plan(
+    plan_id: str,
+    body: DagPlanRecoverRequest,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    scope_org = _resolve_scope_org(principal, None)
+    try:
+        return execute_delegation_plan(
+            db,
+            plan_id=plan_id,
+            org_id=scope_org,
+            principal=principal,
+            execution_mode=body.execution_mode,
+            approval_id=body.approval_id,
+            timeout_seconds=body.timeout_seconds,
+            resume=True,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/memories")
@@ -166,6 +258,8 @@ def p7_write_memory(
             ttl_seconds=body.ttl_seconds,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -195,6 +289,12 @@ def p7_purge_memories(
     scope_org = _resolve_scope_org(principal, body.org_id)
     if not scope_org:
         raise HTTPException(status_code=422, detail="org_id is required for DPDP memory purge")
+    if not body.memory_id and not body.namespace:
+        if not principal.is_platform_operator and principal.role not in TENANT_MANAGER_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail="Organization-wide memory purge requires tenant manager or administrator privileges",
+            )
     return purge_tenant_memory(
         db,
         org_id=scope_org,
@@ -209,7 +309,7 @@ def p7_purge_memories(
 def p7_upsert_autonomy_policy(
     agent_id: str,
     body: AutonomyPolicyUpsertRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -221,11 +321,16 @@ def p7_upsert_autonomy_policy(
             autonomy_level=body.autonomy_level,
             requires_hitl_for_external=body.requires_hitl_for_external,
             max_daily_budget_credits=body.max_daily_budget_credits,
+            max_daily_execution_units=body.max_daily_execution_units,
             min_eval_threshold=body.min_eval_threshold,
+            approval_id=body.approval_id,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @router.get("/autonomy-policies")
@@ -256,7 +361,7 @@ def p7_resume_autonomy_policy(
 @router.post("/evals")
 def p7_run_eval(
     body: AgentEvalCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -273,8 +378,11 @@ def p7_run_eval(
             notes=body.notes,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @router.get("/evals")

@@ -299,10 +299,11 @@ class MasterAuditHardeningTests(unittest.TestCase):
                 "password": "SecurePassword123!",
                 "full_name": "Rohan Sharma",
                 "company_name": "WareIQ Supply Chain",
-                "role": "admin",
+                "role": "customer",
             },
         )
         self.assertEqual(reg_resp.status_code, 201)
+        self.assertEqual(reg_resp.json()["role"], "customer")
         org_id = reg_resp.json()["org_id"]
 
         # Initially on 'free' tier

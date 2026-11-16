@@ -9,7 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, enforce_tenant_access, get_current_principal, require_owner
+from app.security.auth import (
+    APIPrincipal,
+    enforce_tenant_access,
+    require_owner,
+    require_platform_manager,
+    require_tenant_operator,
+)
 from app.services.p8_marketplace import (
     compute_master_roadmap_scorecard,
     compute_p8_overview,
@@ -24,6 +30,7 @@ from app.services.p8_marketplace import (
     record_marketplace_revenue_share,
     register_developer_profile,
     review_marketplace_listing,
+    revoke_marketplace_install,
     submit_marketplace_review,
     verify_developer_kyb,
     verify_listing_signature,
@@ -34,11 +41,13 @@ ops_scorecard_router = APIRouter(prefix="/v1/ops", tags=["Roadmap Scorecard"])
 
 
 def _resolve_scope_org(principal: APIPrincipal, requested_org_id: str | None) -> str | None:
-    if principal.role == "owner" and not principal.org_id:
+    if principal.is_platform_operator:
         return requested_org_id
     if requested_org_id:
         enforce_tenant_access(principal, requested_org_id)
         return requested_org_id
+    if not principal.org_id:
+        raise HTTPException(status_code=403, detail="Tenant organization scope is required")
     return principal.org_id
 
 
@@ -106,30 +115,41 @@ class RevenueShareCreateRequest(BaseModel):
 @router.get("/overview")
 def p8_marketplace_overview(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
-    return compute_p8_overview(db, org_id=scope_org)
+    return compute_p8_overview(
+        db,
+        org_id=scope_org,
+        viewer_org_id=principal.org_id,
+        is_platform_operator=principal.is_platform_operator,
+    )
 
 
 @router.post("/developers")
 def p8_register_developer(
     body: DeveloperRegisterRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
-    return register_developer_profile(
-        db,
-        org_id=scope_org,
-        developer_name=body.developer_name,
-        contact_email=body.contact_email,
-        legal_entity_name=body.legal_entity_name,
-        tax_or_gst_id=body.tax_or_gst_id,
-        payout_account=body.payout_account,
-        actor=principal.subject,
-    )
+    try:
+        return register_developer_profile(
+            db,
+            org_id=scope_org,
+            developer_name=body.developer_name,
+            contact_email=body.contact_email,
+            legal_entity_name=body.legal_entity_name,
+            tax_or_gst_id=body.tax_or_gst_id,
+            payout_account=body.payout_account,
+            actor=principal.subject,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = 404 if "not found" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @router.get("/developers")
@@ -138,7 +158,12 @@ def p8_list_developers(
     principal: APIPrincipal = Depends(require_owner),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_developers(db, kyb_status=kyb_status)
+    rows = list_developers(
+        db,
+        kyb_status=kyb_status,
+        viewer_org_id=principal.org_id,
+        is_platform_operator=principal.is_platform_operator,
+    )
     return {"count": len(rows), "developers": rows}
 
 
@@ -165,7 +190,7 @@ def p8_verify_kyb(
 @router.post("/listings")
 def p8_create_listing(
     body: ListingCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
@@ -181,6 +206,8 @@ def p8_create_listing(
             endpoint_url=body.endpoint_url,
             price_inr_monthly=body.price_inr_monthly,
             commission_bps=body.commission_bps,
+            actor_org_id=principal.org_id,
+            is_platform_operator=principal.is_platform_operator,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -192,21 +219,33 @@ def p8_create_listing(
 @router.get("/listings")
 def p8_list_listings(
     published_only: bool = Query(default=False),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_marketplace_listings(db, published_only=published_only)
+    rows = list_marketplace_listings(
+        db,
+        published_only=published_only,
+        viewer_org_id=principal.org_id,
+        is_platform_operator=principal.is_platform_operator,
+    )
     return {"count": len(rows), "listings": rows}
 
 
 @router.get("/listings/{listing_id}/verify-signature")
 def p8_verify_listing_signature(
     listing_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     try:
-        return verify_listing_signature(db, listing_id=listing_id)
+        return verify_listing_signature(
+            db,
+            listing_id=listing_id,
+            viewer_org_id=principal.org_id,
+            is_platform_operator=principal.is_platform_operator,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -237,7 +276,7 @@ def p8_review_listing(
 @router.post("/installs")
 def p8_install_listing(
     body: InstallCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -256,6 +295,28 @@ def p8_install_listing(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
+        msg = str(exc).lower()
+        code = 409 if "already actively installed" in msg else (404 if "not found" in msg else 422)
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.post("/installs/{install_id}/revoke")
+def p8_revoke_install(
+    install_id: str,
+    principal: APIPrincipal = Depends(require_tenant_operator),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    try:
+        return revoke_marketplace_install(
+            db,
+            install_id=install_id,
+            org_id=principal.org_id,
+            is_platform_operator=principal.is_platform_operator,
+            actor=principal.subject,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
 
@@ -263,7 +324,7 @@ def p8_install_listing(
 @router.get("/installs")
 def p8_list_installs(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -274,7 +335,7 @@ def p8_list_installs(
 @router.post("/reviews")
 def p8_submit_review(
     body: MarketplaceReviewCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -292,16 +353,23 @@ def p8_submit_review(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        msg = str(exc).lower()
+        code = 409 if ("already exists" in msg or "already submitted" in msg) else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @router.get("/reviews")
 def p8_list_reviews(
     listing_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    rows = list_marketplace_reviews(db, listing_id=listing_id)
+    rows = list_marketplace_reviews(
+        db,
+        listing_id=listing_id,
+        viewer_org_id=principal.org_id,
+        is_platform_operator=principal.is_platform_operator,
+    )
     return {"count": len(rows), "reviews": rows}
 
 
@@ -341,6 +409,8 @@ def p8_record_revenue_share(
             evidence_status=body.evidence_status,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -349,7 +419,7 @@ def p8_record_revenue_share(
 @router.get("/revenue-share")
 def p8_list_revenue_share(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -358,7 +428,7 @@ def p8_list_revenue_share(
 
 @ops_scorecard_router.get("/roadmap-scorecard")
 def get_master_roadmap_scorecard(
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_platform_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return authoritative P0-P8 roadmap scorecard preserving P3.1 production cutover blockers."""

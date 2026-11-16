@@ -688,11 +688,14 @@ def authorize_and_share_growth_opportunity(
     approval_id: str | None = None,
     referred_company: str | None = None,
     actor: str = "owner",
+    org_id_scope: str | None = None,
 ) -> dict[str, Any]:
     """Enforce Owner HITL approval and zero unauthorized discounts before sharing an expansion or referral."""
     opp = db.get(P3GrowthOpportunityRecord, opportunity_id)
     if not opp:
         raise ValueError(f"Growth opportunity '{opportunity_id}' not found")
+    if org_id_scope is not None and opp.org_id != org_id_scope:
+        raise PermissionError("Access denied: growth opportunity belongs to a different organization")
 
     if not approval_id:
         task_id = str(uuid.uuid4())
@@ -733,6 +736,9 @@ def authorize_and_share_growth_opportunity(
     appr = db.get(ApprovalRequest, approval_id)
     if not appr or appr.status != "APPROVED":
         raise ValueError("Growth opportunity cannot be shared until Owner HITL approval is APPROVED.")
+    detail_org = (appr.detail or {}).get("org_id") if isinstance(appr.detail, dict) else None
+    if detail_org is not None and detail_org != opp.org_id:
+        raise PermissionError("Access denied: approval request belongs to a different organization")
 
     now = datetime.now(UTC)
     opp.status = "SHARED"
@@ -825,6 +831,24 @@ def record_unit_economics_cost(
 ) -> dict[str, Any]:
     """Record ACTUAL, ALLOCATED, or ESTIMATED customer cost while enforcing spend budgets."""
     ensure_customer_account(db, org_id=org_id, commit=False)
+    if delivery_id:
+        delivery = db.get(P3ServiceDeliveryRecord, delivery_id)
+        if not delivery:
+            raise ValueError(f"Delivery '{delivery_id}' not found")
+        if delivery.org_id != org_id:
+            raise PermissionError("Access denied: delivery_id belongs to a different organization")
+    if workflow_run_id:
+        wf_run = db.get(WorkflowRunRecord, workflow_run_id)
+        if not wf_run:
+            raise ValueError(f"Workflow run '{workflow_run_id}' not found")
+        if wf_run.org_id != org_id:
+            raise PermissionError("Access denied: workflow_run_id belongs to a different organization")
+    if execution_id:
+        ev = db.get(ExecutionEvidenceRecord, execution_id)
+        if not ev:
+            raise ValueError(f"Execution '{execution_id}' not found")
+        if ev.tenant_id != org_id:
+            raise PermissionError("Access denied: execution_id belongs to a different organization")
     clean_cat = cost_category.strip().upper()
     if clean_cat not in COST_CATEGORIES:
         raise ValueError(f"cost_category must be one of {COST_CATEGORIES}")

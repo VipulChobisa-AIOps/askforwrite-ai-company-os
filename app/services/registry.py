@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextvars
+import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -9,10 +12,14 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+from app.agents.llm_client import get_last_llm_usage, reset_last_llm_usage
 from app.db.models import (
     ApprovalRequest,
+    ExecutionEvidenceRecord,
     OrganizationRecord,
+    P7AutonomyPolicyRecord,
     TaskRecord,
     TenantAgentConfigRecord,
 )
@@ -1271,6 +1278,21 @@ def configure_agent_for_tenant(
     return serialize_agent(ag, cfg, entitled=True)
 
 
+def _resolve_dispatch_org_id(
+    tenant_id: str,
+    input_payload: dict[str, Any],
+    *,
+    allow_none: bool = False,
+) -> str | None:
+    """Resolve authoritative org scope without permitting non-platform tenants to spoof input_payload['org_id']."""
+    if tenant_id != "__platform__":
+        return tenant_id or (None if allow_none else "")
+    raw = str(input_payload.get("org_id") or "").strip()
+    if not raw or raw == "__platform__":
+        return None if allow_none else ""
+    return raw
+
+
 def _dispatch_domain_agent(
     db: Session,
     *,
@@ -1660,11 +1682,20 @@ def _dispatch_domain_agent(
         return {"output": res, "uses_external_provider": False, "fallback_used": False}
 
     if agent_id == "customer_success_agent":
+        from app.db.models import P2CustomerEngagementRecord
         from app.services.p2_customer_ops import execute_pilot_delivery
 
+        eng_id = str(input_payload.get("engagement_id", ""))
+        if tenant_id != "__platform__" and eng_id:
+            eng = db.get(P2CustomerEngagementRecord, eng_id)
+            if eng is not None and eng.org_id != tenant_id:
+                raise ExecutionBlockedError(
+                    "Access denied: customer engagement belongs to another organization",
+                    code="TENANT_ACCESS_DENIED",
+                )
         res = execute_pilot_delivery(
             db,
-            engagement_id=str(input_payload.get("engagement_id", "")),
+            engagement_id=eng_id,
             execution_mode=exec_mode,
             actor=actor,
         )
@@ -1673,7 +1704,7 @@ def _dispatch_domain_agent(
     if agent_id == "cs_onboarding_specialist_agent":
         from app.services.p3_customer_success import create_or_get_onboarding_workflow, get_customer_360_profile
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
         wf = create_or_get_onboarding_workflow(
             db,
             org_id=org_id,
@@ -1691,7 +1722,7 @@ def _dispatch_domain_agent(
     if agent_id == "cs_manager_agent":
         from app.services.p3_delivery_health import compute_customer_health, generate_internal_health_alerts
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
         health = compute_customer_health(db, org_id=org_id, save_snapshot=True)
         alerts = generate_internal_health_alerts(db, org_id=org_id)
         return {
@@ -1704,7 +1735,7 @@ def _dispatch_domain_agent(
     if agent_id == "service_delivery_coordinator_agent":
         from app.services.p3_delivery_health import create_service_delivery, list_service_deliveries
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
         title = str(input_payload.get("title") or "").strip()
         if title:
             created = create_service_delivery(
@@ -1738,12 +1769,17 @@ def _dispatch_domain_agent(
 
         deliv_id = str(input_payload.get("delivery_id") or "").strip()
         if not deliv_id:
-            org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+            org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
             candidate = db.query(P3ServiceDeliveryRecord).filter_by(org_id=org_id).order_by(P3ServiceDeliveryRecord.created_at.desc()).first()
             if not candidate:
                 return {"output": {"qa_status": "NO_DELIVERABLE_FOUND", "checks": {}}, "uses_external_provider": False, "fallback_used": False}
             deliv_id = candidate.id
         target = db.get(P3ServiceDeliveryRecord, deliv_id)
+        if tenant_id != "__platform__" and target is not None and target.org_id != tenant_id:
+            raise ExecutionBlockedError(
+                "Access denied: service delivery belongs to another organization",
+                code="TENANT_ACCESS_DENIED",
+            )
         has_artifacts = bool(target and target.output_artifacts_json)
         has_evidence = bool(target and target.source_evidence_json)
         checks = {
@@ -1767,15 +1803,23 @@ def _dispatch_domain_agent(
         }
 
     if agent_id == "cs_support_specialist_agent":
+        from app.db.models import P3SupportTicketRecord
         from app.services.p3_support_improvements import list_support_tickets, run_ai_support_assistant
 
         ticket_id = str(input_payload.get("ticket_id") or "").strip()
         if not ticket_id:
-            org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+            org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
             open_tickets = list_support_tickets(db, org_id=org_id, include_internal=False)
             if not open_tickets:
                 return {"output": {"status": "NO_OPEN_TICKETS", "requires_hitl_approval": False}, "uses_external_provider": False, "fallback_used": False}
             ticket_id = open_tickets[0]["ticket_id"]
+        elif tenant_id != "__platform__":
+            t_rec = db.get(P3SupportTicketRecord, ticket_id)
+            if t_rec is not None and t_rec.org_id != tenant_id:
+                raise ExecutionBlockedError(
+                    "Access denied: support ticket belongs to another organization",
+                    code="TENANT_ACCESS_DENIED",
+                )
         res = run_ai_support_assistant(db, ticket_id=ticket_id, actor=actor)
         return {
             "output": res,
@@ -1787,7 +1831,7 @@ def _dispatch_domain_agent(
     if agent_id == "renewal_management_agent":
         from app.services.p3_revenue_growth import enforce_grace_period_expirations, get_subscription_reliability_summary
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip() or None
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         days = int(input_payload.get("days_ahead", 30))
         suspensions = enforce_grace_period_expirations(db, org_id=org_id)
         summary = get_subscription_reliability_summary(db, org_id=org_id, days_ahead=days)
@@ -1801,7 +1845,7 @@ def _dispatch_domain_agent(
     if agent_id == "expansion_opportunity_agent":
         from app.services.p3_revenue_growth import evaluate_expansion_opportunities
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip()
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload) or ""
         opps = evaluate_expansion_opportunities(db, org_id=org_id)
         return {
             "output": {"org_id": org_id, "opportunities": opps},
@@ -1814,7 +1858,7 @@ def _dispatch_domain_agent(
         from app.services.p3_revenue_growth import compute_customer_unit_economics
         from app.services.p3_support_improvements import synthesize_improvement_loop
 
-        org_id = str(input_payload.get("org_id") or tenant_id or "").strip() or None
+        org_id = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         items = synthesize_improvement_loop(db, org_id=org_id)
         ue = compute_customer_unit_economics(db, org_id=org_id) if org_id and org_id != "__platform__" else {}
         return {
@@ -1827,8 +1871,7 @@ def _dispatch_domain_agent(
     if agent_id == "gtm_strategist_agent":
         from app.services.p4_growth_gtm import compute_gtm_funnel_analytics
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         analytics = compute_gtm_funnel_analytics(db, org_id=org_filter)
         return {
             "output": analytics,
@@ -1840,8 +1883,7 @@ def _dispatch_domain_agent(
     if agent_id == "competitive_intel_agent":
         from app.services.p4_growth_gtm import list_market_intel
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         intel = list_market_intel(db, org_id=org_filter, intel_type=input_payload.get("intel_type"))
         return {
             "output": {"count": len(intel), "intel": intel},
@@ -1853,8 +1895,7 @@ def _dispatch_domain_agent(
     if agent_id == "tenant_provisioning_agent":
         from app.services.p5_productization import compute_p5_scale_summary, list_p5_templates
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         summary = compute_p5_scale_summary(db, org_id=org_filter)
         templates = list_p5_templates(db, active_only=True)
         return {
@@ -1867,8 +1908,7 @@ def _dispatch_domain_agent(
     if agent_id == "sla_operations_agent":
         from app.services.p5_productization import list_operational_incidents, list_quota_events
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         incidents = list_operational_incidents(db, org_id=org_filter)
         events = list_quota_events(db, org_id=org_filter, limit=25)
         return {
@@ -1881,8 +1921,7 @@ def _dispatch_domain_agent(
     if agent_id == "industry_pack_architect_agent":
         from app.services.p6_industry_packs import compute_p6_overview
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         overview = compute_p6_overview(db, org_id=org_filter)
         return {
             "output": overview,
@@ -1894,8 +1933,7 @@ def _dispatch_domain_agent(
     if agent_id == "autonomy_orchestrator_agent":
         from app.services.p7_autonomy_workforce import compute_p7_overview
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         ov = compute_p7_overview(db, org_id=org_filter)
         return {
             "output": {"summary": ov["summary"], "dag_count": len(ov["dag_plans"])},
@@ -1907,8 +1945,7 @@ def _dispatch_domain_agent(
     if agent_id == "eval_governance_agent":
         from app.services.p7_autonomy_workforce import list_agent_evaluations, list_autonomy_policies
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
         evals = list_agent_evaluations(db, org_id=org_filter)
         policies = list_autonomy_policies(db, org_id=org_filter)
         return {
@@ -1920,9 +1957,13 @@ def _dispatch_domain_agent(
     if agent_id == "marketplace_curator_agent":
         from app.services.p8_marketplace import compute_p8_overview
 
-        org_scope = str(input_payload.get("org_id") or tenant_id or "").strip()
-        org_filter = None if org_scope == "__platform__" else (org_scope or None)
-        overview = compute_p8_overview(db, org_id=org_filter)
+        org_filter = _resolve_dispatch_org_id(tenant_id, input_payload, allow_none=True)
+        overview = compute_p8_overview(
+            db,
+            org_id=org_filter,
+            viewer_org_id=org_filter,
+            is_platform_operator=(tenant_id == "__platform__"),
+        )
         return {
             "output": overview,
             "uses_external_provider": False,
@@ -1951,6 +1992,66 @@ def _dispatch_domain_agent(
     }
 
 
+_BUDGET_GUARD_LOCK = threading.RLock()
+_BUDGET_TENANT_LOCKS: dict[str, threading.RLock] = {}
+
+
+def _get_tenant_budget_lock(tenant_key: str) -> threading.RLock:
+    with _BUDGET_GUARD_LOCK:
+        lock = _BUDGET_TENANT_LOCKS.get(tenant_key)
+        if lock is None:
+            lock = threading.RLock()
+            _BUDGET_TENANT_LOCKS[tenant_key] = lock
+        return lock
+
+
+def _enforce_policy_daily_caps_locked(
+    db: Session,
+    *,
+    org_id: str | None,
+    agent_id: str,
+    next_credits: int,
+    next_exec_units: int,
+) -> None:
+    policies: list[P7AutonomyPolicyRecord] = []
+    if org_id:
+        tp = db.query(P7AutonomyPolicyRecord).filter_by(org_id=org_id, agent_id=agent_id).first()
+        if tp is not None:
+            policies.append(tp)
+    pp = db.query(P7AutonomyPolicyRecord).filter_by(org_id=None, agent_id=agent_id).first()
+    if pp is not None:
+        policies.append(pp)
+    if not policies:
+        return
+
+    tenant_key = org_id or "__platform__"
+    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = (
+        db.query(ExecutionEvidenceRecord)
+        .filter(
+            ExecutionEvidenceRecord.tenant_id == tenant_key,
+            ExecutionEvidenceRecord.agent_id == agent_id,
+            ExecutionEvidenceRecord.started_at >= day_start,
+            ExecutionEvidenceRecord.status.in_(("COMPLETED", "RUNNING")),
+        )
+        .all()
+    )
+    used_credits_today = sum(int(r.credits_consumed or 0) for r in rows)
+    used_units_today = sum(max(1, int(getattr(r, "execution_budget_units", 0) or 1)) for r in rows)
+    for pol in policies:
+        if used_credits_today + next_credits > int(pol.max_daily_budget_credits):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Daily credit cap ({pol.max_daily_budget_credits}) exhausted for agent '{agent_id}'",
+            )
+        max_units = int(getattr(pol, "max_daily_execution_units", 500) or 500)
+        if used_units_today + next_exec_units > max_units:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Daily execution unit cap ({max_units}) exhausted for agent '{agent_id}'",
+            )
+
+
 def execute_registered_agent(
     db: Session,
     *,
@@ -1962,6 +2063,8 @@ def execute_registered_agent(
     idempotency_key: str | None = None,
     workflow_id: str | None = None,
     charge_on_failure: bool = False,
+    timeout_seconds: float | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     """Execute any registered agent with entitlement, emergency-stop, allowlist, credit, and 18-field evidence guarantees."""
     ag = AGENT_REGISTRY.get(agent_id)
@@ -1974,6 +2077,15 @@ def execute_registered_agent(
     mode = resolve_execution_mode(execution_mode)
     idem_key = idempotency_key or f"agent:{tenant_id}:{agent_id}:{exec_id}"
     payload = redact_secrets(input_payload or {})
+
+    # 0. Reject spoofed cross-tenant org_id in input_payload
+    if input_payload and input_payload.get("org_id") is not None:
+        req_org = str(input_payload.get("org_id")).strip()
+        if req_org and not principal.is_platform_operator and req_org != principal.org_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cross-tenant input_payload org_id override is forbidden",
+            )
 
     # 1. Entitlement & organization check
     check_tenant_entitlement(principal, ag.entitlement_key, db)
@@ -2030,56 +2142,192 @@ def execute_registered_agent(
         db.commit()
         raise HTTPException(status_code=403, detail={"code": exc.code, "message": exc.reason, "evidence": ev}) from exc
 
-    # 4. Reserve credits atomically (only for tenant organizations)
-    cost = ag.credit_cost
-    if principal.org_id and cost > 0:
-        try:
-            reserve_execution_credits(
-                db,
-                org_id=principal.org_id,
-                cost=cost,
-                idempotency_key=idem_key,
-                execution_id=exec_id,
-                actor=principal.subject,
-                reason=f"Agent run: {agent_id}",
-            )
-        except InsufficientCreditsError as exc:
-            ev = record_execution_evidence(
-                db,
-                execution_id=exec_id,
-                tenant_id=tenant_id,
-                workflow_id=workflow_id,
-                agent_id=agent_id,
-                connector_id=ag.default_connector_id,
-                execution_mode=mode,
-                input_payload=payload,
-                status="BLOCKED",
-                failure_reason=str(exc),
-                credits_consumed=0,
-                started_at=started_at,
-                version=ag.version,
-            )
-            db.commit()
-            raise HTTPException(status_code=402, detail={"message": str(exc), "evidence": ev}) from exc
-    else:
-        cost = 0
+    # 4. Atomically reserve credits & daily execution quota slot (serializes concurrent tenant bursts)
+    cost = int(ag.credit_cost or 0) if (principal.org_id and int(ag.credit_cost or 0) > 0) else 0
+    execution_budget_units = 1
+    tenant_lock = _get_tenant_budget_lock(tenant_id)
+    with tenant_lock:
+        if cancel_event is not None and cancel_event.is_set():
+            raise PermissionError(f"Agent '{agent_id}' cancelled prior to reservation")
 
-    # 5. Execute agent logic safely; refund credits on failure or block!
+        _enforce_policy_daily_caps_locked(
+            db,
+            org_id=principal.org_id,
+            agent_id=agent_id,
+            next_credits=cost,
+            next_exec_units=execution_budget_units,
+        )
+
+        if principal.org_id and cost > 0:
+            try:
+                reserve_execution_credits(
+                    db,
+                    org_id=principal.org_id,
+                    cost=cost,
+                    idempotency_key=idem_key,
+                    execution_id=exec_id,
+                    actor=principal.subject,
+                    reason=f"Agent run: {agent_id}",
+                )
+            except InsufficientCreditsError as exc:
+                ev = record_execution_evidence(
+                    db,
+                    execution_id=exec_id,
+                    tenant_id=tenant_id,
+                    workflow_id=workflow_id,
+                    agent_id=agent_id,
+                    connector_id=ag.default_connector_id,
+                    execution_mode=mode,
+                    input_payload=payload,
+                    status="BLOCKED",
+                    failure_reason=str(exc),
+                    credits_consumed=0,
+                    execution_budget_units=0,
+                    started_at=started_at,
+                    version=ag.version,
+                )
+                db.commit()
+                raise HTTPException(status_code=402, detail={"message": str(exc), "evidence": ev}) from exc
+
+        record_execution_evidence(
+            db,
+            execution_id=exec_id,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            agent_id=agent_id,
+            connector_id=ag.default_connector_id,
+            execution_mode=mode,
+            input_payload=payload,
+            status="RUNNING",
+            credits_consumed=cost,
+            execution_budget_units=execution_budget_units,
+            started_at=started_at,
+            version=ag.version,
+        )
+        db.commit()
+
+    # 5. Execute agent logic safely with optional wall-clock timeout & cancellation; refund on failure/timeout!
+    reset_last_llm_usage()
     try:
         if input_payload and input_payload.get("__force_failure__"):
             raise RuntimeError("Simulated execution failure injected by caller/test")
-        dispatch = _dispatch_domain_agent(
-            db,
-            agent=ag,
-            tenant_id=tenant_id,
-            actor=principal.subject,
-            exec_mode=mode,
-            input_payload=input_payload or {},
-        )
+
+        if timeout_seconds is None:
+            dispatch = _dispatch_domain_agent(
+                db,
+                agent=ag,
+                tenant_id=tenant_id,
+                actor=principal.subject,
+                exec_mode=mode,
+                input_payload=input_payload or {},
+            )
+            llm_usage = get_last_llm_usage() or {}
+        else:
+            local_cancel = threading.Event()
+            done_event = threading.Event()
+            outcome: dict[str, Any] = {}
+            bind = db.get_bind()
+            is_static_pool = bool(bind is not None and isinstance(getattr(bind, "pool", None), StaticPool))
+            ctx = contextvars.copy_context()
+
+            def _run_worker() -> None:
+                worker_db = db if is_static_pool else Session(bind=bind, expire_on_commit=False)
+                try:
+                    reset_last_llm_usage()
+                    res = _dispatch_domain_agent(
+                        worker_db,
+                        agent=ag,
+                        tenant_id=tenant_id,
+                        actor=principal.subject,
+                        exec_mode=mode,
+                        input_payload=input_payload or {},
+                    )
+                    aborted = local_cancel.is_set() or (cancel_event is not None and cancel_event.is_set())
+                    if not aborted and not is_static_pool:
+                        worker_db.commit()
+                    elif aborted and not is_static_pool:
+                        worker_db.rollback()
+                    outcome["dispatch"] = res
+                    outcome["llm_usage"] = get_last_llm_usage() or {}
+                except Exception as worker_exc:
+                    if not is_static_pool:
+                        try:
+                            worker_db.rollback()
+                        except Exception:
+                            pass
+                    outcome["error"] = worker_exc
+                    outcome["llm_usage"] = get_last_llm_usage() or {}
+                finally:
+                    if not is_static_pool:
+                        worker_db.close()
+                    done_event.set()
+
+            worker = threading.Thread(
+                target=lambda: ctx.run(_run_worker),
+                name=f"afw-p7-{exec_id[:12]}",
+                daemon=True,
+            )
+            worker.start()
+            if cancel_event is None:
+                finished = done_event.wait(timeout=max(0.01, float(timeout_seconds)))
+            else:
+                wait_deadline = time.monotonic() + max(0.01, float(timeout_seconds))
+                finished = False
+                while not finished:
+                    if cancel_event.is_set():
+                        local_cancel.set()
+                        raise PermissionError(f"Agent '{agent_id}' execution cancelled before completion")
+                    rem = wait_deadline - time.monotonic()
+                    if rem <= 0:
+                        break
+                    finished = done_event.wait(timeout=min(0.05, rem))
+            if not finished:
+                local_cancel.set()
+                raise TimeoutError(
+                    f"Agent '{agent_id}' execution timed out after {timeout_seconds:.2f}s"
+                )
+            if "error" in outcome:
+                raise outcome["error"]
+            dispatch = outcome["dispatch"]
+            llm_usage = dict(outcome.get("llm_usage") or {})
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise PermissionError(f"Agent '{agent_id}' execution cancelled before commit")
+
+        if llm_usage:
+            provider_cost_inr = float(llm_usage.get("provider_cost_inr") or 0.0)
+            est_provider_cost = float(
+                llm_usage.get("estimated_provider_cost_inr")
+                if llm_usage.get("estimated_provider_cost_inr") is not None
+                else provider_cost_inr
+            )
+            actual_provider_cost = llm_usage.get("actual_provider_cost_inr")
+            provider_cost_source = str(llm_usage.get("provider_cost_source") or "TOKEN_USAGE_ESTIMATE")
+        else:
+            provider_cost_inr = 0.0
+            est_provider_cost = 0.0
+            actual_provider_cost = 0.0
+            provider_cost_source = (
+                "DETERMINISTIC_FALLBACK_ZERO" if bool(dispatch.get("fallback_used", False)) else "LOCAL_NO_LLM_CALL"
+            )
+        provider_tokens_total = int(llm_usage.get("provider_tokens_total") or 0)
+        provider_model = llm_usage.get("provider_model")
+
         if principal.org_id and cost > 0:
             commit_credit_reservation(db, idempotency_key=idem_key)
 
         completed_at = datetime.now(UTC)
+        cost_accounting = {
+            "estimated_credits": int(ag.credit_cost or 0),
+            "actual_credits_consumed": cost,
+            "estimated_execution_budget_units": execution_budget_units,
+            "actual_execution_budget_units": execution_budget_units,
+            "estimated_provider_cost_inr": round(est_provider_cost, 6),
+            "actual_provider_cost_inr": (
+                round(float(actual_provider_cost), 6) if actual_provider_cost is not None else None
+            ),
+            "provider_cost_source": provider_cost_source,
+        }
         ev = record_execution_evidence(
             db,
             execution_id=exec_id,
@@ -2095,10 +2343,15 @@ def execute_registered_agent(
             approval_id=dispatch.get("approval_id"),
             status="COMPLETED",
             credits_consumed=cost,
+            execution_budget_units=execution_budget_units,
+            provider_cost_inr=provider_cost_inr,
+            provider_tokens_total=provider_tokens_total,
+            provider_model=provider_model,
             started_at=started_at,
             completed_at=completed_at,
             version=ag.version,
             uses_external_provider=bool(dispatch.get("uses_external_provider", False)),
+            metadata={"cost_accounting": cost_accounting},
         )
         db.commit()
         return {
@@ -2108,9 +2361,40 @@ def execute_registered_agent(
             "execution_mode": mode,
             "output_origin": ev["output_origin"],
             "credits_consumed": cost,
+            "execution_budget_units": execution_budget_units,
+            "provider_cost_inr": provider_cost_inr,
+            "estimated_provider_cost_inr": cost_accounting["estimated_provider_cost_inr"],
+            "actual_provider_cost_inr": cost_accounting["actual_provider_cost_inr"],
+            "provider_cost_source": provider_cost_source,
+            "provider_tokens_total": provider_tokens_total,
+            "provider_model": provider_model,
             "result": dispatch.get("output", {}),
             "evidence": ev,
         }
+    except TimeoutError as exc:
+        if principal.org_id and cost > 0 and not charge_on_failure:
+            refund_credit_reservation(
+                db, org_id=principal.org_id, cost=cost, idempotency_key=idem_key, execution_id=exec_id, actor=principal.subject, reason=str(exc)
+            )
+            cost = 0
+        record_execution_evidence(
+            db,
+            execution_id=exec_id,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            agent_id=agent_id,
+            connector_id=ag.default_connector_id,
+            execution_mode=mode,
+            input_payload=payload,
+            status="TIMED_OUT",
+            failure_reason=str(exc),
+            credits_consumed=cost,
+            execution_budget_units=0,
+            started_at=started_at,
+            version=ag.version,
+        )
+        db.commit()
+        raise
     except ExecutionBlockedError as exc:
         if principal.org_id and cost > 0 and not charge_on_failure:
             refund_credit_reservation(
@@ -2129,12 +2413,38 @@ def execute_registered_agent(
             status="BLOCKED",
             failure_reason=exc.reason,
             credits_consumed=cost,
+            execution_budget_units=0,
             started_at=started_at,
             version=ag.version,
         )
         db.commit()
         raise HTTPException(status_code=403, detail={"code": exc.code, "message": exc.reason, "evidence": ev}) from exc
+    except PermissionError as exc:
+        if principal.org_id and cost > 0 and not charge_on_failure:
+            refund_credit_reservation(
+                db, org_id=principal.org_id, cost=cost, idempotency_key=idem_key, execution_id=exec_id, actor=principal.subject, reason=str(exc)
+            )
+            cost = 0
+        record_execution_evidence(
+            db,
+            execution_id=exec_id,
+            tenant_id=tenant_id,
+            workflow_id=workflow_id,
+            agent_id=agent_id,
+            connector_id=ag.default_connector_id,
+            execution_mode=mode,
+            input_payload=payload,
+            status="CANCELLED",
+            failure_reason=str(exc),
+            credits_consumed=cost,
+            execution_budget_units=0,
+            started_at=started_at,
+            version=ag.version,
+        )
+        db.commit()
+        raise
     except Exception as exc:
+        llm_usage = get_last_llm_usage() or {}
         if principal.org_id and cost > 0 and not charge_on_failure:
             refund_credit_reservation(
                 db, org_id=principal.org_id, cost=cost, idempotency_key=idem_key, execution_id=exec_id, actor=principal.subject, reason=str(exc)
@@ -2152,6 +2462,10 @@ def execute_registered_agent(
             status="FAILED",
             failure_reason=str(exc),
             credits_consumed=cost,
+            execution_budget_units=0,
+            provider_cost_inr=float(llm_usage.get("provider_cost_inr") or 0.0),
+            provider_tokens_total=int(llm_usage.get("provider_tokens_total") or 0),
+            provider_model=llm_usage.get("provider_model"),
             started_at=started_at,
             version=ag.version,
         )

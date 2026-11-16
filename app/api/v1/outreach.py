@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import uuid
 
@@ -22,10 +24,13 @@ from app.schemas.outreach import (
     OutreachResponse,
 )
 from app.security.auth import (
+    TENANT_MANAGER_ROLES,
     APIPrincipal,
+    _get_signing_secret,
     enforce_tenant_access,
-    require_manager,
+    get_current_principal,
     require_owner,
+    require_tenant_manager,
 )
 from app.services.approvals import ApprovalConflict, ApprovalNotFound
 from app.services.outreach import dispatch_outreach, draft_outreach
@@ -39,12 +44,15 @@ router = APIRouter(prefix="/v1/outreach", tags=["outreach"])
 def draft_outreach_endpoint(
     payload: OutreachDraftRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> OutreachDraftResponse:
     """Draft personalized customer outreach and generate a durable owner approval request."""
-    if principal.org_id and payload.org_id and principal.org_id != payload.org_id:
+    if principal.org_id and payload.org_id is not None:
         enforce_tenant_access(principal, payload.org_id)
+    lead_row = db.get(LeadRecordRow, payload.lead_id)
+    if lead_row and principal.org_id:
+        enforce_tenant_access(principal, lead_row.org_id or "__platform__")
 
     correlation_id = x_correlation_id or str(uuid.uuid4())
     try:
@@ -79,13 +87,14 @@ def list_outreach_records(
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> OutreachListResponse:
     """List outreach messages filtered by organization, lead, or delivery status."""
     effective_org_id = org_id
     if principal.org_id:
-        enforce_tenant_access(principal, org_id)
+        if org_id is not None:
+            enforce_tenant_access(principal, org_id)
         effective_org_id = principal.org_id
 
     query = db.query(OutreachRecord)
@@ -109,7 +118,7 @@ def list_outreach_records(
 @router.get("/{outreach_id}", response_model=OutreachResponse)
 def get_outreach_record(
     outreach_id: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> OutreachResponse:
     """Retrieve details of a single outreach message record."""
@@ -160,7 +169,27 @@ class OutreachUnsubscribeRequest(BaseModel):
     email: str | None = Field(default=None, max_length=250)
     domain: str | None = Field(default=None, max_length=250)
     lead_id: str | None = Field(default=None, max_length=36)
+    unsubscribe_token: str | None = Field(default=None, max_length=128)
     reason: str | None = Field(default="Recipient requested opt-out", max_length=500)
+
+
+def create_unsubscribe_token(
+    *,
+    email: str | None = None,
+    domain: str | None = None,
+    lead_id: str | None = None,
+) -> str:
+    """Create a deterministic HMAC-SHA256 proof token authorizing a recipient opt-out."""
+    canonical = "|".join([
+        (email or "").strip().lower(),
+        (domain or "").strip().lower(),
+        (lead_id or "").strip(),
+    ])
+    return hmac.new(
+        _get_signing_secret().encode("utf-8"),
+        f"afw-unsubscribe:{canonical}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 class OutreachReplyRequest(BaseModel):
@@ -172,11 +201,53 @@ class OutreachReplyRequest(BaseModel):
 @router.post("/unsubscribe", status_code=status.HTTP_200_OK)
 def unsubscribe_prospect_endpoint(
     payload: OutreachUnsubscribeRequest,
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    x_gemini_api_key: str | None = Header(default=None, alias="X-Gemini-Api-Key"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Public/self-serve and operator opt-out endpoint setting do_not_contact=True and suppressing outreach."""
+    """Authenticated tenant-scoped opt-out or signed recipient unsubscribe link handler."""
     if not (payload.email or payload.domain or payload.lead_id):
         raise HTTPException(status_code=400, detail="Provide at least one of email, domain, or lead_id to unsubscribe")
+
+    principal: APIPrincipal | None = None
+    verified_recipient_token = False
+    if authorization or x_api_key:
+        principal = get_current_principal(
+            x_api_key=x_api_key,
+            authorization=authorization,
+            x_gemini_api_key=x_gemini_api_key,
+            db=db,
+        )
+        if not (principal.is_platform_operator or (principal.org_id and principal.role in TENANT_MANAGER_ROLES)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant administrator or platform manager role required to suppress outreach",
+            )
+    elif payload.unsubscribe_token and payload.unsubscribe_token.strip():
+        expected = create_unsubscribe_token(
+            email=payload.email,
+            domain=payload.domain,
+            lead_id=payload.lead_id,
+        )
+        if not hmac.compare_digest(expected, payload.unsubscribe_token.strip()):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid unsubscribe token",
+            )
+        verified_recipient_token = True
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication or valid unsubscribe_token is required",
+        )
+
+    tenant_org_scope: str | None = (
+        None if (principal is None or principal.is_platform_operator) else principal.org_id
+    )
+    allow_global_suppression = verified_recipient_token or (
+        principal is not None and principal.is_platform_operator
+    )
 
     suppressed_leads: list[str] = []
     cancelled_outreach: list[str] = []
@@ -184,13 +255,18 @@ def unsubscribe_prospect_endpoint(
     if payload.lead_id:
         lead = db.get(LeadRecordRow, payload.lead_id)
         if lead:
+            if tenant_org_scope is not None:
+                enforce_tenant_access(principal, lead.org_id or "__platform__")
             lead.do_not_contact = True
             lead.status = "DO_NOT_CONTACT"
             suppressed_leads.append(lead.id)
 
     if payload.domain:
         clean_dom = payload.domain.strip().lower()
-        for lead in db.query(LeadRecordRow).filter(LeadRecordRow.domain == clean_dom).all():
+        dom_q = db.query(LeadRecordRow).filter(LeadRecordRow.domain == clean_dom)
+        if tenant_org_scope is not None:
+            dom_q = dom_q.filter(LeadRecordRow.org_id == tenant_org_scope)
+        for lead in dom_q.all():
             lead.do_not_contact = True
             lead.status = "DO_NOT_CONTACT"
             if lead.id not in suppressed_leads:
@@ -198,29 +274,37 @@ def unsubscribe_prospect_endpoint(
 
     if payload.email:
         clean_email = payload.email.strip().lower()
-        for lead in db.query(LeadRecordRow).filter(LeadRecordRow.public_contact_channel == clean_email).all():
+        email_q = db.query(LeadRecordRow).filter(LeadRecordRow.public_contact_channel == clean_email)
+        out_q = db.query(OutreachRecord).filter(OutreachRecord.recipient_email == clean_email)
+        if tenant_org_scope is not None:
+            email_q = email_q.filter(LeadRecordRow.org_id == tenant_org_scope)
+            out_q = out_q.filter(OutreachRecord.org_id == tenant_org_scope)
+        for lead in email_q.all():
             lead.do_not_contact = True
             lead.status = "DO_NOT_CONTACT"
             if lead.id not in suppressed_leads:
                 suppressed_leads.append(lead.id)
-        for out in db.query(OutreachRecord).filter(OutreachRecord.recipient_email == clean_email).all():
+        for out in out_q.all():
             if out.status in ("DRAFT", "PENDING_APPROVAL"):
                 out.status = "SUPPRESSED_OPT_OUT"
                 cancelled_outreach.append(out.id)
 
     for lid in suppressed_leads:
-        for out in db.query(OutreachRecord).filter(OutreachRecord.lead_id == lid).all():
+        out_lid_q = db.query(OutreachRecord).filter(OutreachRecord.lead_id == lid)
+        if tenant_org_scope is not None:
+            out_lid_q = out_lid_q.filter(OutreachRecord.org_id == tenant_org_scope)
+        for out in out_lid_q.all():
             if out.status in ("DRAFT", "PENDING_APPROVAL") and out.id not in cancelled_outreach:
                 out.status = "SUPPRESSED_OPT_OUT"
                 cancelled_outreach.append(out.id)
 
-    # Persist into DB-backed suppression table & sync P2 dossier status
+    # Persist into DB-backed suppression table (global only for platform operator or verified recipient token)
     from app.db.models import P2ProspectDossierRecord
     from app.services.suppression import add_db_suppression
 
-    if payload.email:
+    if allow_global_suppression and payload.email:
         add_db_suppression(db, payload.email, reason=payload.reason or "Recipient opted out", source="unsubscribe_endpoint")
-    if payload.domain:
+    if allow_global_suppression and payload.domain:
         add_db_suppression(db, payload.domain, reason=payload.reason or "Domain opted out", source="unsubscribe_endpoint")
     for lid in suppressed_leads:
         add_db_suppression(db, lid, reason=payload.reason or "Lead opted out", source="unsubscribe_endpoint", identifier_type="lead_id")
@@ -235,10 +319,15 @@ def unsubscribe_prospect_endpoint(
         AuditLog(
             task_id=task_id,
             correlation_id=task_id,
-            agent_id="outreach_opt_out",
-            capability_name="outreach_dispatch",
+            agent_id=principal.subject if principal else "recipient_unsubscribe_token",
+            capability_name="outreach_opt_out",
             action="prospect_unsubscribed",
-            input_payload=payload.model_dump(),
+            input_payload={
+                "email": payload.email,
+                "domain": payload.domain,
+                "lead_id": payload.lead_id,
+                "org_scope": tenant_org_scope,
+            },
             output_payload={
                 "suppressed_leads": suppressed_leads,
                 "cancelled_outreach": cancelled_outreach,
@@ -261,7 +350,7 @@ def record_outreach_reply_endpoint(
     outreach_id: str,
     payload: OutreachReplyRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Record a prospect's reply to an outreach message, advance sales stage, and generate a qualified proposal."""

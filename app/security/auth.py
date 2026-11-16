@@ -14,6 +14,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+
+PLATFORM_OWNER_ROLES: frozenset[str] = frozenset({"owner"})
+PLATFORM_OPERATOR_ROLES: frozenset[str] = frozenset({"owner", "platform_admin", "manager"})
+TENANT_ADMIN_ROLES: frozenset[str] = frozenset({"tenant_admin", "admin"})
+TENANT_MANAGER_ROLES: frozenset[str] = frozenset({"tenant_admin", "admin", "manager"})
+TENANT_MEMBER_ROLES: frozenset[str] = frozenset({"tenant_admin", "admin", "manager", "member", "customer", "executive"})
+PUBLIC_FORBIDDEN_ROLES: frozenset[str] = frozenset({"owner", "platform_owner", "platform_admin", "admin", "tenant_admin", "manager"})
+INVITABLE_TENANT_ROLES: frozenset[str] = frozenset({"customer", "member", "tenant_admin"})
 
 
 @dataclass(frozen=True)
@@ -24,6 +35,16 @@ class APIPrincipal:
     org_id: str | None = None
     email: str | None = None
     tier: str | None = None
+
+    @property
+    def is_platform_operator(self) -> bool:
+        """True only for platform-level owner/manager principals with no tenant binding."""
+        return self.org_id is None and self.role in PLATFORM_OPERATOR_ROLES
+
+    @property
+    def is_platform_owner(self) -> bool:
+        """True only for platform owner principals with no tenant binding."""
+        return self.org_id is None and self.role in PLATFORM_OWNER_ROLES
 
 
 # ── Password Hashing (PBKDF2-HMAC-SHA256) ───────────────────────────────────
@@ -153,22 +174,56 @@ def get_current_principal(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
     x_gemini_api_key: str | None = Header(default=None),
+    db: Any = Depends(get_db),
 ) -> APIPrincipal:
     """Resolve API principal from either X-API-Key header OR Bearer token."""
     from app.agents.llm_client import set_request_llm_context
 
-    # 1. Bearer Token Resolution (Customer / Admin Login)
+    # 1. Bearer Token Resolution (Tenant / Customer Login)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization[7:].strip()
         payload = decode_access_token(token)
-        role = payload.get("role", "customer")
-        is_owner = role in {"owner", "manager"}
+        role = str(payload.get("role") or "customer").strip().lower()
+        org_id = payload.get("org_id")
+        sub = payload.get("sub")
+
+        if org_id is not None and role in {"owner", "platform_owner", "platform_admin"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid token scope: platform privileges cannot bind to a tenant organization",
+            )
+
+        if isinstance(db, Session) and sub:
+            from app.db.models import OrganizationRecord, UserRecord
+
+            user = db.get(UserRecord, sub)
+            if user is not None:
+                if not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="User account is inactive or deactivated",
+                    )
+                if user.org_id != org_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Token organization scope mismatch",
+                    )
+                role = str(user.role or "customer").strip().lower()
+            if org_id:
+                org = db.get(OrganizationRecord, org_id)
+                if org is not None and not org.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Organization account is inactive or suspended",
+                    )
+
+        is_owner = org_id is None and role in PLATFORM_OPERATOR_ROLES
         set_request_llm_context(gemini_key=x_gemini_api_key, is_owner=is_owner)
         return APIPrincipal(
-            subject=payload.get("email") or payload.get("sub", "unknown"),
+            subject=payload.get("email") or sub or "unknown",
             role=role,
-            user_id=payload.get("sub"),
-            org_id=payload.get("org_id"),
+            user_id=sub,
+            org_id=org_id,
             email=payload.get("email"),
             tier=payload.get("tier"),
         )
@@ -201,34 +256,67 @@ def get_current_principal(
 
 
 
-def require_manager(
-    principal: APIPrincipal = Depends(get_current_principal),
-) -> APIPrincipal:
-    """Allow Platform Operator or Tenant Administrator.
-    Tenant operations are strictly scoped by org_id within route handlers."""
-    if principal.role not in {"owner", "manager", "admin", "tenant_admin"}:
-        raise HTTPException(status_code=403, detail="Manager or administrator role required")
-    return principal
+def _ensure_active_tenant_org(db: Any, principal: APIPrincipal) -> None:
+    """Fail closed when a tenant principal belongs to a suspended or inactive organization."""
+    if principal.is_platform_operator:
+        return
+    if not principal.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant organization scope is required",
+        )
+    if isinstance(db, Session):
+        from app.db.models import OrganizationRecord
 
-
-def require_tenant_operator(
-    principal: APIPrincipal = Depends(get_current_principal),
-) -> APIPrincipal:
-    """Allow platform managers or authenticated organization customers operating within their own tenant scope."""
-    if principal.role in {"owner", "manager", "admin", "tenant_admin"}:
-        return principal
-    if principal.role == "customer" and principal.org_id:
-        return principal
-    raise HTTPException(status_code=403, detail="Authenticated tenant organization or manager role required")
+        org = db.get(OrganizationRecord, principal.org_id)
+        if org is not None and not org.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Organization account is inactive or suspended",
+            )
 
 
 def require_platform_manager(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
-    """Strictly require platform operator (owner or manager API key).
-    Tenant administrators and customer users are strictly forbidden from platform operations."""
-    if principal.role not in {"owner", "manager"} or principal.org_id is not None:
+    """Strictly require platform operator (owner/platform_admin/manager API key). Tenant users forbidden."""
+    if not principal.is_platform_operator:
         raise HTTPException(status_code=403, detail="Platform operator credentials required")
+    return principal
+
+
+def require_manager(
+    principal: APIPrincipal = Depends(get_current_principal),
+) -> APIPrincipal:
+    """Strictly require platform manager/owner credentials. Tenant users cannot access platform routes."""
+    if not principal.is_platform_operator:
+        raise HTTPException(status_code=403, detail="Platform manager credentials required")
+    return principal
+
+
+def require_tenant_manager(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
+) -> APIPrincipal:
+    """Allow Platform Operator or Tenant Administrator/Manager strictly scoped to their active organization."""
+    if principal.is_platform_operator:
+        return principal
+    if not principal.org_id or principal.role not in TENANT_MANAGER_ROLES:
+        raise HTTPException(status_code=403, detail="Tenant administrator role required")
+    _ensure_active_tenant_org(db, principal)
+    return principal
+
+
+def require_tenant_operator(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
+) -> APIPrincipal:
+    """Allow platform operators or active organization users operating within their own tenant scope."""
+    if principal.is_platform_operator:
+        return principal
+    if not principal.org_id or principal.role not in TENANT_MEMBER_ROLES:
+        raise HTTPException(status_code=403, detail="Authenticated tenant organization or platform operator role required")
+    _ensure_active_tenant_org(db, principal)
     return principal
 
 
@@ -236,7 +324,7 @@ def require_owner(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
     """Strictly require platform owner (OWNER_API_KEY). Tenant users forbidden."""
-    if principal.role != "owner" or principal.org_id is not None:
+    if not principal.is_platform_owner:
         raise HTTPException(status_code=403, detail="Owner role required (platform owner only)")
     return principal
 
@@ -245,68 +333,79 @@ def require_platform_owner(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
     """Strictly require platform owner (OWNER_API_KEY). Tenant users forbidden."""
-    if principal.role != "owner" or principal.org_id is not None:
+    if not principal.is_platform_owner:
         raise HTTPException(status_code=403, detail="Platform owner credentials required")
     return principal
 
 
 def require_subscription_owner(
     principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
 ) -> APIPrincipal:
-    """Require Platform Owner or Tenant Owner/Administrator. Ordinary managers and members are forbidden."""
-    if principal.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Owner role required")
+    """Require Platform Owner or Tenant Admin/Owner strictly bound to an active tenant."""
+    if principal.is_platform_owner:
+        return principal
+    if not principal.org_id or principal.role not in TENANT_ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Tenant owner or administrator role required")
+    _ensure_active_tenant_org(db, principal)
     return principal
 
 
 def require_admin(
     principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
 ) -> APIPrincipal:
-    """Require Platform Owner/Manager or Tenant Administrator."""
-    if principal.role in {"owner", "manager"} and not principal.org_id:
+    """Require Platform Operator or Tenant Administrator bound to an active organization."""
+    if principal.is_platform_operator:
         return principal
-    if principal.role not in {"admin", "tenant_admin"}:
+    if not principal.org_id or principal.role not in TENANT_ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Administrator role required")
+    _ensure_active_tenant_org(db, principal)
     return principal
 
 
 def require_tenant_admin(
     principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
 ) -> APIPrincipal:
     """Require Tenant Administrator role (or platform operator oversight)."""
-    if principal.role in {"owner", "manager"} and not principal.org_id:
+    if principal.is_platform_operator:
         return principal
-    if principal.role not in {"admin", "tenant_admin"}:
+    if not principal.org_id or principal.role not in TENANT_ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Tenant administrator role required")
+    _ensure_active_tenant_org(db, principal)
     return principal
 
 
 def require_tenant_member(
     principal: APIPrincipal = Depends(get_current_principal),
+    db: Any = Depends(get_db),
 ) -> APIPrincipal:
-    """Any member belonging to a tenant organization (or platform operator oversight)."""
+    """Any active member belonging to a tenant organization (or platform operator oversight)."""
+    if principal.is_platform_operator:
+        return principal
+    if not principal.org_id or principal.role not in TENANT_MEMBER_ROLES:
+        raise HTTPException(status_code=403, detail="Active tenant membership required")
+    _ensure_active_tenant_org(db, principal)
     return principal
 
 
 def require_authenticated_user(
     principal: APIPrincipal = Depends(get_current_principal),
 ) -> APIPrincipal:
-    """Any authenticated tenant user, customer, or admin."""
+    """Any authenticated tenant user, customer, or platform operator."""
     return principal
 
 
 def enforce_tenant_access(principal: APIPrincipal, target_org_id: str | None) -> None:
-    """Ensure that non-owner principals cannot access or mutate resources outside their organization."""
-    # System owners and platform managers have global administrative oversight
-    if principal.role in {"owner", "manager"} and not principal.org_id:
+    """Ensure that non-platform principals cannot access or mutate resources outside their organization."""
+    if principal.is_platform_operator:
         return
-    # If the principal is tied to a specific organization, access across org boundaries or unassigned resources is strictly forbidden
-    if principal.org_id:
-        if not target_org_id or principal.org_id != target_org_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied: principal belongs to organization '{principal.org_id}', not '{target_org_id}'",
-            )
+    if not principal.org_id or not target_org_id or principal.org_id != target_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: principal belongs to organization '{principal.org_id}', not '{target_org_id}'",
+        )
 
 
 # ── Tenant Service Entitlement Verification ─────────────────────────────────
@@ -389,10 +488,15 @@ def check_tenant_entitlement(
     service_key: str,
     db: Any,
 ) -> Any:
-    """Validate that if principal is a tenant (org_id is set), their organization is active
-    and holds the entitlement for service_key. Platform operators (no org_id) pass through."""
-    if not principal.org_id:
+    """Validate that if principal is a tenant, their organization is active
+    and holds the entitlement for service_key. Platform operators pass through."""
+    if principal.is_platform_operator:
         return None
+    if not principal.org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant organization scope is required",
+        )
 
     from app.db.models import OrganizationRecord
 
@@ -419,7 +523,7 @@ def require_entitled_service(service_key: str):
     from app.db.database import get_db
 
     def dependency(
-        principal: APIPrincipal = Depends(require_manager),
+        principal: APIPrincipal = Depends(require_tenant_manager),
         db: Any = Depends(get_db),
     ) -> APIPrincipal:
         check_tenant_entitlement(principal, service_key, db)

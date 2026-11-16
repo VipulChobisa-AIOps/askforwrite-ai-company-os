@@ -45,7 +45,7 @@ class TestRevenueReadinessAudit(unittest.TestCase):
         Base.metadata.create_all(bind=cls.engine)
         cls.session_factory = sessionmaker(bind=cls.engine, autoflush=False, expire_on_commit=False)
 
-        from app.security.auth import APIPrincipal, require_manager
+        from app.security.auth import APIPrincipal, require_manager, require_platform_manager, require_tenant_manager
 
         def override_db():
             db = cls.session_factory()
@@ -56,14 +56,18 @@ class TestRevenueReadinessAudit(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_db
         app.dependency_overrides[require_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
+        app.dependency_overrides[require_platform_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
+        app.dependency_overrides[require_tenant_manager] = lambda: APIPrincipal(subject="test-manager", role="manager")
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
-        from app.security.auth import require_manager
+        from app.security.auth import require_manager, require_platform_manager, require_tenant_manager
         Base.metadata.drop_all(bind=cls.engine)
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(require_manager, None)
+        app.dependency_overrides.pop(require_platform_manager, None)
+        app.dependency_overrides.pop(require_tenant_manager, None)
 
     def setUp(self):
         self.db = self.session_factory()

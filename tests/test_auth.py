@@ -67,8 +67,25 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(verify_password(password, hashed))
         self.assertFalse(verify_password("WrongPassword!", hashed))
 
-    def test_register_creates_org_and_admin_user(self):
-        """Registering a new organization creates tenant and returns bearer token."""
+    def test_register_creates_org_and_customer_user_and_blocks_privileged_roles(self):
+        """Public registration rejects self-assigned admin/owner roles (403) and assigns 'customer' by default."""
+        for forbidden_role in ("admin", "tenant_admin", "owner", "platform_admin", "manager"):
+            blocked_resp = self.client.post(
+                "/v1/auth/register",
+                json={
+                    "email": f"escalate-{forbidden_role}@acmecorp.com",
+                    "password": "BuyerPassword123!",
+                    "full_name": "Mallory Attacker",
+                    "company_name": "Acme Industrial Corp",
+                    "role": forbidden_role,
+                },
+            )
+            self.assertEqual(
+                blocked_resp.status_code,
+                403,
+                f"Public /register must reject role={forbidden_role!r}",
+            )
+
         resp = self.client.post(
             "/v1/auth/register",
             json={
@@ -76,20 +93,20 @@ class AuthTests(unittest.TestCase):
                 "password": "BuyerPassword123!",
                 "full_name": "Alice Buyer",
                 "company_name": "Acme Industrial Corp",
-                "role": "admin",
             },
         )
         self.assertEqual(resp.status_code, 201)
         data = resp.json()
         self.assertEqual(data["email"], "buyer@acmecorp.com")
-        self.assertEqual(data["role"], "admin")
+        self.assertEqual(data["role"], "customer")
         self.assertTrue(data["access_token"])
-        self.assertTrue(data["portal_access"]["admin"])
+        self.assertFalse(data["portal_access"]["admin"])
         self.assertTrue(data["portal_access"]["customer"])
 
         # Verify DB persistence
         user = self.db.query(UserRecord).filter_by(email="buyer@acmecorp.com").first()
         self.assertIsNotNone(user)
+        self.assertEqual(user.role, "customer")
         self.assertTrue(verify_password("BuyerPassword123!", user.password_hash))
 
     def test_login_successful_and_fetch_profile(self):
@@ -198,10 +215,11 @@ class AuthTests(unittest.TestCase):
                 "password": "FreePassword123!",
                 "full_name": "Free Tier User",
                 "company_name": f"Free Corp {uid}",
-                "role": "admin",
+                "role": "customer",
             },
         )
         self.assertEqual(reg_resp.status_code, 201)
+        self.assertEqual(reg_resp.json()["role"], "customer")
         token = reg_resp.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 

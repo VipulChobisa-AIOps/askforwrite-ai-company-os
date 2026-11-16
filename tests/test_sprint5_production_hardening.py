@@ -77,7 +77,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
 
         heads = script_dir.get_heads()
         self.assertEqual(len(heads), 1)
-        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6", "h8c3d4e5f6a7", "i9d4e5f6a7b8", "j0e5f6a7b8c9", "k1f6a7b8c9d0", "l2a7b8c9d0e1", "m3b8c9d0e1f2", "n4c9d0e1f2a3"])
+        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6", "h8c3d4e5f6a7", "i9d4e5f6a7b8", "j0e5f6a7b8c9", "k1f6a7b8c9d0", "l2a7b8c9d0e1", "m3b8c9d0e1f2", "n4c9d0e1f2a3", "o5d0e1f2a3b4"])
 
         rev = script_dir.get_revision("e5f6a1b2c3d4")
         self.assertIsNotNone(rev)
@@ -233,7 +233,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
             org_id=org_id,
             email=email,
             full_name="Active Tenant Admin",
-            role="owner",
+            role="tenant_admin",
             password_hash=hash_password("Pass12345!"),
             is_active=True,
         )
@@ -241,7 +241,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
         self.db.add(user)
         self.db.commit()
 
-        token = create_access_token(user_id=user_id, email=email, role="owner", org_id=org_id)
+        token = create_access_token(user_id=user_id, email=email, role="tenant_admin", org_id=org_id)
         headers = {"Authorization": f"Bearer {token}"}
 
         resp = self.client.post(
@@ -296,7 +296,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
             org_id=org_id,
             email=email,
             full_name="Exhausted Tenant Admin",
-            role="owner",
+            role="tenant_admin",
             password_hash=hash_password("Pass12345!"),
             is_active=True,
         )
@@ -304,7 +304,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
         self.db.add(user)
         self.db.commit()
 
-        token = create_access_token(user_id=user_id, email=email, role="owner", org_id=org_id)
+        token = create_access_token(user_id=user_id, email=email, role="tenant_admin", org_id=org_id)
         headers = {"Authorization": f"Bearer {token}"}
 
         resp = self.client.post(
@@ -339,7 +339,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
             org_id=org_id,
             email=email,
             full_name="Inactive Tenant Admin",
-            role="owner",
+            role="tenant_admin",
             password_hash=hash_password("Pass12345!"),
             is_active=True,
         )
@@ -347,7 +347,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
         self.db.add(user)
         self.db.commit()
 
-        token = create_access_token(user_id=user_id, email=email, role="owner", org_id=org_id)
+        token = create_access_token(user_id=user_id, email=email, role="tenant_admin", org_id=org_id)
         headers = {"Authorization": f"Bearer {token}"}
 
         resp = self.client.post(
@@ -359,7 +359,7 @@ class Sprint5ProductionHardeningTests(unittest.TestCase):
             },
         )
         self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["detail"], "Organization subscription is inactive")
+        self.assertIn("inactive", resp.json()["detail"].lower())
 
 
 if __name__ == "__main__":

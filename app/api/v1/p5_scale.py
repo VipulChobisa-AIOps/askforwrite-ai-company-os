@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, enforce_tenant_access, get_current_principal, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_owner, require_tenant_operator
 from app.services.p5_productization import (
     compute_p5_scale_summary,
     create_operational_incident,
@@ -32,8 +32,10 @@ router = APIRouter(prefix="/v1/p5/scale", tags=["P5 Productization & Scale"])
 
 
 def _resolve_scope_org(principal: APIPrincipal, requested_org_id: str | None) -> str | None:
-    if principal.role == "owner" and not principal.org_id:
+    if principal.is_platform_operator:
         return requested_org_id
+    if not principal.org_id:
+        raise HTTPException(status_code=403, detail="Tenant organization scope is required")
     if requested_org_id:
         enforce_tenant_access(principal, requested_org_id)
         return requested_org_id
@@ -107,7 +109,7 @@ class IncidentTransitionRequest(BaseModel):
 @router.get("/overview")
 def p5_scale_overview(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return P5 templates, provisioning FSM runs, tenant policies, quota events, and incidents."""
@@ -125,7 +127,7 @@ def p5_scale_overview(
 @router.get("/templates")
 def p5_list_templates(
     industry: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     rows = list_p5_templates(db, industry=industry, active_only=True)
@@ -170,11 +172,11 @@ def p5_create_template(
 @router.post("/provisioning")
 def p5_start_provisioning(
     body: ProvisioningStartRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
-    if scope_org is None and not (principal.role == "owner" and not principal.org_id):
+    if scope_org is None and not principal.is_platform_operator:
         raise HTTPException(status_code=403, detail="Tenant principals can only provision their own organization")
     try:
         return start_provisioning_run(
@@ -199,7 +201,7 @@ def p5_start_provisioning(
 @router.get("/provisioning")
 def p5_list_provisioning(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -211,7 +213,7 @@ def p5_list_provisioning(
 def p5_retry_provisioning(
     run_id: str,
     body: ProvisioningRetryRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -223,6 +225,8 @@ def p5_retry_provisioning(
             company_name=body.company_name,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -231,7 +235,7 @@ def p5_retry_provisioning(
 @router.get("/policies/{org_id}")
 def p5_get_policy(
     org_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     enforce_tenant_access(principal, org_id)
@@ -245,7 +249,7 @@ def p5_get_policy(
 def p5_upsert_policy(
     org_id: str,
     body: TenantPolicyUpsertRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     enforce_tenant_access(principal, org_id)
@@ -264,6 +268,8 @@ def p5_upsert_policy(
             custom_limits=body.custom_limits,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -272,7 +278,7 @@ def p5_upsert_policy(
 @router.post("/quota-check")
 def p5_quota_check(
     body: QuotaCheckRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -287,6 +293,8 @@ def p5_quota_check(
             details=body.details,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -296,7 +304,7 @@ def p5_quota_check(
 def p5_list_incidents(
     org_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)
@@ -307,7 +315,7 @@ def p5_list_incidents(
 @router.post("/incidents")
 def p5_create_incident(
     body: IncidentCreateRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -322,6 +330,8 @@ def p5_create_incident(
             assigned_to=body.assigned_to,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -331,7 +341,7 @@ def p5_create_incident(
 def p5_transition_incident(
     incident_id: str,
     body: IncidentTransitionRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, None)
@@ -345,6 +355,8 @@ def p5_transition_incident(
             mitigation_notes=body.mitigation_notes,
             assigned_to=body.assigned_to,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc

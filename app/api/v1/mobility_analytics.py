@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_tenant_manager
 from app.services.mobility_analytics import (
     CAPABILITY_NAME,
     MobilityAnalyticsConflict,
@@ -88,7 +88,7 @@ def get_mobility_engine_status() -> dict[str, Any]:
 @router.post("/forecast")
 def get_demand_forecast(
     payload: DemandForecastRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Calculate hourly rental demand with 95% confidence interval and econometric diagnostics."""
@@ -111,7 +111,7 @@ def execute_fleet_optimization(
     payload: MobilityOptimizationRequest,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> MobilityOptimizationResponse:
     """Execute end-to-end demand forecasting, station churn rebalancing, and seal to TrustBlock."""
@@ -150,7 +150,7 @@ def execute_rebalance_plan(
     payload: MobilityRebalanceRequest,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> MobilityRebalanceResponse:
     """Compute dedicated station churn segmentation and truck rebalance routes with TrustBlock sealing."""
@@ -184,7 +184,7 @@ def execute_rebalance_plan(
 )
 def submit_mobility_uat_feedback(
     payload: MobilityUATRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
 ) -> dict[str, Any]:
     """Log fleet operator user acceptance test (UAT) survey feedback."""
     return log_mobility_uat(

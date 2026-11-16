@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.smb_search_source import audit_live_website_seo_geo
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_tenant_manager
 from app.services.catalog import CATALOG, build_payment_link, get_package
 from app.services.growth_engine import (
     execute_unified_growth_run,
@@ -101,14 +101,14 @@ def _inject_org_byok_key(principal: APIPrincipal, db: Session) -> None:
     if org and org.metadata_json and org.metadata_json.get("gemini_api_key"):
         set_request_llm_context(
             gemini_key=org.metadata_json["gemini_api_key"],
-            is_owner=(principal.role in {"owner", "manager"}),
+            is_owner=principal.is_platform_operator,
         )
 
 
 @router.post("/creative")
 def generate_creative_endpoint(
     payload: CreativeRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Generate multi-format visual creative specs for the Pixel AI engine."""
@@ -127,7 +127,7 @@ def generate_creative_endpoint(
 def generate_unified_campaign_endpoint(
     payload: UnifiedGrowthCampaignRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute unified Growth Suite generation: Creative Visuals + SEO Blog + Omnichannel Ads + Closer setup."""

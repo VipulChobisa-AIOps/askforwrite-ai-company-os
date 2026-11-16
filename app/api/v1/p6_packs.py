@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, enforce_tenant_access, get_current_principal, require_owner
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_owner, require_tenant_operator
 from app.services.p6_industry_packs import (
     compute_p6_overview,
     create_india_seo_baseline,
@@ -24,8 +24,10 @@ router = APIRouter(prefix="/v1/p6/packs", tags=["P6 Multi-Industry SME Packs"])
 
 
 def _resolve_scope_org(principal: APIPrincipal, requested_org_id: str | None) -> str | None:
-    if principal.role == "owner" and not principal.org_id:
+    if principal.is_platform_operator:
         return requested_org_id
+    if not principal.org_id:
+        raise HTTPException(status_code=403, detail="Tenant organization scope is required")
     if requested_org_id:
         enforce_tenant_access(principal, requested_org_id)
         return requested_org_id
@@ -74,7 +76,7 @@ class SeoBaselineRequest(BaseModel):
 @router.get("/overview")
 def p6_packs_overview(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return P6 industry pack catalog, tenant deployments, and India SEO baselines."""
@@ -86,7 +88,7 @@ def p6_packs_overview(
 def p6_list_catalog(
     sector: str | None = Query(default=None),
     readiness_status: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     rows = list_industry_packs(db, sector=sector, readiness_status=readiness_status)
@@ -125,7 +127,7 @@ def p6_upsert_catalog(
 @router.post("/deployments")
 def p6_deploy_pack(
     body: DeployPackRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -151,7 +153,7 @@ def p6_deploy_pack(
 def p6_run_diagnostics(
     deployment_id: str,
     body: DiagnosticsRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, None)
@@ -165,6 +167,8 @@ def p6_run_diagnostics(
             quality_preset=body.quality_preset,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         code = 404 if "not found" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from exc
@@ -173,7 +177,7 @@ def p6_run_diagnostics(
 @router.post("/seo-baselines")
 def p6_create_seo_baseline(
     body: SeoBaselineRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, body.org_id)
@@ -188,6 +192,8 @@ def p6_create_seo_baseline(
             business_name=body.business_name,
             actor=principal.subject,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -195,7 +201,7 @@ def p6_create_seo_baseline(
 @router.get("/seo-baselines")
 def p6_list_seo_baselines(
     org_id: str | None = Query(default=None),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     scope_org = _resolve_scope_org(principal, org_id)

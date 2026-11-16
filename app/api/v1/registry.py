@@ -33,14 +33,16 @@ def get_optional_principal(
     x_api_key: str | None = Header(default=None),
     authorization: str | None = Header(default=None),
     x_gemini_api_key: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ) -> APIPrincipal | None:
-    """Resolve principal if auth headers are present; reject invalid tokens but allow unauthenticated public catalog discovery."""
+    """Resolve principal if auth headers are present; reject invalid/inactive tokens while allowing anonymous catalog discovery."""
     if not x_api_key and not authorization:
         return None
     return get_current_principal(
         x_api_key=x_api_key,
         authorization=authorization,
         x_gemini_api_key=x_gemini_api_key,
+        db=db,
     )
 
 

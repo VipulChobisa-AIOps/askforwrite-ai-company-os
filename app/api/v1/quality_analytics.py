@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, check_tenant_entitlement, require_manager
+from app.security.auth import APIPrincipal, check_tenant_entitlement, require_tenant_manager
 from app.services.quality_analytics import (
     CAPABILITY_NAME,
     CLASSES,
@@ -85,7 +85,7 @@ def inspect_produce_batch(
     payload: QualityInspectRequest,
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> QualityInspectResponse:
     """Execute automated produce quality grading and seal result into cryptographic TrustBlock."""
@@ -126,7 +126,7 @@ async def inspect_uploaded_image(
     batch_lot_id: str | None = Form(None),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     x_correlation_id: str | None = Header(None, alias="X-Correlation-ID"),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> QualityInspectResponse:
     """Upload physical produce photograph for 4-model ripeness analysis and TrustBlock sealing."""
@@ -161,7 +161,7 @@ async def inspect_uploaded_image(
 )
 def submit_quality_uat_feedback(
     payload: QualityUATRequest,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
 ) -> dict[str, Any]:
     """Log quality inspection user acceptance test (UAT) survey feedback."""
     return log_quality_uat(

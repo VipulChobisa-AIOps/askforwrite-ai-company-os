@@ -8,7 +8,6 @@ and running the AskforWrite AI Company OS gateway and multi-agent fleet.
 import os
 import sys
 import time
-import json
 import secrets
 import threading
 import webbrowser
@@ -530,7 +529,6 @@ class CompanyOSDesktopApp(tk.Tk):
 
         def run():
             try:
-                import importlib
                 import sys
 
                 # Force-reload database modules so the engine is rebuilt

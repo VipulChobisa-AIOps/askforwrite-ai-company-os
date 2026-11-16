@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -38,17 +38,46 @@ if str(REPO_ROOT) not in sys.path:
 CORE_TABLES_TO_VERIFY: tuple[str, ...] = (
     "alembic_version",
     "organizations",
+    "users",
+    "tenant_invitations",
     "customer_records",
     "subscription_records",
     "invoice_records",
     "workflow_definitions",
+    "workflow_runs",
+    "execution_evidence_records",
+    "credit_ledger_records",
     "connector_states",
+    "approval_requests",
     "p2_customer_engagements",
     "p3_customer_accounts",
     "p3_onboarding_workflows",
     "p3_service_deliveries",
     "p3_support_tickets",
+    "p4_icp_profiles",
+    "p4_market_intel_records",
+    "p4_growth_campaigns",
+    "p4_pipeline_deals",
+    "p5_tenant_templates",
+    "p5_provisioning_runs",
+    "p5_tenant_policies",
+    "p5_usage_quota_events",
+    "p5_operational_incidents",
+    "p6_industry_packs",
+    "p6_tenant_pack_deployments",
+    "p6_seo_baselines",
+    "p7_delegation_plans",
+    "p7_tenant_memories",
+    "p7_autonomy_policies",
+    "p7_agent_eval_runs",
+    "p8_developer_profiles",
+    "p8_marketplace_listings",
+    "p8_tenant_installs",
+    "p8_marketplace_reviews",
+    "p8_revenue_share_ledger",
 )
+
+PRODUCTION_DB_NAMES: tuple[str, ...] = ("neondb", "prod", "production")
 
 PRODUCTION_HOST_FRAGMENTS: tuple[str, ...] = (
     "neon.tech",
@@ -112,6 +141,8 @@ def validate_target_isolation(
     target_url: str,
     *,
     allow_shared_host_isolated_db: bool = False,
+    approved_staging_host: str | None = None,
+    approved_staging_db: str | None = None,
 ) -> None:
     """Refuse any restore target that matches the source database or a production host."""
     src_info = mask_database_url(source_url)
@@ -132,17 +163,37 @@ def validate_target_isolation(
             "Refused: target restore database matches source database host/port/name."
         )
 
+    tgt_db_lower = tgt_info.database.lower()
+    if tgt_db_lower in PRODUCTION_DB_NAMES:
+        raise DrillSafetyError(
+            f"Refused: target database name '{tgt_info.database}' is reserved for production."
+        )
+
     tgt_host_lower = tgt_info.host.lower()
+    if approved_staging_host and approved_staging_host.strip().lower() != tgt_host_lower:
+        raise DrillSafetyError(
+            f"Refused: target host '{tgt_info.host}' does not match --approved-staging-host '{approved_staging_host}'."
+        )
+    if approved_staging_db and approved_staging_db.strip().lower() != tgt_db_lower:
+        raise DrillSafetyError(
+            f"Refused: target database '{tgt_info.database}' does not match --approved-staging-db '{approved_staging_db}'."
+        )
+
     if any(frag in tgt_host_lower for frag in PRODUCTION_HOST_FRAGMENTS):
         if not allow_shared_host_isolated_db:
             raise DrillSafetyError(
                 f"Refused: target host '{tgt_info.host}' looks like a managed/production endpoint. "
                 "Use an isolated local/ephemeral PostgreSQL database, or explicitly pass "
-                "--confirm-isolated-branch with a distinct non-production branch/database."
+                "--confirm-isolated-branch with --approved-staging-host and --approved-staging-db."
             )
-        if tgt_info.database.lower() == src_info.database.lower():
+        if tgt_db_lower == src_info.database.lower():
             raise DrillSafetyError(
                 "Refused: even with --confirm-isolated-branch, target database name cannot match source database name."
+            )
+        if not approved_staging_host or not approved_staging_db:
+            raise DrillSafetyError(
+                "Refused: --confirm-isolated-branch on a managed Postgres host requires both "
+                "--approved-staging-host and --approved-staging-db."
             )
 
 
@@ -186,6 +237,20 @@ def _to_libpq_url(raw_url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql://" + url[len("postgres://"):]
     return url
+
+
+def _sanitize_libpq_dsn_and_env(raw_url: str) -> tuple[str, dict[str, str]]:
+    """Strip password from libpq URI args and supply it cleanly via PGPASSWORD env."""
+    parsed = urlsplit(_to_libpq_url(raw_url))
+    env = dict(os.environ)
+    if parsed.password is not None:
+        env["PGPASSWORD"] = unquote(parsed.password)
+    host = parsed.hostname or ""
+    netloc = f"{host}:{parsed.port}" if parsed.port else host
+    if parsed.username:
+        netloc = f"{parsed.username}@{netloc}"
+    sanitized_dsn = urlunsplit((parsed.scheme or "postgresql", netloc, parsed.path, parsed.query, ""))
+    return sanitized_dsn, env
 
 
 def _to_sqlalchemy_url(raw_url: str) -> str:
@@ -342,6 +407,8 @@ def execute_drill(
     target_url: str,
     source_origin: str,
     allow_shared_host_isolated_db: bool = False,
+    approved_staging_host: str | None = None,
+    approved_staging_db: str | None = None,
     verify_health: bool = True,
     keep_dump: bool = False,
     rpo_minutes: int = 15,
@@ -353,6 +420,8 @@ def execute_drill(
         source_url,
         target_url,
         allow_shared_host_isolated_db=allow_shared_host_isolated_db,
+        approved_staging_host=approved_staging_host,
+        approved_staging_db=approved_staging_db,
     )
     bins = detect_pg_binaries()
     missing = [name for name in ("pg_dump", "pg_restore") if not bins.get(name)]
@@ -373,6 +442,7 @@ def execute_drill(
     tmp_dir = Path(tempfile.mkdtemp(prefix="afw_pg_drill_"))
     dump_path = tmp_dir / "askforwrite_backup.dump"
     try:
+        src_dsn, src_env = _sanitize_libpq_dsn_and_env(source_url)
         t0 = time.monotonic()
         dump_proc = subprocess.run(
             [
@@ -381,8 +451,9 @@ def execute_drill(
                 "--no-owner",
                 "--no-privileges",
                 f"--file={dump_path}",
-                _to_libpq_url(source_url),
+                src_dsn,
             ],
+            env=src_env,
             capture_output=True,
             text=True,
             timeout=300,
@@ -402,6 +473,7 @@ def execute_drill(
         dump_bytes = dump_path.stat().st_size
         dump_sha256 = compute_sha256(dump_path)
 
+        tgt_dsn, tgt_env = _sanitize_libpq_dsn_and_env(target_url)
         t_restore_start = time.monotonic()
         restore_proc = subprocess.run(
             [
@@ -410,9 +482,10 @@ def execute_drill(
                 "--if-exists",
                 "--no-owner",
                 "--no-privileges",
-                f"--dbname={_to_libpq_url(target_url)}",
+                f"--dbname={tgt_dsn}",
                 str(dump_path),
             ],
+            env=tgt_env,
             capture_output=True,
             text=True,
             timeout=300,
@@ -496,7 +569,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--confirm-isolated-branch",
         action="store_true",
-        help="Allow managed Postgres host ONLY when target database name differs from source",
+        help="Allow managed Postgres host ONLY when paired with --approved-staging-host and --approved-staging-db",
+    )
+    parser.add_argument(
+        "--approved-staging-host",
+        help="Explicitly approved isolated staging host (required with --confirm-isolated-branch on managed hosts)",
+    )
+    parser.add_argument(
+        "--approved-staging-db",
+        help="Explicitly approved non-production staging database name (must differ from source)",
     )
     parser.add_argument("--skip-health", action="store_true", help="Skip FastAPI /health check on restored target")
     parser.add_argument("--keep-dump", action="store_true", help="Retain temporary pg_dump artifact after drill")
@@ -533,6 +614,8 @@ def main(argv: list[str] | None = None) -> int:
             target_url=args.target_url,
             source_origin=source_origin,
             allow_shared_host_isolated_db=args.confirm_isolated_branch,
+            approved_staging_host=args.approved_staging_host,
+            approved_staging_db=args.approved_staging_db,
             verify_health=not args.skip_health,
             keep_dump=args.keep_dump,
             rpo_minutes=args.rpo_minutes,

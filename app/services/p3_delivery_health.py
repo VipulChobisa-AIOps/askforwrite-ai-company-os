@@ -73,6 +73,18 @@ def create_service_delivery(
 ) -> dict[str, Any]:
     """Create a tracked P3 customer service delivery item linked to org, workflow, and scope."""
     ensure_customer_account(db, org_id=org_id, sku_key=sku_key, commit=False)
+    if p2_engagement_id:
+        eng = db.get(P2CustomerEngagementRecord, p2_engagement_id)
+        if not eng:
+            raise ValueError(f"Customer engagement '{p2_engagement_id}' not found")
+        if eng.org_id != org_id:
+            raise PermissionError("Access denied: p2_engagement_id belongs to a different organization")
+    if workflow_run_id:
+        wf_run = db.get(WorkflowRunRecord, workflow_run_id)
+        if not wf_run:
+            raise ValueError(f"Workflow run '{workflow_run_id}' not found")
+        if wf_run.org_id != org_id:
+            raise PermissionError("Access denied: workflow_run_id belongs to a different organization")
     now = datetime.now(UTC)
 
     delivery = P3ServiceDeliveryRecord(
@@ -144,12 +156,15 @@ def transition_delivery_quality_state(
     output_artifacts: dict[str, Any] | None = None,
     approval_checkpoint: dict[str, Any] | None = None,
     source_evidence_item: dict[str, Any] | None = None,
+    org_id_scope: str | None = None,
     actor: str = "owner",
 ) -> dict[str, Any]:
     """Validate and execute a delivery quality state transition with mandatory evidence on DELIVERED."""
     delivery = db.get(P3ServiceDeliveryRecord, delivery_id)
     if not delivery:
         raise ValueError(f"Service delivery '{delivery_id}' not found")
+    if org_id_scope and delivery.org_id != org_id_scope:
+        raise PermissionError("Cross-tenant service delivery access denied")
 
     clean_target = target_state.strip().upper()
     if clean_target not in DELIVERY_QUALITY_STATES:
@@ -240,11 +255,14 @@ def submit_delivery_quality_check(
     checks: list[dict[str, Any]] | dict[str, Any],
     reviewer: str = "qa_review_agent",
     output_artifacts: dict[str, Any] | None = None,
+    org_id_scope: str | None = None,
 ) -> dict[str, Any]:
     """Record explicit QA verification checklist on a delivery record."""
     delivery = db.get(P3ServiceDeliveryRecord, delivery_id)
     if not delivery:
         raise ValueError(f"Service delivery '{delivery_id}' not found")
+    if org_id_scope and delivery.org_id != org_id_scope:
+        raise PermissionError("Cross-tenant service delivery access denied")
 
     now = datetime.now(UTC)
     if output_artifacts:
@@ -274,12 +292,15 @@ def record_delivery_metrics_and_outcomes(
     delivery_id: str,
     output_metrics: dict[str, Any] | None = None,
     outcome_metrics: dict[str, Any] | None = None,
+    org_id_scope: str | None = None,
     actor: str = "owner",
 ) -> dict[str, Any]:
     """Record output metrics separately from business outcome metrics with strict causal attribution guard."""
     delivery = db.get(P3ServiceDeliveryRecord, delivery_id)
     if not delivery:
         raise ValueError(f"Service delivery '{delivery_id}' not found")
+    if org_id_scope and delivery.org_id != org_id_scope:
+        raise PermissionError("Cross-tenant service delivery access denied")
 
     now = datetime.now(UTC)
     if output_metrics:

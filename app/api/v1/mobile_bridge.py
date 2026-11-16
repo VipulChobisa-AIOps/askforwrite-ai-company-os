@@ -4,6 +4,7 @@ Bridges the native mobile app (afwpixelai Capacitor Android/iOS) and PWA
 with Company OS Field Force, Lead Operations, and AI Assistant services.
 """
 
+import hmac
 import logging
 import os
 import uuid
@@ -17,9 +18,11 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.models import (
     FieldTaskRecord,
+    GeofenceDefinition,
+    OrganizationRecord,
     UserRecord,
 )
-from app.security.auth import decode_access_token
+from app.security.auth import PLATFORM_OPERATOR_ROLES, decode_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -79,46 +82,68 @@ class PixelAssistantRequest(BaseModel):
 # ── Dependency: Authenticate Mobile Field Agent ───────────────────────
 
 def get_mobile_user(
-    authorization: str = Header(..., description="Bearer JWT token or API Key"),
+    authorization: str | None = Header(default=None, description="Bearer JWT token or API Key"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
     db: Session = Depends(get_db),
 ) -> UserRecord:
-    """Authenticates the mobile user via Bearer JWT or API key."""
-    if authorization.startswith("Bearer "):
-        token = authorization.split(" ", 1)[1]
+    """Authenticates the mobile user via verified DB Bearer JWT or platform operator API key."""
+    auth_header = authorization or ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
         try:
             payload = decode_access_token(token)
-            user_id = payload.get("sub")
-            if user_id:
-                user = db.get(UserRecord, user_id)
-                if user and user.is_active:
-                    return user
-                # Return a virtual user from the token if DB record is not yet synced
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload.get("sub"):
+            user_id = str(payload["sub"])
+            user = db.get(UserRecord, user_id)
+            if not user or not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account is inactive or no longer exists",
+                )
+            if user.org_id != payload.get("org_id"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Token organization scope mismatch",
+                )
+            if user.role == "customer":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Field staff or manager role required for mobile bridge",
+                )
+            if not user.org_id and user.role not in PLATFORM_OPERATOR_ROLES:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tenant organization scope is required",
+                )
+            if user.org_id:
+                org = db.get(OrganizationRecord, user.org_id)
+                if org is not None and not org.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Organization account is inactive or suspended",
+                    )
+            return user
+
+    # Allow platform API-Key fallback without ever impersonating a tenant DB user
+    candidate_key = (
+        x_api_key.strip()
+        if x_api_key
+        else (auth_header[7:].strip() if auth_header.startswith("Bearer ") else auth_header.strip())
+    )
+    if candidate_key:
+        for env_name, role in (("OWNER_API_KEY", "owner"), ("MANAGER_API_KEY", "manager")):
+            expected_key = os.environ.get(env_name, "")
+            if expected_key and len(expected_key) >= 32 and hmac.compare_digest(expected_key, candidate_key):
                 return UserRecord(
-                    id=user_id,
-                    email=payload.get("email", "info@askforwrite.in"),
-                    full_name="Field Agent",
-                    role=payload.get("role", "executive"),
-                    org_id=payload.get("org_id"),
+                    id=f"platform-{role}",
+                    email="ops@askforwrite.in",
+                    full_name="Platform Operations Manager",
+                    role=role,
+                    org_id=None,
                     is_active=True,
                 )
-        except Exception:
-            pass
-
-    # Allow X-API-Key fallback for manager testing
-    manager_key = os.environ.get("MANAGER_API_KEY", "")
-    owner_key = os.environ.get("OWNER_API_KEY", "")
-    clean_auth = authorization.replace("Bearer ", "").strip()
-    if clean_auth in (manager_key, owner_key) and len(clean_auth) >= 32:
-        user = db.query(UserRecord).filter(UserRecord.is_active.is_(True)).first()
-        if user:
-            return user
-        return UserRecord(
-            id=str(uuid.uuid4()),
-            email="info@askforwrite.in",
-            full_name="Field Operations Manager",
-            role="manager",
-            is_active=True,
-        )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -196,6 +221,15 @@ def mobile_check_in(
         )
         rec = record_attendance_checkout(db, org_id=user.org_id, req=checkout_req)
     else:
+        if req.geofence_id:
+            gf = db.get(GeofenceDefinition, req.geofence_id)
+            if not gf:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Geofence not found")
+            if user.org_id and gf.org_id != user.org_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: geofence belongs to another organization",
+                )
         checkin_req = AttendanceCheckInRequest(
             user_id=user.id,
             latitude=req.latitude,
@@ -236,9 +270,17 @@ def mobile_submit_visit(
     )
 
     task_id = req.task_id
-    if not task_id:
+    if task_id:
+        existing_task = db.get(FieldTaskRecord, task_id)
+        if not existing_task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Field task not found")
+        if user.org_id and existing_task.org_id != user.org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: task belongs to another organization",
+            )
+    else:
         # Create a transient task if none passed
-        from app.db.models import FieldTaskRecord
         transient_task = FieldTaskRecord(
             id=str(uuid.uuid4()),
             org_id=user.org_id,
@@ -320,13 +362,12 @@ def get_assigned_field_tasks(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Lists field tasks assigned to the current mobile agent."""
-    tasks = (
-        db.query(FieldTaskRecord)
-        .filter(FieldTaskRecord.assigned_to_user_id == user.id)
-        .order_by(FieldTaskRecord.created_at.desc())
-        .limit(20)
-        .all()
-    )
+    task_query = db.query(FieldTaskRecord).filter(FieldTaskRecord.assigned_to_user_id == user.id)
+    if user.org_id:
+        task_query = task_query.filter(FieldTaskRecord.org_id == user.org_id)
+    elif user.role not in PLATFORM_OPERATOR_ROLES:
+        task_query = task_query.filter(FieldTaskRecord.org_id.is_(None))
+    tasks = task_query.order_by(FieldTaskRecord.created_at.desc()).limit(20).all()
 
     return {
         "user_id": user.id,
@@ -367,11 +408,12 @@ def pixel_ai_assistant(
 
     # Handle domain-specific intent matching
     if any(w in prompt_lower for w in ["task", "visit", "schedule", "today", "todo"]):
-        pending_tasks = (
-            db.query(FieldTaskRecord)
-            .filter(FieldTaskRecord.assigned_to_user_id == user.id)
-            .count()
-        )
+        pending_q = db.query(FieldTaskRecord).filter(FieldTaskRecord.assigned_to_user_id == user.id)
+        if user.org_id:
+            pending_q = pending_q.filter(FieldTaskRecord.org_id == user.org_id)
+        elif user.role not in PLATFORM_OPERATOR_ROLES:
+            pending_q = pending_q.filter(FieldTaskRecord.org_id.is_(None))
+        pending_tasks = pending_q.count()
         reply = (
             f"Hello {user.full_name or 'Agent'}! You currently have {pending_tasks} task(s) on your schedule. "
             f"Your next destination is loaded on your mobile map."

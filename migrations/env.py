@@ -1,3 +1,4 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -7,7 +8,23 @@ from app.db import models  # noqa: F401
 from app.db.database import DATABASE_URL, Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
+
+# Prioritize unpooled direct database URL for migration operations and DDL execution
+_raw_unpooled = (
+    os.environ.get("DATABASE_URL_UNPOOLED")
+    or config.get_main_option("DATABASE_URL_UNPOOLED")
+)
+
+if _raw_unpooled:
+    _migration_url = _raw_unpooled
+    if _migration_url.startswith("postgres://"):
+        _migration_url = _migration_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif _migration_url.startswith("postgresql://") and not _migration_url.startswith("postgresql+psycopg://"):
+        _migration_url = _migration_url.replace("postgresql://", "postgresql+psycopg://", 1)
+else:
+    _migration_url = DATABASE_URL
+
+config.set_main_option("sqlalchemy.url", _migration_url.replace("%", "%%"))
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -16,7 +33,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=DATABASE_URL,
+        url=_migration_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

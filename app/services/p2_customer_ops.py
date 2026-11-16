@@ -14,6 +14,8 @@ from app.agents.discovery import normalize_domain
 from app.db.models import (
     ApprovalRequest,
     AuditLog,
+    InvoiceRecord,
+    LeadRecordRow,
     OrganizationRecord,
     OutreachRecord,
     P2AcceptanceStepRecord,
@@ -119,6 +121,23 @@ def create_customer_engagement_after_settlement(
     sku_key: str = "managed_seo_content_pilot",
 ) -> dict[str, Any]:
     """Activate paid customer onboarding workspace, modules, entitlements, and pilot checklist idempotently."""
+    if lead_id:
+        lead = db.get(LeadRecordRow, lead_id)
+        if lead is not None and lead.org_id and lead.org_id != org_id:
+            raise PermissionError(f"Referenced lead_id '{lead_id}' belongs to another organization")
+    if invoice_id:
+        inv = db.get(InvoiceRecord, invoice_id)
+        if inv is not None and inv.org_id and inv.org_id != org_id:
+            raise PermissionError(f"Referenced invoice_id '{invoice_id}' belongs to another organization")
+    if proposal_id:
+        prop = db.get(P2CommercialProposalRecord, proposal_id)
+        if prop is not None and prop.lead_id:
+            if lead_id and prop.lead_id != lead_id:
+                raise ValueError(f"proposal_id '{proposal_id}' is bound to a different lead_id")
+            prop_lead = db.get(LeadRecordRow, prop.lead_id)
+            if prop_lead is not None and prop_lead.org_id and prop_lead.org_id != org_id:
+                raise PermissionError(f"Referenced proposal_id '{proposal_id}' belongs to another organization")
+
     existing = (
         db.query(P2CustomerEngagementRecord)
         .filter(

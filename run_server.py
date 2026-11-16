@@ -1,5 +1,4 @@
 import uvicorn
-import sys
 import multiprocessing
 from dotenv import load_dotenv
 

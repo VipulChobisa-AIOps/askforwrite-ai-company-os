@@ -2,7 +2,6 @@
 Build script to package AskforWrite AI Company OS into a Windows Desktop Executable.
 """
 
-import os
 import sys
 import subprocess
 from pathlib import Path

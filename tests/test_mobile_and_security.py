@@ -14,9 +14,22 @@ class MobileAndSecurityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         Base.metadata.create_all(bind=engine)
+        cls._prev_env = {
+            k: os.environ.get(k) for k in ("MANAGER_API_KEY", "OWNER_API_KEY")
+        }
+        cls.manager_key = os.environ.get("MANAGER_API_KEY") or "test-manager-api-key-32-chars-long-xxx"
+        cls.owner_key = os.environ.get("OWNER_API_KEY") or "test-owner-api-key-32-chars-long-xxx"
+        os.environ["MANAGER_API_KEY"] = cls.manager_key
+        os.environ["OWNER_API_KEY"] = cls.owner_key
         cls.client = TestClient(app)
-        cls.manager_key = os.environ.get("MANAGER_API_KEY", "test-manager-api-key-32-chars-long-xxx")
-        cls.owner_key = os.environ.get("OWNER_API_KEY", "test-owner-api-key-32-chars-long-xxx")
+
+    @classmethod
+    def tearDownClass(cls):
+        for k, v in cls._prev_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
     # ── Security Headers Tests ────────────────────────────────────────
 

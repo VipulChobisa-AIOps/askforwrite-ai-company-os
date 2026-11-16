@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -894,7 +895,7 @@ class WorkflowRunRecord(Base):
 
 
 class ExecutionEvidenceRecord(Base):
-    """Durable 18-field execution evidence ledger with output-origin verification."""
+    """Durable execution evidence ledger with output-origin verification and cost/budget accounting."""
 
     __tablename__ = "execution_evidence_records"
 
@@ -912,6 +913,10 @@ class ExecutionEvidenceRecord(Base):
     status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     credits_consumed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    execution_budget_units: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    provider_cost_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    provider_tokens_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    provider_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     evidence_reference: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -1480,7 +1485,9 @@ class P4MarketIntelRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
     org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    icp_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("p4_icp_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     intel_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     subject_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1507,7 +1514,9 @@ class P4GrowthCampaignRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
     org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    icp_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("p4_icp_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     objective: Mapped[str] = mapped_column(Text, nullable=False)
     channels_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -1536,9 +1545,15 @@ class P4PipelineDealRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
     org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    lead_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-    campaign_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-    icp_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    lead_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    campaign_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("p4_growth_campaigns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    icp_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("p4_icp_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     company_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     contact_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
     stage: Mapped[str] = mapped_column(String(48), nullable=False, default="DISCOVERED", index=True)
@@ -1787,9 +1802,14 @@ class P7DelegationPlanRecord(Base):
     computed_depth: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     credit_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     credits_consumed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    execution_budget_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    execution_budget_units_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_cost_inr: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     status: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="PLANNED")
     execution_mode: Mapped[str] = mapped_column(String(24), nullable=False, default="SIMULATION")
     execution_results_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    node_states_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     approval_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False, default="system")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
@@ -1840,6 +1860,7 @@ class P7AutonomyPolicyRecord(Base):
     autonomy_level: Mapped[str] = mapped_column(String(48), index=True, nullable=False, default="LEVEL_2_APPROVAL_GATED")
     requires_hitl_for_external: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     max_daily_budget_credits: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    max_daily_execution_units: Mapped[int] = mapped_column(Integer, nullable=False, default=500)
     is_paused: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
     pause_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     min_eval_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.75)
@@ -1912,7 +1933,9 @@ class P8MarketplaceListingRecord(Base):
     __tablename__ = "p8_marketplace_listings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    developer_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    developer_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("p8_developer_profiles.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
     listing_slug: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     package_type: Mapped[str] = mapped_column(String(48), index=True, nullable=False, default="AGENT_PLUGIN")
@@ -1947,7 +1970,9 @@ class P8TenantInstallRecord(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    listing_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    listing_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("p8_marketplace_listings.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
     status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="ACTIVE")
     granted_permissions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     secret_digests_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -1969,9 +1994,13 @@ class P8MarketplaceReviewRecord(Base):
     __tablename__ = "p8_marketplace_reviews"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    listing_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    listing_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("p8_marketplace_listings.id", ondelete="CASCADE"), index=True, nullable=False
+    )
     org_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    install_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    install_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("p8_tenant_installs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
     abuse_flagged: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False, default=False)
@@ -2009,4 +2038,32 @@ class P8RevenueShareLedgerRecord(Base):
 
     __table_args__ = (
         Index("ix_p8_rev_dev_origin", "developer_id", "evidence_status", "settlement_status"),
+    )
+
+
+class TenantInvitationRecord(Base):
+    """Authorized single-use organization invitation for bounded member/customer/tenant_admin onboarding."""
+
+    __tablename__ = "tenant_invitations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    email: Mapped[str] = mapped_column(String(250), index=True, nullable=False)
+    invited_role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), index=True, nullable=False, default="PENDING")
+    approval_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    invited_by_subject: Mapped[str] = mapped_column(String(250), nullable=False, default="system")
+    accepted_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+    __table_args__ = (
+        Index("ix_tenant_inv_org_email_status", "org_id", "email", "status"),
     )

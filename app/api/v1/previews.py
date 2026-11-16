@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.security.auth import APIPrincipal, require_manager
+from app.db.models import LeadRecordRow
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_tenant_manager
 from app.services.previews import (
     generate_trojan_horse_preview,
     get_preview_by_token,
@@ -47,10 +48,16 @@ class PublicOpportunityScanRequest(BaseModel):
 def generate_preview_endpoint(
     payload: PreviewGenerateRequest,
     x_correlation_id: str | None = Header(default=None),
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_tenant_manager),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Generate a Trojan-Horse proof-first preview with tailored audit, benchmarks, payment links, and TrustBlock."""
+    if payload.lead_id:
+        lead = db.get(LeadRecordRow, payload.lead_id)
+        if not lead:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+        if principal.org_id:
+            enforce_tenant_access(principal, lead.org_id or "__platform__")
     correlation_id = x_correlation_id or str(uuid.uuid4())
     try:
         return generate_trojan_horse_preview(

@@ -155,12 +155,16 @@ def record_attendance_checkin(
         .first()
     )
     if existing:
+        if org_id is not None and existing.org_id != org_id:
+            raise PermissionError("Idempotency key belongs to another organization")
         return existing
 
     # Lookup target geofence if specified
     geofence = None
     if req.geofence_id:
         geofence = db.query(GeofenceDefinition).filter(GeofenceDefinition.id == req.geofence_id).first()
+        if org_id is not None and geofence is not None and geofence.org_id != org_id:
+            raise PermissionError("Geofence belongs to another organization")
 
     status, notes = verify_location_integrity(
         db=db,
@@ -244,6 +248,8 @@ def record_attendance_checkout(
         .first()
     )
     if existing:
+        if org_id is not None and existing.org_id != org_id:
+            raise PermissionError("Idempotency key belongs to another organization")
         return existing
 
     status, notes = verify_location_integrity(

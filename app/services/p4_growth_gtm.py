@@ -18,6 +18,8 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.models import (
     ApprovalRequest,
+    LeadRecordRow,
+    OrganizationRecord,
     P4GrowthCampaignRecord,
     P4IcpProfileRecord,
     P4MarketIntelRecord,
@@ -102,6 +104,36 @@ def check_gtm_copy_safety(payload: Any, *, subject: str = "GTM Campaign Asset") 
     return {"safe": len(deduped) == 0, "issues": deduped, "checked_chars": len(combined)}
 
 
+def _ensure_active_org(db: Session, org_id: str | None) -> OrganizationRecord | None:
+    """Validate optional tenant organization existence and active status."""
+    if org_id is None:
+        return None
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise ValueError(f"Organization '{org_id}' not found")
+    if not org.is_active:
+        raise PermissionError(f"Organization '{org_id}' is inactive")
+    return org
+
+
+def _validate_optional_org_ref(
+    db: Session,
+    model: type,
+    record_id: str | None,
+    *,
+    label: str,
+    org_id: str | None,
+) -> None:
+    """Validate optional cross-record link exists and belongs to the caller's organization."""
+    if not record_id:
+        return
+    rec = db.get(model, record_id)
+    if not rec:
+        raise ValueError(f"Referenced {label} '{record_id}' not found")
+    if org_id is not None and getattr(rec, "org_id", None) != org_id:
+        raise PermissionError(f"Referenced {label} '{record_id}' belongs to another organization")
+
+
 def _serialize_icp(rec: P4IcpProfileRecord) -> dict[str, Any]:
     return {
         "icp_id": rec.id,
@@ -136,6 +168,7 @@ def create_icp_profile(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Create a tenant-scoped Ideal Customer Profile (ICP) with claim-safety validation."""
+    _ensure_active_org(db, org_id)
     safety = check_gtm_copy_safety(value_propositions or [], subject=name)
     if not safety["safe"]:
         raise ValueError(f"ICP value propositions failed safety gate: {'; '.join(safety['issues'])}")
@@ -183,6 +216,7 @@ def score_prospect_against_icp(
     signals: list[str] | None = None,
 ) -> dict[str, Any]:
     """Score a prospective SME cleanly against a stored ICP definition."""
+    _ensure_active_org(db, org_id)
     icp = db.get(P4IcpProfileRecord, icp_id)
     if not icp or (org_id is not None and icp.org_id != org_id):
         raise ValueError(f"ICP profile '{icp_id}' not found")
@@ -255,6 +289,7 @@ def record_market_intel(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Store provenance-verified market, competitor, or keyword intelligence."""
+    _ensure_active_org(db, org_id)
     clean_type = intel_type.strip().upper()
     clean_conf = confidence_level.strip().upper()
     if clean_type not in INTEL_TYPES:
@@ -271,10 +306,7 @@ def record_market_intel(
     if clean_conf == "VERIFIED_SOURCE" and (not source_url or not evidence_ref):
         raise ValueError("VERIFIED_SOURCE intelligence requires both source_url and evidence_ref provenance")
 
-    if icp_id:
-        icp = db.get(P4IcpProfileRecord, icp_id)
-        if not icp or (org_id is not None and icp.org_id != org_id):
-            raise ValueError(f"Referenced icp_id '{icp_id}' not found")
+    _validate_optional_org_ref(db, P4IcpProfileRecord, icp_id, label="icp_id", org_id=org_id)
 
     now = datetime.now(UTC)
     rec = P4MarketIntelRecord(
@@ -354,10 +386,8 @@ def create_growth_campaign(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Generate a claim-checked multi-channel GTM campaign and stage HITL approval."""
-    if icp_id:
-        icp = db.get(P4IcpProfileRecord, icp_id)
-        if not icp or (org_id is not None and icp.org_id != org_id):
-            raise ValueError(f"ICP profile '{icp_id}' not found")
+    _ensure_active_org(db, org_id)
+    _validate_optional_org_ref(db, P4IcpProfileRecord, icp_id, label="icp_id", org_id=org_id)
 
     clean_channels = [c.strip().lower() for c in (channels or ["seo", "social", "email"]) if c.strip()]
     social = generate_omnichannel_social_campaign(
@@ -471,6 +501,7 @@ def execute_approved_campaign(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Execute a staged GTM campaign only if its Owner HITL approval is APPROVED."""
+    _ensure_active_org(db, org_id)
     rec = db.get(P4GrowthCampaignRecord, campaign_id)
     if not rec or (org_id is not None and rec.org_id != org_id):
         raise ValueError(f"Campaign '{campaign_id}' not found")
@@ -481,6 +512,8 @@ def execute_approved_campaign(
     if not appr or appr.status != "APPROVED":
         current = appr.status if appr else "MISSING"
         raise PermissionError(f"Campaign cannot execute until HITL approval is APPROVED (current={current})")
+    if rec.org_id and (appr.detail or {}).get("org_id") not in (None, rec.org_id):
+        raise PermissionError("Campaign HITL ApprovalRequest belongs to another organization")
 
     raw_mode = (execution_mode or "").strip().upper()
     normalized_mode = "PRODUCTION" if raw_mode == "LIVE" else raw_mode
@@ -551,6 +584,10 @@ def create_pipeline_deal(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Create a GTM pipeline deal explicitly tagged with ACTUAL or SANDBOX evidence_status."""
+    _ensure_active_org(db, org_id)
+    _validate_optional_org_ref(db, LeadRecordRow, lead_id, label="lead_id", org_id=org_id)
+    _validate_optional_org_ref(db, P4GrowthCampaignRecord, campaign_id, label="campaign_id", org_id=org_id)
+    _validate_optional_org_ref(db, P4IcpProfileRecord, icp_id, label="icp_id", org_id=org_id)
     clean_origin = evidence_status.strip().upper()
     if clean_origin not in ("ACTUAL", "SANDBOX"):
         raise ValueError("evidence_status must be ACTUAL or SANDBOX")
@@ -593,6 +630,7 @@ def transition_pipeline_deal(
     actor: str = "system",
 ) -> dict[str, Any]:
     """Advance or close a GTM pipeline deal, enforcing lost_reason for LOST transitions."""
+    _ensure_active_org(db, org_id)
     rec = db.get(P4PipelineDealRecord, deal_id)
     if not rec or (org_id is not None and rec.org_id != org_id):
         raise ValueError(f"Pipeline deal '{deal_id}' not found")

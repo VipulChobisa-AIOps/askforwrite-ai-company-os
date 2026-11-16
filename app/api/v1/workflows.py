@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models import WorkflowDefinitionRecord, WorkflowRunRecord
-from app.security.auth import APIPrincipal, enforce_tenant_access, get_current_principal, require_tenant_operator
+from app.security.auth import APIPrincipal, enforce_tenant_access, require_tenant_operator
 from app.services.workflow_engine import (
     cancel_workflow_run,
     create_draft_run,
@@ -89,7 +89,7 @@ def create_workflow_definition_endpoint(
 
 @router.get("/definitions")
 def list_workflow_definitions_endpoint(
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """List persisted workflow definitions visible to the caller's organization."""
@@ -103,7 +103,7 @@ def list_workflow_definitions_endpoint(
 @router.post("/runs")
 def create_or_start_workflow_run_endpoint(
     body: CreateWorkflowRunRequest,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Create a DRAFT run or execute it through READY -> RUNNING immediately."""
@@ -132,7 +132,7 @@ def create_or_start_workflow_run_endpoint(
 @router.post("/runs/{run_id}/ready")
 def mark_run_ready_endpoint(
     run_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Transition a DRAFT workflow run to READY."""
@@ -143,13 +143,15 @@ def mark_run_ready_endpoint(
 @router.post("/runs/{run_id}/start")
 def start_existing_run_endpoint(
     run_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Start a previously created DRAFT or READY workflow run."""
     run = db.get(WorkflowRunRecord, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Workflow run not found")
+    if principal.org_id:
+        enforce_tenant_access(principal, run.org_id)
     res = start_workflow_run(
         db,
         workflow_id=run.workflow_id,
@@ -164,7 +166,7 @@ def start_existing_run_endpoint(
 def list_workflow_runs_endpoint(
     status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """List tenant-scoped workflow execution runs."""
@@ -180,7 +182,7 @@ def list_workflow_runs_endpoint(
 @router.get("/runs/{run_id}")
 def get_workflow_run_endpoint(
     run_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Get full state, step results, and budget metrics for a workflow run."""
@@ -195,7 +197,7 @@ def get_workflow_run_endpoint(
 @router.post("/runs/{run_id}/resume")
 def resume_workflow_run_endpoint(
     run_id: str,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Resume a WAITING_APPROVAL workflow run once its ApprovalRequest has been decided."""
@@ -207,7 +209,7 @@ def resume_workflow_run_endpoint(
 def cancel_workflow_run_endpoint(
     run_id: str,
     body: CancelWorkflowRunRequest | None = None,
-    principal: APIPrincipal = Depends(get_current_principal),
+    principal: APIPrincipal = Depends(require_tenant_operator),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Cancel an in-flight or waiting workflow run cleanly."""

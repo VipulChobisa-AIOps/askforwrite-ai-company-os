@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.pg_backup_restore_drill import (
+    CORE_TABLES_TO_VERIFY,
     DrillSafetyError,
     compare_source_and_target,
     compute_sha256,
@@ -44,12 +45,58 @@ def test_validate_target_isolation_blocks_same_or_production_targets() -> None:
             allow_shared_host_isolated_db=False,
         )
 
-    with pytest.raises(DrillSafetyError, match="target database name cannot match"):
+    with pytest.raises(DrillSafetyError, match="reserved for production"):
         validate_target_isolation(
             prod_src,
             "postgresql://user:pass@ep-other.us-east-2.aws.neon.tech/neondb",
             allow_shared_host_isolated_db=True,
         )
+
+    staging_src = "postgresql://user:pass@ep-abc.us-east-2.aws.neon.tech/askforwrite_source"
+    with pytest.raises(DrillSafetyError, match="target database name cannot match"):
+        validate_target_isolation(
+            staging_src,
+            "postgresql://user:pass@ep-other.us-east-2.aws.neon.tech/askforwrite_source",
+            allow_shared_host_isolated_db=True,
+        )
+
+    # Managed staging host requires BOTH approved_staging_host and approved_staging_db
+    with pytest.raises(DrillSafetyError, match="requires both"):
+        validate_target_isolation(
+            prod_src,
+            "postgresql://user:pass@ep-staging.us-east-2.aws.neon.tech/afw_staging",
+            allow_shared_host_isolated_db=True,
+        )
+
+    with pytest.raises(DrillSafetyError, match="--approved-staging-host"):
+        validate_target_isolation(
+            prod_src,
+            "postgresql://user:pass@ep-other.us-east-2.aws.neon.tech/afw_staging",
+            allow_shared_host_isolated_db=True,
+            approved_staging_host="ep-staging.us-east-2.aws.neon.tech",
+            approved_staging_db="afw_staging",
+        )
+
+    # Approved isolated staging branch passes cleanly
+    validate_target_isolation(
+        prod_src,
+        "postgresql://user:pass@ep-staging.us-east-2.aws.neon.tech/afw_staging",
+        allow_shared_host_isolated_db=True,
+        approved_staging_host="ep-staging.us-east-2.aws.neon.tech",
+        approved_staging_db="afw_staging",
+    )
+
+    # Full P4-P8 parity table coverage check
+    for expected in (
+        "tenant_invitations",
+        "p4_icp_profiles",
+        "p5_tenant_templates",
+        "p6_industry_packs",
+        "p7_delegation_plans",
+        "p8_developer_profiles",
+        "p8_revenue_share_ledger",
+    ):
+        assert expected in CORE_TABLES_TO_VERIFY
 
     # Local isolated Postgres DB passes cleanly
     validate_target_isolation(
@@ -99,8 +146,12 @@ def test_execute_drill_with_mocked_binaries_and_inspected_states(
         lambda: {"pg_dump": "/usr/bin/pg_dump", "pg_restore": "/usr/bin/pg_restore", "psql": "/usr/bin/psql"},
     )
 
-    def fake_subprocess_run(cmd, **_kwargs):
+    captured_cmds: list[tuple[list[str], str | None]] = []
+
+    def fake_subprocess_run(cmd, **kwargs):
         exe = str(cmd[0])
+        env = kwargs.get("env") or {}
+        captured_cmds.append(([str(x) for x in cmd], env.get("PGPASSWORD")))
         if exe.endswith("pg_dump"):
             for arg in cmd:
                 if str(arg).startswith("--file="):
@@ -136,3 +187,7 @@ def test_execute_drill_with_mocked_binaries_and_inspected_states(
     assert len(res["dump_sha256"]) == 64
     assert "srcpass" not in res["source_db"]
     assert "tgtpass" not in res["target_db"]
+    assert len(captured_cmds) == 2
+    assert captured_cmds[0][1] == "srcpass"
+    assert captured_cmds[1][1] == "tgtpass"
+    assert all("srcpass" not in arg and "tgtpass" not in arg for cmd_args, _ in captured_cmds for arg in cmd_args)

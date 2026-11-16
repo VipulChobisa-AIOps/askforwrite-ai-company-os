@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.security.auth import APIPrincipal, require_manager
+from app.security.auth import APIPrincipal, require_platform_manager
 from app.services.neon_bridge import get_neon_status, invoke_neon_function
 
 router = APIRouter(prefix="/v1/neon", tags=["Neon Platform Integration"])
@@ -27,7 +27,7 @@ def neon_status_endpoint() -> Dict[str, Any]:
 @router.post("/functions/{function_name}/invoke", status_code=status.HTTP_200_OK)
 async def invoke_neon_function_endpoint(
     function_name: str,
-    principal: APIPrincipal = Depends(require_manager),
+    principal: APIPrincipal = Depends(require_platform_manager),
 ) -> Dict[str, Any]:
     """Invoke a deployed Neon Function (e.g. 'hello')."""
     try:
