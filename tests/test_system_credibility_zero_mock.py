@@ -39,9 +39,10 @@ def test_render_cloud_hosting_and_health() -> None:
     render_yaml = REPO_ROOT / "render.yaml"
     assert render_yaml.exists(), "render.yaml must exist at repository root"
     content = render_yaml.read_text(encoding="utf-8")
-    assert "name: askforwrite-ai-company-os" in content
-    assert "plan: starter" in content, "Render plan must be paid compute (starter) so SMTP 465/587 is unblocked and cold-start spin-down is eliminated"
-    assert "plan: free" not in content
+    prod_block = content.split("name: askforwrite-ai-company-os-staging", 1)[0]
+    assert "name: askforwrite-ai-company-os" in prod_block
+    assert "plan: starter" in prod_block, "Render plan must be paid compute (starter) so SMTP 465/587 is unblocked and cold-start spin-down is eliminated"
+    assert "plan: free" not in prod_block
     assert "name: askforwrite-ai-company-os-staging" in content
     assert "runtime: docker" in content
     assert "healthCheckPath: /health" in content

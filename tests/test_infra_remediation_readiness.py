@@ -301,7 +301,10 @@ def test_render_blueprint_staging_single_worker_and_healthz() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     render_yaml = (repo_root / "render.yaml").read_text(encoding="utf-8")
     staging_block = render_yaml.split("name: askforwrite-ai-company-os-staging", 1)[1]
+    assert "plan: free" in staging_block
     assert "healthCheckPath: /healthz" in staging_block
+    staging_bp = (repo_root / "render.staging.yaml").read_text(encoding="utf-8")
+    assert "plan: free" in staging_bp
     assert 'value: "1"' in staging_block  # UVICORN_WORKERS=1 on staging
     assert "key: DATABASE_URL_UNPOOLED" in staging_block
     assert "key: TRUST_ENGINE_PRIVATE_KEY_PEM" in staging_block
