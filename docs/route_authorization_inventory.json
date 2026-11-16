@@ -1,9 +1,9 @@
 {
-  "total_routes": 390,
+  "total_routes": 391,
   "categories": {
     "TENANT_SCOPED": 204,
     "PLATFORM_ONLY": 123,
-    "PUBLIC": 58,
+    "PUBLIC": 59,
     "OPTIONAL_AUTH": 5
   },
   "routes": [
@@ -5714,6 +5714,22 @@
       "dependencies": [],
       "negative_tests": [
         "test_infra_remediation_readiness.py"
+      ]
+    },
+    {
+      "path": "/v1/integrations/gsc/callback",
+      "methods": [
+        "GET"
+      ],
+      "name": "gsc_oauth_browser_callback",
+      "tag": "app.main",
+      "category": "PUBLIC",
+      "auth_policy": "Cryptographic CSRF state-nonce verified Google OAuth 2.0 callback.",
+      "dependencies": [
+        "get_db"
+      ],
+      "negative_tests": [
+        "test_p3_1_gsc_integration.py"
       ]
     },
     {

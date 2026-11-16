@@ -462,6 +462,25 @@ def health_check() -> dict[str, Any]:
     return data
 
 
+@app.get("/v1/integrations/gsc/callback", tags=["integrations"])
+def gsc_oauth_browser_callback(
+    code: str = "",
+    state: str = "",
+    error: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Handle Google OAuth 2.0 redirect callback, verify CSRF state nonce, and store encrypted tokens."""
+    from app.services.gsc_integration import GscIntegrationError, handle_gsc_oauth_callback
+
+    try:
+        return handle_gsc_oauth_callback(db, code=code, state=state, error=error)
+    except GscIntegrationError as exc:
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=f"{exc.code}: {exc.message}",
+        ) from exc
+
+
 @app.get("/", include_in_schema=False)
 def root(request: Request) -> Any:
     """Root entrypoint: returns service metadata for API clients or redirects browsers to dashboard."""

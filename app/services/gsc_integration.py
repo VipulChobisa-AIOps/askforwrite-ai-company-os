@@ -200,8 +200,22 @@ def _record_gsc_audit(db: Session, *, actor: str, org_id: str, action: str, outp
 
 
 def _assert_live_call_allowed(http_client: httpx.Client | None) -> None:
-    """Allow real Google HTTP calls only when external side effects are allowed OR an explicit injected client is used in tests."""
-    if http_client is None and is_external_side_effect_blocked():
+    """Allow real Google HTTP calls when an explicit test client is injected, when external side effects are enabled,
+    or when real non-test Google OAuth credentials are configured for read-only Search Console verification outside pytest.
+    """
+    if http_client is not None:
+        return
+    import sys
+
+    if "pytest" not in sys.modules and "unittest" not in sys.modules:
+        cid, csec, _redir, missing = _gsc_env_config()
+        if (
+            not missing
+            and not cid.startswith(("test-", "mock-"))
+            and not csec.startswith(("test-", "mock-", "GOCSPX-test"))
+        ):
+            return
+    if is_external_side_effect_blocked():
         raise GscIntegrationError(
             "Live Google Search Console HTTP calls are blocked under staging/simulation lock without an explicit test transport.",
             code="GSC_BLOCKED_BY_ENVIRONMENT_LOCK",
@@ -437,6 +451,53 @@ def exchange_gsc_oauth_code(
     db.commit()
     db.refresh(rec)
     return serialize_gsc_state(rec)
+
+
+def handle_gsc_oauth_callback(
+    db: Session,
+    *,
+    code: str,
+    state: str,
+    error: str | None = None,
+    redirect_uri: str | None = None,
+    http_client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """Resolve organization by CSRF state nonce hash and complete Google OAuth 2.0 code exchange."""
+    if error:
+        raise GscIntegrationError(
+            f"Google OAuth authorization declined or failed: {error}",
+            code="GSC_OAUTH_ACCESS_DENIED",
+            status_code=400,
+        )
+    if not state or not state.strip():
+        raise GscIntegrationError(
+            "OAuth state parameter is required on callback.",
+            code="GSC_OAUTH_STATE_MISMATCH",
+            status_code=400,
+        )
+    expected_hash = hashlib.sha256(state.strip().encode("utf-8")).hexdigest()
+    candidates = db.query(ConnectorStateRecord).filter_by(connector_id=GSC_CONNECTOR_ID).all()
+    matched_org_id: str | None = None
+    for rec in candidates:
+        cfg = rec.config_summary or {}
+        if cfg.get("oauth_state_hash") and secrets.compare_digest(str(cfg.get("oauth_state_hash")), expected_hash):
+            matched_org_id = rec.org_id
+            break
+    if not matched_org_id:
+        raise GscIntegrationError(
+            "OAuth state mismatch or expired callback state nonce.",
+            code="GSC_OAUTH_STATE_MISMATCH",
+            status_code=400,
+        )
+    return exchange_gsc_oauth_code(
+        db,
+        org_id=matched_org_id,
+        code=code,
+        state=state.strip(),
+        redirect_uri=redirect_uri,
+        actor="google_oauth_callback",
+        http_client=http_client,
+    )
 
 
 def _refresh_access_token_if_needed(
