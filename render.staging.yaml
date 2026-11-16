@@ -1,0 +1,52 @@
+# AskforWrite AI Company OS — isolated staging only
+# This Blueprint intentionally defines NO production resources.
+services:
+  - type: web
+    name: askforwrite-ai-company-os-staging
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: ohio
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: BUILD_VERSION
+        value: v3.5-p0-truthfulness-staging
+      - key: ENABLE_EXTERNAL_SIDE_EFFECTS
+        value: "false"
+      - key: PAYMENT_MODE
+        value: sandbox
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: SMTP_MODE
+        value: sandbox_sink
+      - key: UVICORN_WORKERS
+        value: "1"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: DB_CONNECT_TIMEOUT_SECONDS
+        value: "3"
+      - key: HEALTHCHECK_DB_TIMEOUT_SECONDS
+        value: "3.5"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: NEON_DATABASE_URL
+        sync: false
+      - key: TRUST_ENGINE_PRIVATE_KEY_PEM
+        sync: false
+      - key: TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM
+        value: "[]"
+      - key: MANAGER_API_KEY
+        generateValue: true
+      - key: OWNER_API_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
