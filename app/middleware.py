@@ -113,6 +113,9 @@ class LLMContextMiddleware(BaseHTTPMiddleware):
     """Inspects incoming headers and sets request-scoped BYOK Gemini API key & owner status."""
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.url.path in ("/healthz", "/readyz", "/health"):
+            return await call_next(request)
+
         header_gemini_key = request.headers.get("X-Gemini-API-Key")
         api_key = request.headers.get("X-API-Key")
         auth_header = request.headers.get("Authorization", "")
@@ -233,6 +236,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        if request.url.path in ("/healthz", "/readyz", "/health"):
+            return await call_next(request)
+
         # Rate limiting disabled in development for main app
         app_env = os.environ.get("APP_ENV", "development").casefold()
         if app_env == "development" and getattr(request.app, "title", "") == "AskforWrite AI Company OS":

@@ -242,10 +242,20 @@ def get_all_providers() -> dict[PaymentProvider, PaymentProviderInterface]:
     return {p: cls() for p, cls in _provider_registry.items()}
 
 
+def resolve_paypal_mode() -> str:
+    """Resolve effective PayPal mode ('sandbox' or 'live') safely across services.
+
+    Only explicit 'PAYPAL_MODE=live' activates live PayPal endpoints; missing or
+    unrecognized values fail safe to 'sandbox' so staging/dev never hit live APIs.
+    """
+    raw = os.environ.get("PAYPAL_MODE", "").strip().lower()
+    if raw == "live":
+        return "live"
+    return "sandbox"
+
+
 def inspect_payment_provider_config() -> dict[str, Any]:
     """Return non-secret payment provider configuration metadata (never reveals keys or secrets)."""
-    import os
-
     rzp_id = os.environ.get("RAZORPAY_KEY_ID", "").strip()
     rzp_sec = os.environ.get("RAZORPAY_KEY_SECRET", "").strip()
     rzp_wh = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
@@ -259,7 +269,7 @@ def inspect_payment_provider_config() -> dict[str, Any]:
     pp_id = os.environ.get("PAYPAL_CLIENT_ID", "").strip()
     pp_sec = os.environ.get("PAYPAL_CLIENT_SECRET", "").strip()
     pp_wh = os.environ.get("PAYPAL_WEBHOOK_ID", "").strip()
-    pp_mode = os.environ.get("PAYPAL_MODE", "live").strip().lower() or "live"
+    pp_mode = resolve_paypal_mode()
 
     return {
         "razorpay": {

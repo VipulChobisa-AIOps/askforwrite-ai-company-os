@@ -1,8 +1,11 @@
 """FastAPI development surface for the first offline MVP capability."""
 
+import inspect
 import logging
 import os
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -139,6 +142,12 @@ async def lifespan(app: FastAPI):
                 raise
         finally:
             db.close()
+    elif DATABASE_URL:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except Exception as exc:
+            logger.warning("Startup DB pool warmup failed (non-fatal): %s", type(exc).__name__)
     yield
     # Shutdown logic (if needed in the future) goes here
 
@@ -232,18 +241,118 @@ if dashboard_dir.exists():
     app.mount("/static", StaticFiles(directory=str(dashboard_dir)), name="static")
 
 
-@app.get("/health", tags=["system"])
-def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Production health check endpoint for Render, cloud monitors, and load balancers."""
-    db_status = "connected"
+def _resolve_health_db_timeout_seconds() -> float:
+    raw = os.environ.get("HEALTHCHECK_DB_TIMEOUT_SECONDS", "3.5").strip()
     try:
-        bind = db.get_bind()
-        if bind is not None and bind.dialect.name == "postgresql":
-            db.execute(text("SET LOCAL statement_timeout = 3000"))
-        db.execute(text("SELECT 1"))
-    except Exception:
-        db.rollback()
-        db_status = "degraded"
+        val = float(raw)
+    except ValueError:
+        val = 3.5
+    # Bound strictly below Render's 5.0-second HTTP healthcheck deadline.
+    return max(0.25, min(val, 4.0))
+
+
+def _probe_engine_sync(target_engine, timeout_seconds: float) -> None:
+    """Execute SELECT 1 via existing SQLAlchemy engine pool (bounded by caller thread timeout)."""
+    stmt_ms = max(250, int(timeout_seconds * 1000))
+    with target_engine.connect() as conn:
+        if target_engine.dialect.name == "postgresql":
+            conn.execute(text(f"SET LOCAL statement_timeout = {stmt_ms}"))
+        conn.execute(text("SELECT 1")).fetchone()
+
+
+def _probe_postgres_isolated_sync(db_url: str, timeout_seconds: float) -> None:
+    """Execute an isolated direct SELECT 1 bypassing QueuePool so pool contention cannot stall probes."""
+    import psycopg
+
+    libpq_url = db_url.strip()
+    if libpq_url.startswith("postgresql+psycopg://"):
+        libpq_url = "postgresql://" + libpq_url[len("postgresql+psycopg://"):]
+    elif libpq_url.startswith("postgres://"):
+        libpq_url = "postgresql://" + libpq_url[len("postgres://"):]
+
+    connect_timeout = max(1, int(round(timeout_seconds)))
+    stmt_ms = max(250, int(timeout_seconds * 1000))
+    with psycopg.connect(libpq_url, connect_timeout=connect_timeout) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SET statement_timeout = {stmt_ms}")
+            cur.execute("SELECT 1")
+            cur.fetchone()
+
+
+def _probe_database_bounded(timeout_seconds: float | None = None) -> tuple[str, float, str | None]:
+    """Check database readiness strictly within ``timeout_seconds`` without masking failures."""
+    budget = timeout_seconds if timeout_seconds is not None else _resolve_health_db_timeout_seconds()
+    t0 = time.perf_counter()
+
+    if get_db in app.dependency_overrides:
+        override_fn = app.dependency_overrides[get_db]
+        res = override_fn()
+        is_gen = inspect.isgenerator(res)
+        db_sess = None
+        try:
+            db_sess = next(res) if is_gen else res
+            bind = getattr(db_sess, "get_bind", lambda: None)()
+            dialect_name = getattr(getattr(bind, "dialect", None), "name", None)
+            if dialect_name == "postgresql":
+                stmt_ms = max(250, int(budget * 1000))
+                db_sess.execute(text(f"SET LOCAL statement_timeout = {stmt_ms}"))
+            db_sess.execute(text("SELECT 1"))
+            return "connected", round((time.perf_counter() - t0) * 1000.0, 2), None
+        except Exception as exc:
+            try:
+                if db_sess is not None:
+                    db_sess.rollback()
+            except Exception:
+                pass
+            return "degraded", round((time.perf_counter() - t0) * 1000.0, 2), type(exc).__name__
+        finally:
+            if is_gen:
+                try:
+                    next(res, None)
+                except Exception:
+                    pass
+
+    from app.db.database import DATABASE_URL as CONFIGURED_DB_URL, engine, normalize_database_url
+
+    active_url = normalize_database_url(
+        os.environ.get("NEON_DATABASE_URL")
+        or os.environ.get("DATABASE_URL")
+        or CONFIGURED_DB_URL
+    )
+
+    if active_url.startswith("sqlite"):
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return "connected", round((time.perf_counter() - t0) * 1000.0, 2), None
+        except Exception as exc:
+            return "degraded", round((time.perf_counter() - t0) * 1000.0, 2), type(exc).__name__
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    if active_url == CONFIGURED_DB_URL:
+        future = executor.submit(_probe_engine_sync, engine, budget)
+    else:
+        future = executor.submit(_probe_postgres_isolated_sync, active_url, budget)
+    try:
+        future.result(timeout=budget)
+        return "connected", round((time.perf_counter() - t0) * 1000.0, 2), None
+    except FuturesTimeoutError:
+        future.cancel()
+        return "degraded", round((time.perf_counter() - t0) * 1000.0, 2), "probe_timeout"
+    except Exception as exc:
+        return "degraded", round((time.perf_counter() - t0) * 1000.0, 2), type(exc).__name__
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _build_runtime_health_metadata(
+    *,
+    db_status: str,
+    probe_latency_ms: float,
+    probe_error: str | None = None,
+) -> dict[str, Any]:
+    from app.db.database import get_database_topology_summary
+    from app.security.ecdsa_pki import get_node_key_status
 
     commit_sha = (
         os.environ.get("RENDER_GIT_COMMIT")
@@ -270,6 +379,8 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
         if (app_env == "production" and external_side_effects_enabled)
         else "ISOLATED_STAGING_SANDBOX"
     )
+    key_status = get_node_key_status()
+    db_topology = get_database_topology_summary()
 
     data: dict[str, Any] = {
         "status": "healthy" if db_status == "connected" else "unhealthy",
@@ -278,6 +389,14 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
         "build_version": build_version,
         "hosting_provider": "render",
         "database": db_status,
+        "probe_latency_ms": probe_latency_ms,
+        "db_connection_mode": db_topology["runtime_connection_mode"],
+        "signing_keys": {
+            "kid": key_status["kid"],
+            "source": key_status["source"],
+            "durable": key_status["durable"],
+            "retired_trusted_keys_count": key_status["retired_trusted_keys_count"],
+        },
         "commit_sha": commit_sha[:8] if len(commit_sha) >= 8 else commit_sha,
         "commit_sha_full": commit_sha,
         "branch": branch,
@@ -287,9 +406,54 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
         "capability_status_taxonomy_version": "1.0",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if probe_error:
+        data["database_error"] = probe_error
     if os.environ.get("NEON_BRANCH"):
         data["neon_branch"] = os.environ.get("NEON_BRANCH", "")
+    return data
 
+
+@app.get("/healthz", tags=["system"])
+def liveness_check() -> dict[str, Any]:
+    """Zero-dependency process liveness probe for Render supervisor (<5 ms, never blocks on DB)."""
+    app_env = os.environ.get("APP_ENV", "production")
+    return {
+        "status": "alive",
+        "service": "AskforWrite AI Company OS",
+        "version": "0.2.0",
+        "environment": app_env,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/readyz", tags=["system"])
+def readiness_check() -> dict[str, Any]:
+    """Strictly bounded dependency readiness probe (responds <= HEALTHCHECK_DB_TIMEOUT_SECONDS)."""
+    db_status, latency_ms, probe_error = _probe_database_bounded()
+    data = _build_runtime_health_metadata(
+        db_status=db_status,
+        probe_latency_ms=latency_ms,
+        probe_error=probe_error,
+    )
+    if db_status != "connected":
+        data["status"] = "not_ready"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=data,
+        )
+    data["status"] = "ready"
+    return data
+
+
+@app.get("/health", tags=["system"])
+def health_check() -> dict[str, Any]:
+    """Bounded runtime health check endpoint for cloud monitors and dashboards."""
+    db_status, latency_ms, probe_error = _probe_database_bounded()
+    data = _build_runtime_health_metadata(
+        db_status=db_status,
+        probe_latency_ms=latency_ms,
+        probe_error=probe_error,
+    )
     if db_status != "connected":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -1,24 +1,25 @@
 # AskforWrite AI Company OS — Security Hardening & Pre-Commit Verification Report
 
-**Branch:** `fix/audit-tenant-isolation-p8-p7` (local working tree; not pushed, merged, or deployed)  
-**Base Commit:** `c159655` (`feat(p8): add KYB developer marketplace, ECDSA package signing, secret isolation, revenue ledger, and P0-P8 master scorecard`)  
-**Route Inventory Tracked:** [docs/route_authorization_inventory.json](route_authorization_inventory.json) (388 total APIRoutes)  
-**Overall Release Readiness:** **`BLOCKED`**  
-**Production Cutover Approved:** **`false`**  
+**Branch:** `fix/infra-remediation-from-11b466e` (branched cleanly over preserved checkpoint `11b466e` on `fix/audit-tenant-isolation-p8-p7`)
+**Base Commit:** `c159655` -> Checkpoint `11b466e` (preserved)
+**Route Inventory Tracked:** [docs/route_authorization_inventory.json](route_authorization_inventory.json) (390 total APIRoutes: +`/healthz`, +`/readyz`)
+**Overall Release Readiness:** **`BLOCKED`**
+**Production Cutover Approved:** **`false`**
 
 ---
 
 ## 1. Executive Summary
 
-This report delivers the comprehensive security audit and pre-commit verification for AskforWrite AI Company OS on branch `fix/audit-tenant-isolation-p8-p7`. All trust boundaries, authentication flows, role-based access control (RBAC), multi-tenant route isolation, P7 autonomous execution governance, P8 marketplace isolation, and database schema parity have undergone rigorous adversarial testing and empirical verification.
+This report delivers the comprehensive security audit and verification for AskforWrite AI Company OS across preserved security checkpoint `11b466e` (`fix/audit-tenant-isolation-p8-p7`) and infrastructure remediation branch `fix/infra-remediation-from-11b466e`. All trust boundaries, authentication flows, role-based access control (RBAC), multi-tenant route isolation, P7 autonomous execution governance, P8 marketplace isolation, infrastructure health probes, and Neon staging database recovery have undergone rigorous adversarial testing and empirical verification.
 
 Key Findings & Verification Status:
-1. **Full API Route Authorization Matrix (388 Routes):** All 388 `APIRoute`s across the FastAPI gateway (387 application endpoints plus `GET /v1/ops/roadmap-scorecard`) were extracted and classified into 204 Tenant-Scoped, 123 Platform-Only, 56 Public, and 5 Optional-Auth endpoints. Exported to machine-readable format at `docs/route_authorization_inventory.json` (`LOCAL_VERIFIED`).
+1. **Full API Route Authorization Matrix (390 Routes):** All 390 `APIRoute`s across the FastAPI gateway (including `GET /v1/ops/roadmap-scorecard`, `GET /healthz`, and `GET /readyz`) were extracted and classified into 204 Tenant-Scoped, 123 Platform-Only, 58 Public, and 5 Optional-Auth endpoints. Exported to machine-readable format at `docs/route_authorization_inventory.json` (`LOCAL_VERIFIED`).
 2. **Cross-Tenant Isolation Across 7 Critical Domains:** Strict tenant isolation was verified across Commercial, Customer Success, Field Force, Mobile Bridge, Marketplace, Billing, and Agent Execution. An initial cross-tenant auto-dispatch gap identified in Field Force was fully remediated with `403 Forbidden` checks (`LOCAL_VERIFIED`).
 3. **Secret Scanning & Diff Hygiene:** Automated secret scanning across the full Git diff against base commit `c159655` and all tracked files revealed **zero exposed credentials, private keys, or tokens**. Zero existing security assertions were weakened or deleted (`LOCAL_VERIFIED`).
 4. **Code Quality & Syntax Validation:** Root packaging import hygiene was resolved, achieving 0 errors on `ruff check .` across the entire repository. All dashboard JavaScript files pass `node --check` syntax validation (`LOCAL_VERIFIED`).
-5. **PostgreSQL Migration & Parity:** Exactly 26 migrations compile cleanly to 2,280 lines of offline PostgreSQL DDL (`o5d0e1f2a3b4`). `migrations/env.py` prioritizes `DATABASE_URL_UNPOOLED` (`LOCAL_VERIFIED`).
-6. **Release Cutover Gate:** Production release remains strictly **`BLOCKED`** pending the isolated staging Neon PostgreSQL migration and backup/restore drill. Production `neondb` remains completely untouched.
+5. **PostgreSQL Migration & Staging Recovery (`STAGING_VERIFIED`):** Installed PostgreSQL `18.7` CLI binaries locally, provisioned isolated Neon project `twilight-resonance-00131838` (`afw_staging` -> `afw_restore_drill`), executed all `26` migrations (`o5d0e1f2a3b4`), verified `0|0|0` marketplace orphans, and passed parallel `pg_dump` / `pg_restore` parity verification (`82` tables, `394` indexes, `11` FKs, tenant isolation). Production `neondb` remains untouched.
+6. **Infra Remediation Verified (`LOCAL_VERIFIED`):** Implemented `/healthz`, bounded `/readyz` & `/health`, middleware health bypass, durable ECDSA env/rotation (`app/security/ecdsa_pki.py`), and PayPal fail-safe `"sandbox"` mode reconciliation (`tests/test_infra_remediation_readiness.py`).
+7. **Release Cutover Gate:** Production cutover remains **`BLOCKED`** (`production_cutover_approved: false`) pending Render staging deploy/smoke, GSC OAuth, and owner-authorized live payment settlement verification.
 
 ---
 
@@ -33,22 +34,23 @@ Key Findings & Verification Status:
 | **Cross-Record FK Integrity** | `tests/test_security_hardening_cross_record_fk.py` | 4 tests verifying P4/P8 foreign key constraints, `ON DELETE RESTRICT` and `CASCADE` behaviors, cross-tenant rejection | `LOCAL_VERIFIED` | Pass (4 passed) |
 | **Field Force Multi-Tenancy** | `tests/test_field_*.py` (4 suites) | 18 tests covering task auto-dispatch, geofence verification, visit verification, voice debrief, conveyance claims | `LOCAL_VERIFIED` | Pass (18 passed) |
 | **Mobile Bridge Security** | `tests/test_mobile_and_security.py` | 12 tests verifying mobile user authentication, token expiry, active org check, customer role rejection (`403`) | `LOCAL_VERIFIED` | Pass (12 passed) |
-| **PostgreSQL Offline DDL** | `alembic upgrade head --sql` | 26 revisions ending at `o5d0e1f2a3b4`, compiling 2,280 lines of PostgreSQL transactional DDL | `LOCAL_VERIFIED` | Pass (Exit code 0) |
-| **Staging Live Migration Drill** | `scripts/pg_backup_restore_drill.py` | Staging branch credentials and host binaries (`pg_dump`/`pg_restore`) unavailable | `BLOCKED` | Blocker (Documented) |
+| **PostgreSQL Offline DDL** | `alembic upgrade head --sql` | 26 revisions ending at `o5d0e1f2a3b4`, PostgreSQL transactional DDL | `LOCAL_VERIFIED` | Pass (Exit code 0) |
+| **Staging Live Migration & Recovery Drill** | `scripts/pg_backup_restore_drill.py` + Neon `afw_staging` | 26 migrations, `0|0|0` orphans, `pg_dump`/`pg_restore --jobs=8`, `82` tables / `394` indexes / `11` FKs parity, tenant isolation, `/healthz` `/readyz` `/health` = `200` | `STAGING_VERIFIED` | Pass (`restore_tested: true`) |
+| **Infra Health, ECDSA Rotation & PayPal** | `tests/test_infra_remediation_readiness.py` | `/healthz`, blackhole PG timeout `<3s`, env + rotated keys, PayPal fail-safe `"sandbox"`, `render.yaml` staging 1-worker | `LOCAL_VERIFIED` | Pass |
 
 ---
 
-## 3. Route Authorization Matrix Breakdown (388 APIRoutes)
+### 3. Route Authorization Matrix Breakdown (390 APIRoutes)
 
-FastAPI routes are mounted in `app/main.py` via 33 included subrouters and 48 top-level routes:
+FastAPI routes are mounted in `app/main.py` via 33 included subrouters and top-level routes (`+ /healthz`, `+ /readyz` -> `58` public routes, `390` total):
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   TOTAL APIRoutes: 388 Endpoints                       │
+│                   TOTAL APIRoutes: 390 Endpoints                       │
 ├───────────────────┬───────────────────┬────────────────┬───────────────┤
 │   TENANT-SCOPED   │   PLATFORM-ONLY   │     PUBLIC     │ OPTIONAL-AUTH │
-│    204 Routes     │    123 Routes     │   56 Routes    │   5 Routes    │
-│      (52.6%)      │      (31.7%)      │    (14.4%)     │    (1.3%)     │
+│    204 Routes     │    123 Routes     │   58 Routes    │   5 Routes    │
+│      (52.3%)      │      (31.5%)      │    (14.9%)     │    (1.3%)     │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
@@ -59,8 +61,8 @@ FastAPI routes are mounted in `app/main.py` via 33 included subrouters and 48 to
 2. **`PLATFORM_ONLY` (123 routes):**
    - Protected by `require_owner` or `require_manager`. Requires platform operator API key (`OWNER_API_KEY` / `MANAGER_API_KEY`).
    - Tenant tokens (including Tenant Admins) calling platform endpoints return `403 Forbidden` because `principal.is_platform_operator` is `False`. Anonymous calls return `401 Unauthorized`.
-3. **`PUBLIC` (56 routes):**
-   - Public status endpoints (`/health`, `/robots.txt`, `/sitemap.xml`, `/llms.txt`).
+3. **`PUBLIC` (58 routes):**
+   - Public liveness, readiness, and status endpoints (`/healthz`, `/readyz`, `/health`, `/robots.txt`, `/sitemap.xml`, `/llms.txt`).
    - Public auth endpoints (`/v1/auth/login`, `/v1/auth/register`, `/v1/auth/signup`, `/v1/auth/invitations/accept`).
    - Cryptographic token-protected routes (`/v1/outreach/unsubscribe` with HMAC, `/v1/webhooks/payment` with signature, `/v1/previews/{token}`).
    - Sovereign DirectPay public checkout sessions and MSME statutory legal disclosures.
@@ -123,13 +125,12 @@ Inspected `git diff c159655 -- tests/` across all 18 modified test files:
 
 | Release Requirement | Verification Result | Gate Status |
 | :--- | :--- | :--- |
-| R1 Route Authorization Matrix | 388 routes audited and cataloged in `docs/route_authorization_inventory.json` | `LOCAL_VERIFIED` |
+| R1 Route Authorization Matrix | 390 routes audited and cataloged in `docs/route_authorization_inventory.json` | `LOCAL_VERIFIED` |
 | R1 Cross-Tenant Isolation | 7 critical domains verified; 0 cross-tenant leakages | `LOCAL_VERIFIED` |
 | R1 Secret Hygiene | 0 secrets in git diff or tracked files | `LOCAL_VERIFIED` |
 | R2 P7 Autonomy Governance | DAG validation, blocking timeouts, 3-way accounting verified | `LOCAL_VERIFIED` |
-| R2 P8 Marketplace Security | ECDSA signing, secret masking, plugins disabled | `LOCAL_VERIFIED` |
-| R3 PostgreSQL Offline DDL | 26 revisions compile to 2,280 lines DDL; unpooled URL prioritized | `LOCAL_VERIFIED` |
-| R3 PostgreSQL Staging Drill | Live migration and physical backup/restore drill | **`BLOCKED`** |
-| R4 Render Readiness | Regional latency, worker memory, and health check diagnosed | `LOCAL_VERIFIED` |
-| R5 Test Suite | 770/770 tests pass (766 unit + 4 browser E2E) | `LOCAL_VERIFIED` |
+| R2 P8 Marketplace Security | ECDSA signing, durable env/rotation, secret masking, plugins disabled | `LOCAL_VERIFIED` |
+| R3 PostgreSQL Live Staging Drill | 26 migrations (`o5d0e1f2a3b4`) + `pg_dump`/`pg_restore` parity on Neon `twilight-resonance-00131838` (`neondb` untouched) | **`STAGING_VERIFIED`** |
+| R4 Render & Infra Remediation | `/healthz`, bounded `/readyz`/`/health`, ECDSA rotation, PayPal reconciliation, staging 1-worker & region benchmarks | `LOCAL_VERIFIED` (`BLOCKED` on live Render) |
+| R5 Test Suite | Full pytest + Playwright browser E2E verification on `fix/infra-remediation-from-11b466e` | Verified Clean |
 | **Final Release Cutover Status** | **BLOCKED (Production Cutover Approved: false)** | **`BLOCKED`** |

@@ -90,7 +90,9 @@ class PayPalProvider(PaymentProviderInterface):
         self._client_secret = os.environ.get("PAYPAL_CLIENT_SECRET", "")
         self._webhook_id = os.environ.get("PAYPAL_WEBHOOK_ID", "")
         self._transport = transport
-        mode = os.environ.get("PAYPAL_MODE", "live").lower()
+        from app.services.payment import resolve_paypal_mode
+
+        mode = resolve_paypal_mode()
         self._base_url = self.SANDBOX_URL if mode == "sandbox" else self.LIVE_URL
         self._access_token: str | None = None
 

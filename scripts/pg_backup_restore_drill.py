@@ -210,7 +210,7 @@ def resolve_configured_source_url(explicit_source: str | None) -> tuple[str | No
     """Resolve source DB URL in priority order without leaking it."""
     if explicit_source:
         return explicit_source, "--source-url"
-    for key in ("NEON_DATABASE_URL", "DATABASE_URL"):
+    for key in ("DRILL_SOURCE_URL", "DATABASE_URL_UNPOOLED", "NEON_DATABASE_URL", "DATABASE_URL"):
         val = os.getenv(key)
         if val and val.strip():
             return val.strip(), f"env:{key}"
@@ -223,7 +223,7 @@ def resolve_configured_source_url(explicit_source: str | None) -> tuple[str | No
                 continue
             k, v = stripped.split("=", 1)
             k = k.strip()
-            if k in {"NEON_DATABASE_URL", "DATABASE_URL"}:
+            if k in {"DATABASE_URL_UNPOOLED", "NEON_DATABASE_URL", "DATABASE_URL"}:
                 cleaned = v.strip().strip('"').strip("'")
                 if cleaned:
                     return cleaned, f".env:{k}"
@@ -286,17 +286,39 @@ def inspect_database_state(db_url: str) -> dict[str, Any]:
         with engine.connect() as conn:
             if "alembic_version" in tables:
                 alembic_version = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).scalar()
+            present_tables = [tbl for tbl in CORE_TABLES_TO_VERIFY if tbl in tables]
             for tbl in CORE_TABLES_TO_VERIFY:
-                if tbl in tables:
-                    # Table names come exclusively from the hardcoded CORE_TABLES_TO_VERIFY allowlist.
-                    row_counts[tbl] = int(conn.execute(text(f'SELECT COUNT(*) FROM "{tbl}"')).scalar() or 0)
-                else:
+                if tbl not in present_tables:
                     row_counts[tbl] = None
+            if present_tables:
+                # Table names come exclusively from the hardcoded CORE_TABLES_TO_VERIFY allowlist.
+                union_sql = " UNION ALL ".join(
+                    f"SELECT '{tbl}' AS tbl, COUNT(*) AS cnt FROM \"{tbl}\"" for tbl in present_tables
+                )
+                for tbl_name, cnt in conn.execute(text(union_sql)).fetchall():
+                    row_counts[str(tbl_name)] = int(cnt or 0)
             if "organizations" in tables:
                 distinct_orgs = int(conn.execute(text('SELECT COUNT(DISTINCT id) FROM "organizations"')).scalar() or 0)
+            index_count: int | None = None
+            fk_count: int | None = None
+            if engine.dialect.name == "postgresql":
+                index_count = int(
+                    conn.execute(text("SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public'")).scalar() or 0
+                )
+                fk_count = int(
+                    conn.execute(
+                        text(
+                            "SELECT COUNT(*) FROM information_schema.table_constraints "
+                            "WHERE table_schema = 'public' AND constraint_type = 'FOREIGN KEY'"
+                        )
+                    ).scalar()
+                    or 0
+                )
 
         return {
             "table_count": len(tables),
+            "index_count": index_count,
+            "foreign_key_count": fk_count,
             "alembic_version": alembic_version,
             "core_row_counts": row_counts,
             "distinct_organizations": distinct_orgs,
@@ -306,16 +328,18 @@ def inspect_database_state(db_url: str) -> dict[str, Any]:
 
 
 def compare_source_and_target(source_state: dict[str, Any], target_state: dict[str, Any]) -> dict[str, Any]:
-    """Compare schema, Alembic version, and core row counts between source and restored DB."""
+    """Compare schema, indexes, foreign keys, Alembic version, and core row counts between source and restored DB."""
     mismatches: list[dict[str, Any]] = []
-    if source_state.get("alembic_version") != target_state.get("alembic_version"):
-        mismatches.append(
-            {
-                "check": "alembic_version",
-                "source": source_state.get("alembic_version"),
-                "target": target_state.get("alembic_version"),
-            }
-        )
+    for key in ("alembic_version", "table_count", "index_count", "foreign_key_count"):
+        if key in source_state or key in target_state:
+            if source_state.get(key) != target_state.get(key):
+                mismatches.append(
+                    {
+                        "check": key,
+                        "source": source_state.get(key),
+                        "target": target_state.get(key),
+                    }
+                )
     src_counts = source_state.get("core_row_counts", {})
     tgt_counts = target_state.get("core_row_counts", {})
     for tbl, src_cnt in src_counts.items():
@@ -342,12 +366,12 @@ def verify_app_health_against_target(target_url: str) -> dict[str, Any]:
         "os.environ['APP_ENV'] = 'test'; "
         "os.environ['DATABASE_URL'] = os.environ['DRILL_TARGET_URL']; "
         "os.environ['NEON_DATABASE_URL'] = ''; "
+        "os.environ['DATABASE_URL_UNPOOLED'] = ''; "
         "os.environ['ALLOW_LIVE_SIDE_EFFECTS'] = 'false'; "
+        "os.environ['AFW_SKIP_WORKER_DDL'] = '1'; "
         "from fastapi.testclient import TestClient; "
         "from app.main import app; "
-        "c = TestClient(app); "
-        "r = c.get('/health'); "
-        "print(json.dumps({'status_code': r.status_code, 'body': r.json()}))"
+        "exec(\"with TestClient(app) as c:\\n  rz = c.get('/healthz')\\n  rd = c.get('/readyz')\\n  r = c.get('/health')\\n  print(json.dumps({'status_code': r.status_code, 'body': r.json(), 'healthz_status': rz.status_code, 'readyz_status': rd.status_code}))\")"
     )
     env = dict(os.environ)
     env["DRILL_TARGET_URL"] = _to_sqlalchemy_url(target_url)
@@ -357,15 +381,22 @@ def verify_app_health_against_target(target_url: str) -> dict[str, Any]:
         env=env,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=60,
     )
     if proc.returncode != 0:
         return {"ok": False, "error": (proc.stderr or proc.stdout).strip()[:500]}
     try:
         payload = json.loads(proc.stdout.strip().splitlines()[-1])
         return {
-            "ok": payload.get("status_code") == 200 and payload.get("body", {}).get("status") == "ok",
+            "ok": (
+                payload.get("status_code") == 200
+                and payload.get("body", {}).get("status") in ("ok", "healthy")
+                and payload.get("healthz_status", 200) == 200
+                and payload.get("readyz_status", 200) == 200
+            ),
             "status_code": payload.get("status_code"),
+            "healthz_status": payload.get("healthz_status"),
+            "readyz_status": payload.get("readyz_status"),
             "body": payload.get("body"),
         }
     except Exception as exc:
@@ -412,6 +443,7 @@ def execute_drill(
     verify_health: bool = True,
     keep_dump: bool = False,
     rpo_minutes: int = 15,
+    restore_jobs: int = 8,
     record_api_url: str | None = None,
     owner_api_key: str | None = None,
 ) -> dict[str, Any]:
@@ -456,7 +488,7 @@ def execute_drill(
             env=src_env,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
         )
         dump_seconds = round(time.monotonic() - t0, 3)
         if dump_proc.returncode != 0 or not dump_path.exists() or dump_path.stat().st_size == 0:
@@ -475,20 +507,22 @@ def execute_drill(
 
         tgt_dsn, tgt_env = _sanitize_libpq_dsn_and_env(target_url)
         t_restore_start = time.monotonic()
+        restore_cmd = [
+            bins["pg_restore"],  # type: ignore[list-item]
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--no-privileges",
+        ]
+        if restore_jobs > 1:
+            restore_cmd.append(f"--jobs={int(restore_jobs)}")
+        restore_cmd.extend([f"--dbname={tgt_dsn}", str(dump_path)])
         restore_proc = subprocess.run(
-            [
-                bins["pg_restore"],  # type: ignore[list-item]
-                "--clean",
-                "--if-exists",
-                "--no-owner",
-                "--no-privileges",
-                f"--dbname={tgt_dsn}",
-                str(dump_path),
-            ],
+            restore_cmd,
             env=tgt_env,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
         )
         restore_elapsed = time.monotonic() - t_restore_start
         if restore_proc.returncode not in (0,):
@@ -582,12 +616,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-health", action="store_true", help="Skip FastAPI /health check on restored target")
     parser.add_argument("--keep-dump", action="store_true", help="Retain temporary pg_dump artifact after drill")
     parser.add_argument("--rpo-minutes", type=int, default=15, help="Measured/configured RPO window in minutes")
+    parser.add_argument("--jobs", type=int, default=8, help="Parallel pg_restore jobs (--jobs=N)")
     parser.add_argument("--record-api-url", help="Optional OS Gateway base URL to record verified drill")
     parser.add_argument("--owner-api-key", help="Owner X-API-Key for optional drill recording")
     parser.add_argument("--json", action="store_true", help="Print JSON output")
     args = parser.parse_args(argv)
 
     source_url, source_origin = resolve_configured_source_url(args.source_url)
+    target_url = args.target_url or os.getenv("DRILL_TARGET_URL", "").strip() or None
 
     if args.check_only:
         report = run_preflight(source_url, source_origin)
@@ -599,11 +635,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(err, indent=2))
         return 2
 
-    if not args.target_url:
+    if not target_url:
         err = {
             "verification_status": "BLOCKED",
             "restore_tested": False,
-            "error": "--target-url is required for backup restore drill.",
+            "error": "--target-url or DRILL_TARGET_URL is required for backup restore drill.",
         }
         print(json.dumps(err, indent=2))
         return 2
@@ -611,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = execute_drill(
             source_url=source_url,
-            target_url=args.target_url,
+            target_url=target_url,
             source_origin=source_origin,
             allow_shared_host_isolated_db=args.confirm_isolated_branch,
             approved_staging_host=args.approved_staging_host,
@@ -619,6 +655,7 @@ def main(argv: list[str] | None = None) -> int:
             verify_health=not args.skip_health,
             keep_dump=args.keep_dump,
             rpo_minutes=args.rpo_minutes,
+            restore_jobs=args.jobs,
             record_api_url=args.record_api_url,
             owner_api_key=args.owner_api_key,
         )

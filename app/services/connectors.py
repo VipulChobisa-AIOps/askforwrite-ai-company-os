@@ -629,7 +629,9 @@ def build_connector_probe_adapter(
                     auth=(_env_value_for("RAZORPAY_KEY_ID"), _env_value_for("RAZORPAY_KEY_SECRET")),
                 )
             elif connector_id == "paypal":
-                paypal_mode = os.environ.get("PAYPAL_MODE", "sandbox").strip().lower()
+                from app.services.payment import resolve_paypal_mode
+
+                paypal_mode = resolve_paypal_mode()
                 base = "https://api-m.paypal.com" if paypal_mode == "live" else "https://api-m.sandbox.paypal.com"
                 code, text_body = _run_http_probe(
                     "POST",

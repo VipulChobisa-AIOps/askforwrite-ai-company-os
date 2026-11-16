@@ -1,12 +1,12 @@
 # AskforWrite AI Company OS — P8 Marketplace Security & Package Governance Report
 
-**Branch:** `fix/audit-tenant-isolation-p8-p7`  
-**Execution Context:** Pre-Release P8 Marketplace Security Audit (R2)  
-**Verification Date:** 2026-11-16  
-**Primary Modules:** `app/api/v1/p8_marketplace.py`, `app/services/p8_marketplace.py`, `app/security/ecdsa_pki.py`  
-**Primary Test Suites:** `tests/test_security_hardening_p8_marketplace.py` (3 tests), `tests/test_p8_marketplace_and_scorecard.py` (3 tests), `tests/test_security_hardening_cross_record_fk.py` (4 tests)  
-**Executable Plugin Status:** **PERMANENTLY DISABLED (Declarative Manifests Only)**  
-**Overall P8 Status:** **VERIFIED (LOCAL_VERIFIED / SANDBOX_VERIFIED)**  
+**Branch:** `fix/infra-remediation-from-11b466e` (based on `11b466e`)
+**Execution Context:** Pre-Release P8 Marketplace Security & Durable PKI Audit (R2 / R4)
+**Verification Date:** 2026-11-16
+**Primary Modules:** `app/api/v1/p8_marketplace.py`, `app/services/p8_marketplace.py`, `app/security/ecdsa_pki.py`
+**Primary Test Suites:** `tests/test_security_hardening_p8_marketplace.py` (3 tests), `tests/test_p8_marketplace_and_scorecard.py` (3 tests), `tests/test_security_hardening_cross_record_fk.py` (4 tests), `tests/test_infra_remediation_readiness.py` (durable key + rotation verification)
+**Executable Plugin Status:** **PERMANENTLY DISABLED (Declarative Manifests Only)**
+**Overall P8 Status:** **VERIFIED (`LOCAL_VERIFIED` / `STAGING_VERIFIED` on Neon `afw_staging` & `afw_restore_drill`)**
 
 ---
 
@@ -71,10 +71,12 @@ In `app/services/p8_marketplace.py:56-80`:
 - Manifests are normalized into compact canonical JSON with sorted keys and minimal whitespace.
 - Any mutation of listing metadata (e.g., name, permissions, pricing, or webhook URLs) after publication causes the computed SHA-256 hash to diverge, failing signature verification.
 
-### 3.2 Anti-Tamper & Rogue Key Detection (`verify_listing_signature`)
-`verify_listing_signature` enforces two distinct cryptographic checks:
+### 3.2 Anti-Tamper, Rogue Key Rejection & Zero-Downtime Rotation (`verify_listing_signature`)
+`verify_listing_signature` enforces durable trusted-keyring cryptographic checks:
 1. **Canonical Hash Match:** Confirms that the current listing metadata reproduces the exact `manifest_canonical_hash`.
-2. **Pinned Key Validation:** Validates the signature against `listing.public_key_pinned`. If an attacker replaces the signature with one signed by a rogue private key, verification fails because the rogue key does not match the pinned authoritative node public key.
+2. **Trusted Node Keyring Pinning (`is_trusted_node_public_key`):** Validates `listing.signing_public_key_pem` against the active node public key (`TRUST_ENGINE_PRIVATE_KEY_PEM` or persistent `node_public_key.pem`) **plus** explicitly configured/archived retired node public keys (`TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM` / `retired_public_keys.json`).
+   - Attacker-supplied rogue keypairs (`rogue_pub`) remain rejected (`public_key_pinned = False`, `verified = False`).
+   - Legitimate `rotate_node_keypair()` preserves continuous verification for listings published prior to rotation while signing new listings with the newly active `kid` (`LOCAL_VERIFIED`, `STAGING_VERIFIED`).
 3. **Draft Gating:** Unauthenticated or unrelated tenants attempting to run `verify-signature` on unpublished draft listings are rejected with `403 Forbidden`.
 
 ---

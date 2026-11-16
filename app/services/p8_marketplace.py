@@ -26,7 +26,12 @@ from app.db.models import (
     P8RevenueShareLedgerRecord,
     P8TenantInstallRecord,
 )
-from app.security.ecdsa_pki import get_node_public_key, sign_block, verify_signature
+from app.security.ecdsa_pki import (
+    get_node_public_key,
+    is_trusted_node_public_key,
+    sign_block,
+    verify_signature,
+)
 from app.security.trust_chain import seal_task_to_block
 from app.services.execution_guard import ExecutionBlockedError, validate_external_url
 from app.services.p3_1_verification_registry import get_release_readiness_summary
@@ -358,9 +363,9 @@ def verify_listing_signature(
     encoded = json.dumps(rec.manifest_json or {}, sort_keys=True, separators=(",", ":")).encode("utf-8")
     recomputed_sha = hashlib.sha256(encoded).hexdigest()
     sha_match = recomputed_sha == rec.manifest_sha256 and manifest_canonical_match
-    pinned_pub_pem = get_node_public_key()
-    public_key_pinned = bool(rec.signing_public_key_pem) and rec.signing_public_key_pem.strip() == pinned_pub_pem.strip()
-    ecdsa_ok = bool(public_key_pinned) and verify_signature(pinned_pub_pem, rec.manifest_sha256, rec.ecdsa_signature_hex)
+    submitted_pub_pem = (rec.signing_public_key_pem or "").strip()
+    public_key_pinned = is_trusted_node_public_key(submitted_pub_pem)
+    ecdsa_ok = bool(public_key_pinned) and verify_signature(submitted_pub_pem, rec.manifest_sha256, rec.ecdsa_signature_hex)
     return {
         "listing_id": rec.id,
         "sha256_match": sha_match,

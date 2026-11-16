@@ -11,15 +11,54 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 if "pytest" not in sys.modules and "unittest" not in sys.modules:
     load_dotenv()
 
+def normalize_database_url(raw_url: str) -> str:
+    """Normalize PostgreSQL URL scheme for SQLAlchemy psycopg driver."""
+    url = (raw_url or "").strip()
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://") and not url.startswith("postgresql+psycopg://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return url
+
+
+def is_pooled_database_url(url: str | None) -> bool:
+    """Return True when the DSN targets a Neon PgBouncer '-pooler' host."""
+    return "-pooler" in (url or "").lower()
+
+
+def get_unpooled_database_url() -> str:
+    """Return normalized direct compute URL for migrations, DDL, and pg_dump/pg_restore."""
+    raw = os.environ.get("DATABASE_URL_UNPOOLED", "").strip()
+    return normalize_database_url(raw) if raw else ""
+
+
+def get_database_topology_summary() -> dict[str, object]:
+    """Return non-secret runtime pooled vs unpooled database topology metadata."""
+    active_url = normalize_database_url(
+        os.environ.get("NEON_DATABASE_URL") or os.environ.get("DATABASE_URL") or DATABASE_URL
+    )
+    unpooled_url = get_unpooled_database_url()
+    dialect = "sqlite" if active_url.startswith("sqlite") else "postgresql"
+    return {
+        "dialect": dialect,
+        "runtime_connection_mode": (
+            "sqlite"
+            if dialect == "sqlite"
+            else ("pooled" if is_pooled_database_url(active_url) else "direct")
+        ),
+        "unpooled_migration_url_configured": bool(unpooled_url),
+        "unpooled_url_is_direct": bool(unpooled_url) and not is_pooled_database_url(unpooled_url),
+        "pool_size": None if dialect == "sqlite" else int(os.environ.get("DB_POOL_SIZE", "10")),
+        "max_overflow": None if dialect == "sqlite" else int(os.environ.get("DB_MAX_OVERFLOW", "20")),
+        "connect_timeout_seconds": None if dialect == "sqlite" else int(os.environ.get("DB_CONNECT_TIMEOUT_SECONDS", "5")),
+    }
+
+
 APP_ENV = os.environ.get("APP_ENV", "development").casefold()
-DATABASE_URL = (
+DATABASE_URL = normalize_database_url(
     os.environ.get("NEON_DATABASE_URL")
     or os.environ.get("DATABASE_URL", "sqlite:///./company_os.db")
 )
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
-elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
 def validate_database_configuration(environment: str, database_url: str) -> None:

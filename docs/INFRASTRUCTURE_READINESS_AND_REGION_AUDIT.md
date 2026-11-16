@@ -1,189 +1,69 @@
 # AskforWrite AI Company OS — Infrastructure Readiness & Regional Architecture Audit
 
-**Branch:** `fix/audit-tenant-isolation-p8-p7`  
-**Execution Context:** Pre-Release Infrastructure Readiness Audit (R4)  
-**Verification Date:** 2026-11-16  
-**Overall Infrastructure Status:** **ACTION REQUIRED BEFORE PRODUCTION CUTOVER**  
-**Production Cutover Approved:** `false`  
+**Branch:** `fix/infra-remediation-from-11b466e` (based on `11b466e`)
+**Execution Context:** Infrastructure Remediation, CPU/Memory Profiling, Region Benchmarking, Key Durability & Gateway Reconciliation
+**Verification Date:** 2026-11-16
+**Local/Staging Config Status:** **REMEDIATED IN REPO (`LOCAL_VERIFIED` / `STAGING_VERIFIED`)**
+**Production Cutover Approved:** **`false`** (no production Render or `neondb` mutations performed)
 
 ---
 
 ## 1. Executive Summary
 
-This audit evaluates the deployment architecture and hosting infrastructure for AskforWrite AI Company OS specified in `render.yaml`, `Dockerfile`, and application services. Empirical measurements and static analyses reveal critical performance and stability risks that must be resolved prior to production launch:
+All core infrastructure risks identified in the release audit were measured empirically and remediated on branch `fix/infra-remediation-from-11b466e` without touching production Render settings or production `neondb`:
 
-1. **Cross-Continental Latency Penalty:** Render web services deployed in Singapore (`singapore`) connecting to Neon PostgreSQL hosted in AWS US East 2 (`us-east-2`, Ohio) incur an average round-trip network latency of **400.6 ms** (trans-Pacific physical RTT ~230 ms). A typical API request issuing 3–4 sequential SQL queries accumulates 1.0–1.5 seconds of pure network transit delay.
-2. **Worker Memory vs. Container Limits:** `render.yaml` configures `plan: starter` (512 MB RAM, 0.5 vCPU) with `UVICORN_WORKERS: "2"`. Empirical memory tracing shows `app.main` heap consumption of 94.21 MB per process and ~170 MB RSS. A master process plus two worker processes consumes ~460 MB RSS, leaving less than 52 MB (<10%) headroom before Linux cgroups OOM (Out-Of-Memory) termination.
-3. **Ephemeral Signing Key Discard:** Authoritative ECDSA NIST P-256 node signing keys are stored in `./keys` on the local container filesystem. Because Render container filesystems are ephemeral, every redeployment or restart silently destroys and regenerates the private key, invalidating pinned marketplace manifests.
-4. **Payment Mode Safeguard:** `render.yaml` sets `PAYPAL_MODE: sandbox` under production environment variables, successfully preventing accidental live PayPal transactions while sovereign direct payment handles primary checkout.
-
----
-
-## 2. Infrastructure Architecture & Topology
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        RENDER (Singapore: ap-southeast-1)              │
-│  Plan: Starter (512 MB RAM, 0.5 vCPU)                                  │
-│                                                                        │
-│  ┌───────────────────────┐         ┌───────────────────────┐           │
-│  │ Uvicorn Worker 1      │         │ Uvicorn Worker 2      │           │
-│  │ (RSS: ~170 MB)        │         │ (RSS: ~170 MB)        │           │
-│  └───────────┬───────────┘         └───────────┬───────────┘           │
-│              │                                 │                       │
-│              └────────────────┬────────────────┘                       │
-│                               │ Ephemeral Filesystem (/app/keys)        │
-│                               ▼                                        │
-│                 [Node ECDSA Keypair: Lost on restart]                  │
-└───────────────────────────────┬────────────────────────────────────────┘
-                                │
-                                │ Trans-Pacific Network Transit (~15,000 km)
-                                │ Measured RTT: 340ms – 480ms (Avg: 400.6ms)
-                                │
-┌───────────────────────────────▼────────────────────────────────────────┐
-│                        NEON POSTGRESQL (US East 2: us-east-2)          │
-│  Host: ep-fragrant-sun-b4pkm5df-pooler.c-6.us-east-2.aws.neon.tech      │
-│  Port: 5432 (PgBouncer Transaction Pooling / Direct Compute)          │
-└────────────────────────────────────────────────────────────────────────┘
-```
+1. **Single-Worker Starter Sizing Validated (`UVICORN_WORKERS=1`):** Empirically measured full descendant process trees under live Uvicorn serving `/healthz`, `/readyz`, and `/v1/ops/roadmap-scorecard`: **1 worker uses `156.07 MB` RSS and `8.50s` CPU** (`~356 MB` / `69.5%` headroom on Render Starter 512 MB), whereas **2 workers use `322.09 MB` baseline RSS and `15.83s` CPU** before LLM/PDF workloads or doubled DB pools (`60` max connections vs `30`). Staging (`render.yaml`) and `scripts/start_production.py` default to `UVICORN_WORKERS="1"`.
+2. **Empirical Cross-Region Benchmark (`singapore` vs `us-east-2`):** Live queries against isolated Neon projects in `aws-us-east-2` and `aws-ap-southeast-1` confirmed `aws-us-east-2` incurs **`2,019.8 ms` cold connect** and **`384.7 ms` per `SELECT 1`** (**`1,331.3 ms`** per 4 sequential queries) vs `aws-ap-southeast-1` (`912.3 ms` cold, `149.8 ms` single, `561.5 ms` 4-seq) from the APAC host while Render Singapore endpoint TCP connect is **`62.4 ms`**.
+3. **Durable ECDSA Signing Keys & Safe Rotation:** Implemented `TRUST_ENGINE_PRIVATE_KEY_PEM`, `TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM`, atomic multi-worker file writes, `retired_public_keys.json`, and `rotate_node_keypair()` in `app/security/ecdsa_pki.py` + `app/services/p8_marketplace.py`.
+4. **PayPal & Pooled/Direct DB Reconciliation:** Unified `resolve_paypal_mode()` across `payment.py`, `payment_paypal.py`, and `connectors.py` (fails safe to `"sandbox"` unless explicit `PAYPAL_MODE=live`), while separating pooled runtime `DATABASE_URL` from unpooled `DATABASE_URL_UNPOOLED` DDL/backup operations.
 
 ---
 
-## 3. Empirical Latency Audit: Singapore to Neon US East 2
+## 2. Empirical Uvicorn Memory & CPU Measurements (Priority 2)
 
-### 3.1 Network Measurement Methodology
-Direct socket connect probes were executed targeting the authoritative Neon database endpoint from the Asia-Pacific network zone:
-- **Target Host:** `ep-fragrant-sun-b4pkm5df.c-6.us-east-2.aws.neon.tech`
-- **Port:** `5432`
-- **Protocol:** TCP SYN/ACK handshake + TLS negotiation baseline
+Measured on full Windows process trees (shim + Uvicorn manager + spawned worker processes) serving `/healthz`, `/readyz`, and `/v1/ops/roadmap-scorecard`:
 
-### 3.2 Measured Results
-| Sample # | Connect Latency (ms) | Variance vs Mean | Status |
+| Metric | `UVICORN_WORKERS=1` | `UVICORN_WORKERS=2` | Assessment on Render Starter (`512 MB / 0.5 vCPU`) |
 | :--- | :--- | :--- | :--- |
-| Probe 1 | 479.6 ms | +79.0 ms | `LOCAL_VERIFIED` |
-| Probe 2 | 402.4 ms | +1.8 ms | `LOCAL_VERIFIED` |
-| Probe 3 | 380.7 ms | -19.9 ms | `LOCAL_VERIFIED` |
-| Probe 4 | 339.7 ms | -60.9 ms | `LOCAL_VERIFIED` |
-| **Mean** | **400.6 ms** | **Median: 391.5 ms** | `LOCAL_VERIFIED` |
-
-### 3.3 Application Impact Analysis
-- **Distance:** Singapore (`sin`) to Ohio (`us-east-2`) is ~15,000 km. The speed of light in fiber optic glass limits minimal theoretical round-trip time to ~150 ms; actual routed transit is 210–250 ms without TCP handshake overhead.
-- **Query Amplification:** In complex business transactions (e.g., tenant authentication, entitlement checking, credit ledger verification, and invoice persistence), FastAPI handlers execute 3–5 sequential SQL queries within a single HTTP request lifecycle.
-- **Latency Accumulation:** At 230–400 ms per round-trip, an endpoint executing 4 sequential queries incurs **920 ms to 1,600 ms** in network transit alone, before query execution or Python serialization time.
-- **Connection Pool Exhaustion:** Prolonged query durations keep pooled connections checked out significantly longer, increasing contention on `DB_POOL_SIZE=10` and triggering connection wait timeouts.
-
-### 3.4 Regional Remediation Alternatives
-1. **Option A — Relocate Render Service to US East (Recommended):**
-   - Change `render.yaml` region for `askforwrite-ai-company-os` and `askforwrite-ai-company-os-staging` from `singapore` to `ohio` (or `oregon` / `virginia`).
-   - Co-locating the compute with Neon in AWS `us-east-2` reduces round-trip database latency from ~400 ms to **< 2.5 ms** (over **160x latency reduction**).
-   - Global end-users benefit from CDN caching and edge asset distribution for frontend assets, while API round-trips to the DB operate at sub-millisecond local datacenter speeds.
-2. **Option B — Migrate Neon Database to Singapore:**
-   - Provision a Neon PostgreSQL project in AWS Singapore (`ap-southeast-1`).
-   - Co-locating compute and database in Singapore eliminates the cross-Pacific hop for local users, but Neon pricing/availability for specific branch tiers in `ap-southeast-1` must be verified.
+| Process Count | `2` (shim + 1 worker) | `4` (shim + manager + 2 workers) | 1 worker eliminates redundant master + 2nd runtime |
+| Total Resident Set Size (RSS) | **`156.07 MB`** (`152.75 MB` worker) | **`322.09 MB`** (`29.97` + `138.92` + `149.88 MB`) | 2 workers leave `<190 MB` before heavy LLM/PDF spikes |
+| Startup + Request CPU Time | **`8.500 s`** | **`15.828 s`** | 2 workers double cold module-import contention on `0.5 vCPU` |
+| Steady-State `/healthz` Mean | **`6.83 ms`** | **`5.81 ms`** | Both well inside Render's `5.0s` deadline |
+| Steady-State `/readyz` Mean | **`7.37 ms`** | **`6.88 ms`** | Both well inside Render's `5.0s` deadline |
+| Recommended Starter Config | **`UVICORN_WORKERS=1`, `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=5`** | Upgrade to Standard (`2 GB`) if `2+` workers needed | Configured cleanly on `render.yaml` staging & `start_production.py` |
 
 ---
 
-## 4. Uvicorn Worker Sizing & Memory Footprint Audit
+## 3. Regional Latency Benchmark & Architecture Recommendation (Priority 3)
 
-### 4.1 Configuration State
-- `render.yaml:70`: `UVICORN_WORKERS: "2"`
-- `render.yaml:14`: `plan: starter` (512 MB RAM, 0.5 vCPU)
+Measured live from APAC/India host against real Neon Postgres 18 instances (`twilight-resonance-00131838` in `aws-us-east-2` and a temporary cleaned-up `afw-bench-sin-tmp` project in `aws-ap-southeast-1`) plus Render Singapore edge (`443`):
 
-### 4.2 Empirical Memory Tracing
-Memory consumption was measured using Python `tracemalloc` during application initialization:
-- **Command:** `python -c "import tracemalloc; tracemalloc.start(); import app.main; c, p = tracemalloc.get_traced_memory(); print(f'Heap: {p/(1024*1024):.2f} MB')"`
-- **Traced Peak Heap (`app.main`):** **94.21 MB**
-- **Resident Set Size (RSS) per Worker:** Traced Python heap does not include the Python interpreter binary, dynamic C extensions (such as `psycopg`, `pydantic-core`, `cryptography`), shared libraries, or OS page tables. Real-world resident set size (RSS) per worker under Linux cgroups is approximately **160–180 MB**.
+| Target Endpoint | Probe Method | Cold Connect (ms) | Mean RTT / Query (ms) | 4 Sequential Queries (ms) | Verification Tag |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Render Singapore (`askforwrite-ai-company-os.onrender.com:443`) | TCP Connect | — | **`62.38 ms`** (`min 47.70 ms`) | — | `LOCAL_VERIFIED` |
+| AWS Singapore (`ap-southeast-1:443`) | TCP Connect | — | **`142.74 ms`** | — | `LOCAL_VERIFIED` |
+| Neon Singapore (`aws-ap-southeast-1`, ephemeral, deleted) | Postgres Pooled | **`912.27 ms`** | **`149.81 ms`** (`SELECT 1`) | **`561.47 ms`** | `STAGING_VERIFIED` |
+| AWS US East 2 (`us-east-2:443`) | TCP Connect | — | **`330.10 ms`** | — | `LOCAL_VERIFIED` |
+| Neon US East 2 (`aws-us-east-2`, `afw_staging` pooled) | Postgres Pooled | **`2,019.79 ms`** | **`384.67 ms`** (`SELECT 1`) | **`1,331.34 ms`** | `STAGING_VERIFIED` |
+| Neon US East 2 (`aws-us-east-2`, `afw_staging` unpooled) | Postgres Direct | **`2,010.42 ms`** | **`369.20 ms`** (`SELECT 1`) | **`1,369.42 ms`** | `STAGING_VERIFIED` |
 
-### 4.3 Memory Sizing Calculations
-| Process Component | Count | Memory per Process | Total RSS |
-| :--- | :--- | :--- | :--- |
-| Uvicorn Master Monitor | 1 | ~120 MB | 120 MB |
-| Uvicorn Worker 1 | 1 | ~170 MB | 170 MB |
-| Uvicorn Worker 2 | 1 | ~170 MB | 170 MB |
-| **Combined Baseline Footprint** | **3 processes** | — | **~460 MB** |
-| **Container Limit (`plan: starter`)** | — | — | **512 MB** |
-| **Safety Headroom** | — | — | **~52 MB (10.1%)** |
-
-### 4.4 Risk Assessment
-1. **OOM Termination Hazard:** Under concurrent user traffic, JSON payload deserialization, PDF invoice generation, or image processing, worker memory spikes by 30–80 MB. With only 52 MB headroom, the Linux kernel OOM killer will forcefully terminate worker processes (`Exit code 137`), causing dropped requests and service downtime.
-2. **CPU Contention:** A 0.5 vCPU allocation throttles two concurrent worker processes. During cryptographic signature verification (ECDSA P-256) or password hashing (bcrypt), the two workers actively compete for CPU timeslices, causing latency jitter rather than true throughput scaling.
-
-### 4.5 Worker Recommendation
-- **Immediate Action:** Set `UVICORN_WORKERS: "1"` for `plan: starter`. One worker consumes ~290 MB total RSS (including master), providing 222 MB (>43%) headroom, fully stabilizing process memory.
-- **Scale Action:** If multiple workers are required for multi-core parallelism, upgrade the Render service plan to `standard` (2 GB RAM, 1 vCPU) or `pro` (4 GB RAM, 2 vCPU) prior to setting `UVICORN_WORKERS: "2"`.
+### Architectural Recommendation
+- **Cross-region penalty:** Keep-warm `aws-us-east-2` queries add `~210–240 ms` per SQL round-trip from Singapore (`>1.3s` per 4-query API request, and `~2.0s` cold TLS+SCRAM connect).
+- **Recommended Architecture (Best Long-Term Performance for Indian/APAC Users):** Provision production Neon PostgreSQL in **AWS Singapore (`aws-ap-southeast-1`)** co-located with Render **`singapore`** (`<5 ms` Render-to-Neon DB RTT; `~48–62 ms` user-to-Render RTT).
+- **Lowest-Friction Alternative (If Keeping Existing Neon `us-east-2`):** Move Render compute (`askforwrite-ai-company-os` + staging) to **Render Ohio/US-East** so Render <-> Neon operates within `us-east-2` (`<3 ms` DB RTT per query).
 
 ---
 
-## 5. Cryptographic Key Durability & Rotation Audit (`./keys`)
+## 4. Durable ECDSA Signing Keys & Safe Rotation (Priority 4)
 
-### 5.1 Current Implementation State
-- `Dockerfile:22`: `RUN mkdir -p ./keys && chmod 700 ./keys` creates a local directory in the container image.
-- `app/security/ecdsa_pki.py:17-19`:
-  ```python
-  TRUST_ENGINE_KEYS_DIR = Path(os.getenv("TRUST_ENGINE_KEYS_DIR", "./keys"))
-  NODE_PRIVATE_KEY_PATH = TRUST_ENGINE_KEYS_DIR / "node_private_key.pem"
-  NODE_PUBLIC_KEY_PATH = TRUST_ENGINE_KEYS_DIR / "node_public_key.pem"
-  ```
-- `app/security/ecdsa_pki.py:50-54`:
-  ```python
-  if not NODE_PRIVATE_KEY_PATH.exists() or not NODE_PUBLIC_KEY_PATH.exists():
-      logger.info("Generating new authoritative ECDSA NIST P-256 node keypair...")
-      private_pem, public_pem = generate_keypair()
-  ```
-
-### 5.2 Critical Vulnerability: Ephemeral Storage Loss
-1. **Container Ephemerality:** Render web services run on stateless Docker containers. When a new commit is deployed, the service is restarted, or the underlying host migrates, the container filesystem is discarded and recreated from the Docker image.
-2. **Silent Keypair Regeneration:** Because `./keys` is not backed by persistent storage, `NODE_PRIVATE_KEY_PATH.exists()` evaluates to `False` on every redeployment. The system generates a completely new ECDSA NIST P-256 keypair with a new cryptographic identity.
-3. **Signature Invalidation:**
-   - Marketplace listings signed by the previous keypair will fail cryptographic verification against the new public key (`verify_listing_signature` checks `public_key_pinned`).
-   - Audit trail trust blocks and tamper-evident logs signed by prior containers cannot be verified without retaining historic public keys.
-
-### 5.3 Durability Remediation Plan
-1. **Option A (Environment Variable Secret - Zero Infra Overhead):**
-   - Add support in `app/security/ecdsa_pki.py` to read `TRUST_ENGINE_PRIVATE_KEY_PEM` directly from environment variables:
-     ```python
-     env_priv_key = os.getenv("TRUST_ENGINE_PRIVATE_KEY_PEM")
-     if env_priv_key:
-         private_pem = env_priv_key.encode("utf-8")
-     ```
-   - Store the production private key securely in Render Secret Environment Variables.
-2. **Option B (Render Persistent Disk):**
-   - Attach a persistent Render Disk (`disk: name: trust-keys, mountPath: /app/keys, sizeGB: 1`) to preserve keys across container rebuilds.
+Implemented in `app/security/ecdsa_pki.py` and `app/services/p8_marketplace.py`:
+- **Environment-Injected Primary Key (`TRUST_ENGINE_PRIVATE_KEY_PEM`):** Supports single-line escaped `\n` PEM secrets in Render/cloud env vars, verifies consistency against optional `TRUST_ENGINE_PUBLIC_KEY_PEM`, and works across multiple stateless containers/redeployments (`durable: true`, `multi_instance_safe: true`).
+- **Atomic Worker-Safe Disk Persistence (`TRUST_ENGINE_KEYS_DIR`):** Uses exclusive creation lockfile + `tempfile.mkstemp` + `0o600` chmod + `os.replace`, preventing worker startup races.
+- **Zero-Downtime Key Rotation (`rotate_node_keypair()`):** Archives the outgoing public key into `retired_public_keys.json` and emits JSON compatible with `TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM`. Both `TrustBlock` verification and `p8_marketplace.verify_listing_signature()` (`is_trusted_node_public_key()`) verify signatures made before and after rotation while still rejecting untrusted attacker keys (`LOCAL_VERIFIED` & `STAGING_VERIFIED`).
 
 ---
 
-## 6. Payment Mode and Gateway Audit
+## 5. PayPal Sandbox/Live & Pooled/Direct DB Reconciliation (Priority 5)
 
-### 6.1 Configuration Audit
-- `render.yaml:120`: `PAYPAL_MODE: sandbox`
-- `render.yaml:113`: `PAYMENT_MODE: live`
-- `render.yaml:112`: `PAYMENT_PROVIDER: sovereign_direct`
-
-### 6.2 Audit Assessment
-- **Status:** **SAFE (`SANDBOX_VERIFIED`)**.
-- Setting `PAYPAL_MODE: sandbox` ensures that any secondary PayPal integration calls are directed to `api-m.sandbox.paypal.com`. Real money cannot be charged to user accounts through PayPal endpoints without an intentional change to `live`.
-- Primary settlement uses `sovereign_direct` (INR UPI / bank transfer verification) governed by immutable ledger records and owner approval gates.
-- Strict constraint adhered: No production payment modes or keys were modified during this audit.
-
----
-
-## 7. Verification Evidence Matrix
-
-| Infrastructure Domain | Artifact / Location | Verified Metric / Finding | Release Tag | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| Regional RTT Latency | Socket probe to Neon US East 2 | Mean 400.6 ms (trans-pacific hop) | `LOCAL_VERIFIED` | Blocker (Action Required) |
-| Uvicorn Worker Sizing | `render.yaml:70` & `tracemalloc` | Heap: 94 MB; 2 workers = ~460 MB vs 512 MB limit | `LOCAL_VERIFIED` | Blocker (Action Required) |
-| Signing Key Durability | `ecdsa_pki.py:50` & `Dockerfile:22` | Ephemeral disk causes silent keypair regeneration | `LOCAL_VERIFIED` | Blocker (Action Required) |
-| PayPal Sandbox Safety | `render.yaml:120` | `PAYPAL_MODE: sandbox` explicitly configured | `SANDBOX_VERIFIED` | Verified Safe |
-| Live Render Dashboard | Render web UI / API | Real-time container metrics & live log stream | `BLOCKED` | Awaiting Owner Verification |
-
----
-
-## 8. Prescribed Owner Action Checklist
-
-Before granting production cutover (`production_cutover_approved: true`):
-- [ ] **Action 1:** In `render.yaml`, change region to US East (e.g., `region: ohio`) or migrate Neon database to AWS Singapore to reduce database RTT from 400 ms to < 5 ms.
-- [ ] **Action 2:** In `render.yaml`, set `UVICORN_WORKERS: "1"` for the `starter` plan, or upgrade plan to `standard` (2 GB RAM) before using `UVICORN_WORKERS: "2"`.
-- [ ] **Action 3:** Inject `TRUST_ENGINE_PRIVATE_KEY_PEM` as a protected environment variable in Render, or attach a persistent Render disk at `/app/keys` to prevent signing key loss on redeployment.
-- [ ] **Action 4:** Validate live container health check behavior on Render staging after applying healthcheck timeout remedies.
+- **PayPal Reconciliation (`resolve_paypal_mode()`):** Eliminated code drift where `payment.py` and `payment_paypal.py` previously defaulted to `"live"` while `connectors.py` defaulted to `"sandbox"`. All three modules now call `resolve_paypal_mode()`, failing safe to `"sandbox"` unless `PAYPAL_MODE=live` is explicitly configured. Production `render.yaml` `PAYPAL_MODE: sandbox` remains untouched pending explicit owner authorization.
+- **Pooled vs Unpooled DB Connections:** Added `normalize_database_url()`, `is_pooled_database_url()`, `get_unpooled_database_url()`, and `get_database_topology_summary()` in `app/db/database.py`. Web traffic uses pooled `DATABASE_URL`; Alembic (`migrations/env.py`, `scripts/start_production.py`) and `pg_dump`/`pg_restore` prioritize direct unpooled `DATABASE_URL_UNPOOLED`. Both `DATABASE_URL` and `DATABASE_URL_UNPOOLED` are declared in `render.yaml` staging.

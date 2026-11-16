@@ -27,6 +27,12 @@ REVENUE_VARS = [
 ]
 
 OPTIONAL_VARS = [
+    "DATABASE_URL_UNPOOLED",
+    "TRUST_ENGINE_PRIVATE_KEY_PEM",
+    "TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM",
+    "HEALTHCHECK_DB_TIMEOUT_SECONDS",
+    "DB_POOL_SIZE",
+    "DB_MAX_OVERFLOW",
     "FIELD_FORCE_BASE_URL",
     "FIELD_FORCE_SERVICE_TOKEN",
     "ALLOWED_ORIGINS",
@@ -131,12 +137,21 @@ def validate_environment() -> list[str]:
 
 def run_migrations() -> None:
     """Execute Alembic migrations to bring database to head."""
-    db_url = os.environ.get("DATABASE_URL", "")
+    unpooled_url = os.environ.get("DATABASE_URL_UNPOOLED", "").strip()
+    db_url = unpooled_url or os.environ.get("DATABASE_URL", "")
     if db_url.startswith("sqlite"):
         print("\n-- Skipping Alembic migrations (SQLite handles schema natively) --")
         return
-        
-    print("\n-- Running Alembic migrations --")
+
+    if unpooled_url:
+        print("\n-- Running Alembic migrations (using direct unpooled DATABASE_URL_UNPOOLED) --")
+    elif "-pooler" in db_url.lower():
+        print(
+            "\n-- Running Alembic migrations [WARN: using pooled DATABASE_URL; "
+            "set DATABASE_URL_UNPOOLED for DDL lock safety] --"
+        )
+    else:
+        print("\n-- Running Alembic migrations --")
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         capture_output=True,
@@ -189,7 +204,7 @@ def seed_genesis_block() -> None:
 
 def start_server() -> None:
     """Start Uvicorn with production configuration."""
-    workers = int(os.environ.get("UVICORN_WORKERS", "2"))
+    workers = int(os.environ.get("UVICORN_WORKERS", "1"))
     port = int(os.environ.get("PORT") or os.environ.get("APP_PORT", "8000"))
 
     # Migrations and genesis seeding already executed once before forking workers.

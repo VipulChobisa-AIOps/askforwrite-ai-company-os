@@ -1,9 +1,9 @@
 {
-  "total_routes": 388,
+  "total_routes": 390,
   "categories": {
     "TENANT_SCOPED": 204,
     "PLATFORM_ONLY": 123,
-    "PUBLIC": 56,
+    "PUBLIC": 58,
     "OPTIONAL_AUTH": 5
   },
   "routes": [
@@ -5703,6 +5703,37 @@
       ]
     },
     {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "name": "liveness_check",
+      "tag": "app.main",
+      "category": "PUBLIC",
+      "auth_policy": "Intentional public zero-dependency process liveness probe (<5ms, Render healthCheckPath).",
+      "dependencies": [],
+      "negative_tests": [
+        "test_infra_remediation_readiness.py"
+      ]
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "name": "readiness_check",
+      "tag": "app.main",
+      "category": "PUBLIC",
+      "auth_policy": "Intentional public strictly bounded dependency readiness probe (<=3.5s DB probe, 503 on degraded/timeout).",
+      "dependencies": [
+        "bounded_isolated_db_probe",
+        "ecdsa_pki"
+      ],
+      "negative_tests": [
+        "test_infra_remediation_readiness.py"
+      ]
+    },
+    {
       "path": "/health",
       "methods": [
         "GET"
@@ -5710,12 +5741,13 @@
       "name": "health_check",
       "tag": "app.main",
       "category": "PUBLIC",
-      "auth_policy": "Intentional public endpoint (health, legal, auth login/register, or public catalog).",
+      "auth_policy": "Intentional public bounded runtime health probe (<=3.5s DB probe, 503 on degraded/timeout).",
       "dependencies": [
-        "get_db"
+        "bounded_isolated_db_probe",
+        "ecdsa_pki"
       ],
       "negative_tests": [
-        "Smoke tests / test_production_readiness.py"
+        "Smoke tests / test_production_readiness.py / test_infra_remediation_readiness.py"
       ]
     },
     {

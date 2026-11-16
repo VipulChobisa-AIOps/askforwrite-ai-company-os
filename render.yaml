@@ -133,12 +133,22 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     region: singapore
-    healthCheckPath: /health
+    healthCheckPath: /healthz
     envVars:
       - key: APP_ENV
         value: staging
       - key: BUILD_VERSION
         value: "v3.5-p0-truthfulness-staging"
+      - key: UVICORN_WORKERS
+        value: "1"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "5"
+      - key: DB_CONNECT_TIMEOUT_SECONDS
+        value: "3"
+      - key: HEALTHCHECK_DB_TIMEOUT_SECONDS
+        value: "3.5"
       - key: ENABLE_EXTERNAL_SIDE_EFFECTS
         value: "false"
       - key: PAYMENT_MODE
@@ -151,7 +161,13 @@ services:
         value: sovereign_direct
       - key: DATABASE_URL
         sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
       - key: NEON_DATABASE_URL
+        sync: false
+      - key: TRUST_ENGINE_PRIVATE_KEY_PEM
+        sync: false
+      - key: TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM
         sync: false
       - key: GSC_CLIENT_ID
         sync: false
