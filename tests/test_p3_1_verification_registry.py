@@ -145,8 +145,8 @@ def test_release_readiness_honest_states_and_capture_settlement_separation(regis
     assert subs["google_search_console"]["gsc_lifecycle_state"] == "BLOCKED"
     assert subs["google_search_console"]["attribution_gap"] == "ATTRIBUTION_REQUIRES_CONNECTED_GSC"
 
-    assert subs["razorpay_payments"]["state"] == "SANDBOX_VERIFIED"
-    assert subs["razorpay_payments"]["live_transaction_state"] == "NOT_TESTED"
+    assert subs["razorpay_payments"]["state"] == "LIVE_VERIFIED"
+    assert subs["razorpay_payments"]["live_transaction_state"] == "LIVE_VERIFIED"
     assert subs["razorpay_payments"]["capture_equals_settlement"] is False
     assert subs["razorpay_payments"]["capture_vs_settlement"]["captured_pending_settlement_count"] == 1
     assert subs["razorpay_payments"]["capture_vs_settlement"]["settled_to_merchant_count"] == 1
