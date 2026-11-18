@@ -1452,6 +1452,9 @@ def reconcile_invoice_with_bank_statement(
     meta = dict(inv.metadata_json or {})
     meta["reconciliation"] = reconciliation_record
     meta["reconciliation_status"] = "RECONCILED_WITH_BANK_STATEMENT"
+    meta["settlement_status"] = "SETTLED_TO_MERCHANT"
+    meta["payout_settled"] = True
+    meta["settled_at"] = reconciled_at
     inv.metadata_json = meta
     inv.status = "paid"
     if not inv.provider_payment_id or inv.provider_payment_id.startswith("pending_"):

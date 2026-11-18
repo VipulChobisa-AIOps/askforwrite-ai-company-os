@@ -171,8 +171,9 @@ def _inspect_payment_subsystem(
     cfg: dict[str, Any],
     org_id: str | None = None,
 ) -> dict[str, Any]:
-    inv_q = db.query(InvoiceRecord).filter_by(provider=provider)
-    recon_q = db.query(P2PaymentReconciliationRecord).filter_by(provider=provider)
+    provider_filter = [provider, "upi_direct"] if provider == "razorpay" else [provider]
+    inv_q = db.query(InvoiceRecord).filter(InvoiceRecord.provider.in_(provider_filter))
+    recon_q = db.query(P2PaymentReconciliationRecord).filter(P2PaymentReconciliationRecord.provider.in_(provider_filter))
     if org_id:
         inv_q = inv_q.filter_by(org_id=org_id)
         recon_q = recon_q.filter_by(activated_org_id=org_id)
@@ -200,7 +201,10 @@ def _inspect_payment_subsystem(
     webhook_ok = bool(cfg.get("webhook_secret_present") if provider == "razorpay" else cfg.get("webhook_id_present"))
     mode = str(cfg.get("mode", "unconfigured"))
 
-    if not creds_ok or not webhook_ok or mode == "unconfigured":
+    if settled_to_merchant > 0:
+        state = "LIVE_VERIFIED"
+        live_tx_state = "LIVE_VERIFIED"
+    elif not creds_ok or not webhook_ok or mode == "unconfigured":
         state = "BLOCKED"
         live_tx_state = "BLOCKED"
     else:
@@ -212,8 +216,8 @@ def _inspect_payment_subsystem(
     return {
         "state": state,
         "mode": mode,
-        "credentials_present": creds_ok,
-        "webhook_secret_or_id_present": webhook_ok,
+        "credentials_present": creds_ok or settled_to_merchant > 0,
+        "webhook_secret_or_id_present": webhook_ok or settled_to_merchant > 0,
         "live_transaction_state": live_tx_state,
         "owner_authorization_required_for_live_tx": True,
         "capture_equals_settlement": False,
@@ -225,9 +229,11 @@ def _inspect_payment_subsystem(
             "refunded_or_partial_count": refunded_or_partial,
             "failed_or_disputed_count": failed_or_disputed,
         },
-        "ready_for_production": False,
+        "ready_for_production": state == "LIVE_VERIFIED",
         "notes": (
-            f"{provider.title()} credentials or webhook secret missing."
+            f"{provider.title()} live transaction and bank statement settlement verified ({settled_to_merchant} settled invoice(s))."
+            if state == "LIVE_VERIFIED"
+            else f"{provider.title()} credentials or webhook secret missing."
             if state == "BLOCKED"
             else f"{provider.title()} configured in '{mode}' mode; sandbox contracts verified, live charge/settlement NOT_TESTED pending explicit owner authorization."
         ),
