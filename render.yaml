@@ -118,13 +118,21 @@ services:
       - key: RAZORPAY_KEY_SECRET
         sync: false
       - key: PAYPAL_MODE
-        value: sandbox
+        value: live
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
       - key: PAYPAL_WEBHOOK_ID
         sync: false
+      - key: PAYPAL_WEBHOOK_SECRET
+        sync: false
+      - key: PAYPAL_PAYMENT_LINK
+        value: "https://paypal.me/ask4write"
+      - key: PAYPAL_RETURN_URL
+        value: "https://askforwrite.in/payment/success"
+      - key: PAYPAL_CANCEL_URL
+        value: "https://askforwrite.in/payment/cancel"
 
   # ── Isolated Staging & Sandbox Environment (Zero Production Side-Effects) ──
   - type: web
@@ -154,7 +162,7 @@ services:
       - key: PAYMENT_MODE
         value: sandbox
       - key: PAYPAL_MODE
-        value: sandbox
+        value: live
       - key: SMTP_MODE
         value: sandbox_sink
       - key: PAYMENT_PROVIDER
@@ -187,6 +195,14 @@ services:
         sync: false
       - key: PAYPAL_WEBHOOK_ID
         sync: false
+      - key: PAYPAL_WEBHOOK_SECRET
+        sync: false
+      - key: PAYPAL_PAYMENT_LINK
+        value: "https://paypal.me/ask4write"
+      - key: PAYPAL_RETURN_URL
+        value: "https://askforwrite.in/payment/success"
+      - key: PAYPAL_CANCEL_URL
+        value: "https://askforwrite.in/payment/cancel"
       - key: MANAGER_API_KEY
         generateValue: true
       - key: OWNER_API_KEY
