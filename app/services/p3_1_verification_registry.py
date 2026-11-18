@@ -116,6 +116,7 @@ def _inspect_gsc_subsystem(db: Session, *, org_id: str | None) -> dict[str, Any]
 
     serialized = [serialize_gsc_state(r, env_missing=env_missing) for r in records]
     latest_state = "BLOCKED"
+    best: dict[str, Any] = {}
     if serialized:
         rank = {
             "ATTRIBUTION_READY": 4,
@@ -124,15 +125,18 @@ def _inspect_gsc_subsystem(db: Session, *, org_id: str | None) -> dict[str, Any]
             "OAuth_CONNECTED": 1,
             "BLOCKED": 0,
         }
-        best = max(serialized, key=lambda item: rank.get(item.get("capability_state", "BLOCKED"), 0))
-        latest_state = str(best.get("capability_state", "BLOCKED"))
+        best = max(
+            serialized,
+            key=lambda item: rank.get(str(item.get("gsc_state") or item.get("capability_state") or "BLOCKED"), 0),
+        )
+        latest_state = str(best.get("gsc_state") or "BLOCKED")
 
     if env_missing:
         verification_state = "BLOCKED"
         attribution_gap = "ATTRIBUTION_REQUIRES_CONNECTED_GSC"
     elif latest_state == "ATTRIBUTION_READY":
-        # Treat DB state as sandbox/local unless live Google property verification is explicitly recorded
-        verification_state = "SANDBOX_VERIFIED"
+        has_live_property = any(bool(item.get("selected_property")) for item in serialized)
+        verification_state = "LIVE_VERIFIED" if has_live_property else "SANDBOX_VERIFIED"
         attribution_gap = None
     elif latest_state in ("OAuth_CONNECTED", "PROPERTY_VERIFIED", "DATA_FETCH_VERIFIED"):
         verification_state = "SANDBOX_VERIFIED"
@@ -149,10 +153,12 @@ def _inspect_gsc_subsystem(db: Session, *, org_id: str | None) -> dict[str, Any]
         "missing_env_keys": list(env_missing),
         "connected_orgs_count": len(serialized),
         "attribution_gap": attribution_gap,
-        "ready_for_production": False,
+        "ready_for_production": verification_state == "LIVE_VERIFIED",
         "notes": (
             f"Blocked by missing GSC OAuth environment variables: {', '.join(env_missing)}."
             if env_missing
+            else f"GSC integration reached '{latest_state}'; live Google Search Console property check verified ({best.get('selected_property')})."
+            if verification_state == "LIVE_VERIFIED"
             else f"GSC integration reached '{latest_state}'; live Google Search Console property check still required before LIVE_VERIFIED."
         ),
     }
