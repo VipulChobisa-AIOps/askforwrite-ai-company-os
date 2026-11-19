@@ -20,7 +20,7 @@
     geminiApiKey: localStorage.getItem('afw_gemini_key') || '',
     userRole: localStorage.getItem('afw_user_role') || (localStorage.getItem('askforwrite_owner_key') ? 'owner' : ''),
     userName: localStorage.getItem('afw_user_name') || '',
-    refreshInterval: 10000, // 10s auto-refresh
+    refreshInterval: 60000, // 60s auto-refresh (stays safely under 60 req/min rate limit)
   };
 
   // ── State ────────────────────────────────────────────────
@@ -283,11 +283,16 @@
 
   async function fetchFieldForceData() {
     try {
-      const [tasksRes, visitsRes, claimsRes] = await Promise.allSettled([
+      const [tasksRes, visitsRes, claimsRes, attRes] = await Promise.allSettled([
         api('GET', '/v1/field-force/tasks'),
         api('GET', '/v1/field-force/visits'),
         api('GET', '/v1/field-force/conveyance/claims'),
+        api('GET', '/v1/field-force/attendance/history'),
       ]);
+      if (attRes.status === 'fulfilled') {
+        const attRows = Array.isArray(attRes.value) ? attRes.value : [];
+        animateNumber('#stat-attendance', attRows.length);
+      }
 
       if (tasksRes.status === 'fulfilled') {
         state.fieldTasks = Array.isArray(tasksRes.value) ? tasksRes.value : [];
@@ -424,7 +429,78 @@
       fetchFieldForceData(),
       fetchWatchdogData(),
       fetchCeoBriefing(),
+      fetchRevenueAndAuditPanels(),
     ]);
+  }
+
+  async function fetchRevenueAndAuditPanels() {
+    // 1. Populate Dashboard Recent Activity (#audit-timeline) from 18-field evidence ledger
+    try {
+      const evRes = await api('GET', '/v1/registry/evidence?limit=10');
+      const records = evRes.records || [];
+      const timeline = $('#audit-timeline');
+      if (timeline) {
+        if (!records.length) {
+          timeline.innerHTML = '<div class="empty-state"><p>No recent autonomous activity recorded yet.</p></div>';
+        } else {
+          timeline.innerHTML = records.slice(0, 8).map(r => `
+            <div class="audit-item" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border-subtle)">
+              <div>
+                <div style="font-weight:600;font-size:0.84rem;color:var(--text-primary)">${esc(r.service_name || r.agent_id || r.action || 'Operation')}</div>
+                <div style="font-size:0.76rem;color:var(--text-secondary)">${esc(r.output_summary || r.execution_mode || '')}</div>
+              </div>
+              <div style="text-align:right;white-space:nowrap">
+                <span class="status-pill ${String(r.status || '').toUpperCase() === 'FAILED' ? 'rejected' : 'approved'}">${esc(r.status || 'VERIFIED')}</span>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-top:3px">${formatDate(r.created_at || r.timestamp)}</div>
+              </div>
+            </div>
+          `).join('');
+        }
+      }
+    } catch (e) {
+      console.warn('Audit timeline fetch:', e.message);
+    }
+
+    // 2. Populate Owner Revenue & Billing (#page-revenue) from live orders + CEO briefing revenue
+    try {
+      const ordersRes = await api('GET', '/v1/orders?limit=50');
+      const orders = ordersRes.orders || [];
+      const rev = state.ceoBriefing?.revenue || {};
+      const totalInr = Number(rev.total_revenue_inr || 0);
+      const totalOrdersAmt = orders.reduce((acc, o) => acc + Number(o.amount || 0), 0);
+      if ($('#stat-total-revenue')) {
+        $('#stat-total-revenue').textContent = `₹${(totalInr || totalOrdersAmt).toLocaleString()}`;
+      }
+      if ($('#stat-invoices')) {
+        $('#stat-invoices').textContent = String(orders.length);
+      }
+      if ($('#stat-subscriptions')) {
+        $('#stat-subscriptions').textContent = String(state.ceoBriefing?.tenants?.active_tenants ?? state.organizations?.length ?? 0);
+      }
+      const tbody = $('#invoices-tbody');
+      if (tbody) {
+        if (!orders.length) {
+          tbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty-state"><p>No verified invoices/orders recorded yet</p></div></td></tr>';
+        } else {
+          tbody.innerHTML = orders.map(o => {
+            const st = String(o.status || 'PENDING').toUpperCase();
+            const sym = String(o.currency || 'INR').toUpperCase() === 'USD' ? '$' : '₹';
+            return `
+              <tr>
+                <td><code>${esc(o.transaction_id || o.id || '—')}</code></td>
+                <td>${esc(o.customer_email || o.org_name || 'Direct Client')}</td>
+                <td>${sym}${Number(o.amount || 0).toLocaleString()}</td>
+                <td>${esc(o.provider || 'directpay')}</td>
+                <td><span class="status-pill ${st === 'FULFILLED' || st === 'CONFIRMED' || st === 'PAID' ? 'approved' : 'pending'}">${esc(st)}</span></td>
+                <td>${formatDate(o.created_at)}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+    } catch (e) {
+      console.warn('Revenue panel fetch:', e.message);
+    }
   }
 
 
@@ -2780,7 +2856,10 @@
       state.refreshTimer = null;
     }
     if (CONFIG.refreshInterval > 0) {
-      state.refreshTimer = setInterval(fetchAll, CONFIG.refreshInterval);
+      const safeMs = Math.max(30000, CONFIG.refreshInterval);
+      state.refreshTimer = setInterval(() => {
+        if (!document.hidden && (CONFIG.ownerApiKey || CONFIG.accessToken)) fetchAll();
+      }, safeMs);
     }
   }
 
@@ -2826,7 +2905,7 @@
     CONFIG.userRole = '';
     CONFIG.userName = '';
     CONFIG.apiBase = window.location.origin;
-    CONFIG.refreshInterval = 10000;
+    CONFIG.refreshInterval = 60000;
 
     const keyInput = $('#settings-api-key');
     const geminiInput = $('#settings-gemini-key');
@@ -2856,12 +2935,14 @@
       if (gate) gate.style.display = 'flex';
       if (sidebarEl) sidebarEl.style.visibility = 'hidden';
       if (mainEl) mainEl.style.visibility = 'hidden';
+      document.body.classList.add('afw-hide-floating-closer');
       return false;
     }
 
     if (gate) gate.style.display = 'none';
     if (sidebarEl) sidebarEl.style.visibility = 'visible';
     if (mainEl) mainEl.style.visibility = 'visible';
+    document.body.classList.toggle('afw-hide-floating-closer', state.currentPage === 'growth');
 
     // Apply role + entitlement-based navigation visibility & settings separation
     const isCustomer = CONFIG.userRole === 'customer' || (!hasOwnerKey && hasAccessToken);
