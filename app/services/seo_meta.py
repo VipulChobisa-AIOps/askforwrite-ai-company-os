@@ -93,10 +93,13 @@ def is_browser_or_crawler(request: Request) -> bool:
     return "text/html" in accept or any(tok in ua for tok in BOT_AND_BROWSER_UA_TOKENS)
 
 
+DEFAULT_GSC_VERIFICATION_TOKEN = "9Hq89c2XOt2-x9ww4QZeJgB2TAR_2Z8nBoPQd1DPRmc"
+
+
 def verification_meta_tags() -> str:
-    """Emit Google Search Console / Bing Webmaster verification tags ONLY when real tokens are configured."""
+    """Emit Google Search Console / Bing Webmaster verification tags (never fake placeholders)."""
     tags: list[str] = []
-    gsc = os.environ.get("GOOGLE_SITE_VERIFICATION", "").strip()
+    gsc = os.environ.get("GOOGLE_SITE_VERIFICATION", DEFAULT_GSC_VERIFICATION_TOKEN).strip()
     if gsc and "verification-ready" not in gsc.lower():
         tags.append(f'<meta name="google-site-verification" content="{html.escape(gsc)}">')
     bing = os.environ.get("BING_SITE_VERIFICATION", "").strip()
