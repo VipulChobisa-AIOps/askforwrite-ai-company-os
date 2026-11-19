@@ -483,20 +483,26 @@ def gsc_oauth_browser_callback(
 
 @app.get("/", include_in_schema=False)
 def root(request: Request) -> Any:
-    """Root entrypoint: returns service metadata for explicit JSON API clients or redirects browsers/crawlers to dashboard."""
+    """Root entrypoint: redirects browsers & search/AI crawlers to /dashboard/ (full FAQPage JSON-LD), returns JSON for API clients."""
     accept = request.headers.get("accept", "").lower()
-    if "application/json" in accept and "text/html" not in accept:
-        return {
-            "status": "online",
-            "service": "AskforWrite AI Company OS",
-            "version": "0.2.0",
-            "docs_url": "/docs",
-            "health_url": "/health",
-            "dashboard_url": "/dashboard/",
-            "api_prefix": "/v1",
-            "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
-        }
-    return RedirectResponse(url="/dashboard/", status_code=302)
+    ua = request.headers.get("user-agent", "").lower()
+    wants_json = "application/json" in accept and "text/html" not in accept
+    is_browser_or_crawler = (
+        "text/html" in accept
+        or any(tok in ua for tok in ("mozilla", "googlebot", "bingbot", "gptbot", "perplexity", "claudebot", "applebot", "askforwrite"))
+    )
+    if is_browser_or_crawler and not wants_json:
+        return RedirectResponse(url="/dashboard/", status_code=302)
+    return {
+        "status": "online",
+        "service": "AskforWrite AI Company OS",
+        "version": "0.2.0",
+        "docs_url": "/docs",
+        "health_url": "/health",
+        "dashboard_url": "/dashboard/",
+        "api_prefix": "/v1",
+        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
+    }
 
 
 @app.get("/login", include_in_schema=False)
