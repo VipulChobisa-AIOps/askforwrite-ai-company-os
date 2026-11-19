@@ -11,7 +11,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-URL = "https://askforwrite-ai-company-os.onrender.com/health"
+URL = "https://os.askforwrite.com/health"
 print(f"Polling {URL} for live status...")
 
 start = time.time()

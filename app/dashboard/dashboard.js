@@ -2671,6 +2671,7 @@
       checkAuthGate();
       navigateTo('portal');
       await fetchCustomerPortalData();
+      cwHydrateRegistry().catch(() => {});
     } catch (err) {
       showAuthGateError(err.message || 'Login failed. Please check your credentials.');
     } finally {
@@ -2792,6 +2793,7 @@
       checkAuthGate();
       navigateTo('dashboard');
       await fetchAll();
+      cwHydrateRegistry().catch(() => {});
       resetRefreshTimer();
     } catch (err) {
       showAuthGateError(err.message || 'Invalid Owner API Key.');
@@ -5963,17 +5965,33 @@
     },
   };
 
-  // Boot
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      cwInitControlCenter();
-      init();
-      cwHydrateRegistry();
-    });
-  } else {
+  // Boot & Non-blocking Background Warmup
+  function bootApplication() {
     cwInitControlCenter();
     init();
-    cwHydrateRegistry();
+    // Hydrate registry only if already authenticated, completely non-blocking
+    if (CONFIG.ownerApiKey || CONFIG.accessToken) {
+      cwHydrateRegistry().catch(() => {});
+    }
+    // Background warm-up ping for instant responsiveness on os.askforwrite.com
+    try {
+      if (typeof window !== 'undefined') {
+        const warmup = () => {
+          fetch(`${CONFIG.apiBase}/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+        };
+        if ('requestIdleCallback' in window) {
+          requestIdleCallback(warmup, { timeout: 1500 });
+        } else {
+          setTimeout(warmup, 100);
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootApplication);
+  } else {
+    bootApplication();
   }
 })();
 

@@ -4,9 +4,9 @@
  * Provides network-first asset freshness, cache-busting on release, and offline fallback.
  */
 
-const CACHE_NAME = 'afw-os-shell-v4.0-p1-workforce';
-const PREVIOUS_CACHE_NAMES = ['afw-os-shell-v3.5-truthfulness'];
-const BUILD_VERSION = 'v4.0-p1-modular-workforce';
+const CACHE_NAME = 'afw-os-shell-v4.1-pro-ui';
+const PREVIOUS_CACHE_NAMES = ['afw-os-shell-v4.0-p1-workforce', 'afw-os-shell-v3.5-truthfulness'];
+const BUILD_VERSION = 'v4.1-pro-ui';
 
 const STATIC_ASSETS = [
   '/dashboard/',

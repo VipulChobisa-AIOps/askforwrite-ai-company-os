@@ -47,7 +47,6 @@ GSC_VERIFICATION_STATES: tuple[str, ...] = tuple(GSC_STATES)
 
 _DEFAULT_LIVE_HEALTH_URLS: tuple[str, ...] = (
     "https://os.askforwrite.com/health",
-    "https://askforwrite-ai-company-os.onrender.com/health",
     "https://askforwrite-ai-company-os-staging-lyjm.onrender.com/healthz",
 )
 
