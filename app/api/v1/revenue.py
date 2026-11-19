@@ -356,14 +356,16 @@ def get_revenue_funnel(
 
 @router.get("/pricing/contracts", status_code=status.HTTP_200_OK)
 def list_canonical_pricing_contracts() -> dict[str, Any]:
-    """Return canonical 15-field subscription contracts for all packages and modular SME tiers."""
+    """Return canonical 15-field subscription contracts for all packages, modular SME tiers, and pricing clusters."""
     from app.services.billing_ledger import build_canonical_package_contract
-    from app.services.catalog import MODULAR_SME_TIERS
+    from app.services.catalog import MODULAR_SERVICE_MODULES, MODULAR_SME_TIERS, PRICING_CLUSTERS
 
     contracts = {key: build_canonical_package_contract(key) for key in CATALOG}
     tier_contracts = {key: build_canonical_package_contract(key) for key in MODULAR_SME_TIERS}
     return {
         "status": "OK",
+        "pricing_clusters": PRICING_CLUSTERS,
+        "modular_addons": MODULAR_SERVICE_MODULES,
         "package_contracts": contracts,
         "modular_tier_contracts": tier_contracts,
     }

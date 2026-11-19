@@ -30,7 +30,7 @@ class TestCatalogService(unittest.TestCase):
 
     def test_catalog_package_integrity(self):
         packages = get_all_packages()
-        self.assertEqual(len(packages), 15)
+        self.assertEqual(len(packages), 16)
 
         expected_keys = {
             "seo_blog_copilot",
@@ -47,6 +47,7 @@ class TestCatalogService(unittest.TestCase):
             "company_os_pro",
             "company_os_enterprise",
             "growth_all_in_one",
+            "operations_suite",
             "all_access",
         }
         actual_keys = {pkg.key for pkg in packages}
@@ -98,14 +99,37 @@ class TestCatalogService(unittest.TestCase):
         self.assertIn("Globex+Logistics", link)
 
     def test_build_payment_link_fallback_package(self):
-        # Invalid package key falls back to company_os_starter (7999 INR / 99 USD)
+        # Invalid package key falls back to company_os_starter (2999 INR / 39 USD — Launch tier)
         link = build_payment_link(
             package_key="unknown_tool",
             company="Test Corp",
             provider="razorpay",
         )
-        self.assertIn("amount=799900", link)
+        self.assertIn("amount=299900", link)
         self.assertIn("notes_package=company_os_starter", link)
+
+    def test_clustered_pricing_ladder_and_contracts(self):
+        from app.services.billing_ledger import build_canonical_package_contract
+        from app.services.catalog import MODULAR_SME_TIERS, PRICING_CLUSTERS
+
+        self.assertEqual(len(PRICING_CLUSTERS), 4)
+        expected_tiers = {
+            "launch": (2999, 39),
+            "growth": (6999, 89),
+            "operations": (9999, 129),
+            "business_pro": (17999, 229),
+            "enterprise": (44999, 549),
+        }
+        self.assertEqual(set(MODULAR_SME_TIERS.keys()), set(expected_tiers.keys()))
+        for key, (inr, usd) in expected_tiers.items():
+            c = build_canonical_package_contract(key)
+            self.assertEqual(c["base_price"]["inr"], inr)
+            self.assertEqual(c["base_price"]["usd"], usd)
+            self.assertEqual(c["annual_price"]["discount_pct"], 20)
+            self.assertTrue(len(c["included_clusters"]) >= 1)
+            self.assertTrue(bool(c["plan_name"]))
+        self.assertIsNotNone(get_package("operations"))
+        self.assertEqual(get_package("operations").key, "operations_suite")
 
 
 class TestProvisioningService(unittest.TestCase):
@@ -233,7 +257,7 @@ class TestProvisioningService(unittest.TestCase):
         org = self.db.query(OrganizationRecord).filter_by(id=result["org_id"]).first()
         self.assertIsNotNone(org)
         self.assertEqual(org.name, "Enterprise-corp Operations")
-        self.assertEqual(org.tier, "starter")
+        self.assertEqual(org.tier, "launch")
 
         inv = self.db.query(InvoiceRecord).filter_by(org_id=org.id).first()
         self.assertEqual(inv.currency, "USD")
@@ -428,7 +452,7 @@ class TestProvisioningService(unittest.TestCase):
                         "entity": {
                             "email": "cheap@buyer.com",
                             "notes": {"notes_package": "company_os_starter"},
-                            "amount": 10000,  # 100 INR instead of 7999 INR
+                            "amount": 10000,  # 100 INR instead of 2999 INR
                             "currency": "INR",
                         }
                     }
@@ -438,5 +462,5 @@ class TestProvisioningService(unittest.TestCase):
         result = auto_provision_tenant_on_payment(self.db, event)
         self.assertIsNotNone(result)
         self.assertEqual(result["status"], "underpaid_withheld")
-        self.assertEqual(result["expected_amount"], 7999.0)
+        self.assertEqual(result["expected_amount"], 2999.0)
         self.assertEqual(result["received_amount"], 100.0)

@@ -391,13 +391,13 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         session_id = data.get("session_id")
         self.assertIsNotNone(session_id)
         self.assertEqual(data["company_name"], "Kay Bee Exports Fresh Produce")
-        self.assertEqual(data["amount"], 9999.0)
+        self.assertEqual(data["amount"], 6999.0)
         self.assertEqual(data["currency"], "INR")
         self.assertTrue(data["zero_gateway_fee"])
 
         # Rail 1: UPI Direct
         self.assertTrue(data["upi_uri"].startswith("upi://pay?pa="))
-        self.assertIn("am=9999.00", data["upi_uri"])
+        self.assertIn("am=6999.00", data["upi_uri"])
         self.assertIn("<svg", data["upi_qr_svg"])
 
         # Rail 2: Web3 USDC
@@ -518,7 +518,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
 
         org = self.db.query(OrganizationRecord).filter_by(id=org_id).first()
         self.assertIsNotNone(org)
-        self.assertEqual(org.tier, "growth_all_in_one")
+        self.assertEqual(org.tier, "growth")
         self.assertEqual(org.metadata_json.get("payment_provider"), "afw_directpay")
 
         user = self.db.query(UserRecord).filter_by(id=user_id).first()
@@ -530,7 +530,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         invoice = self.db.query(InvoiceRecord).filter_by(org_id=org_id).first()
         self.assertIsNotNone(invoice)
         self.assertEqual(invoice.status, "paid")
-        self.assertEqual(invoice.amount, 999900)  # in paise
+        self.assertEqual(invoice.amount, 699900)  # in paise
         self.assertEqual(invoice.currency, "INR")
 
         # 3. ApprovalRequest updated to APPROVED
@@ -643,7 +643,7 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
 
         org = self.db.query(OrganizationRecord).filter_by(id=user.org_id).first()
         self.assertIsNotNone(org)
-        self.assertEqual(org.tier, "growth_all_in_one")
+        self.assertEqual(org.tier, "growth")
 
         invoice = self.db.query(InvoiceRecord).filter_by(org_id=org.id).first()
         self.assertIsNotNone(invoice)

@@ -45,7 +45,7 @@ SOLUTION_SLUGS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "q": "What is the pricing and turnaround time?",
-                "a": "Plans start at ₹4,999/month ($59 USD) with instant self-serve workspace provisioning and sub-second replenishment calculation."
+                "a": "Standalone Warehouse StockSense AI starts at ₹3,999/month ($49 USD) — or bundle all 4 Field & Vertical AI engines plus the ECDSA Trust Ledger in the Operations Suite at ₹9,999/month ($129 USD) with instant self-serve provisioning."
             },
             {
                 "q": "Can we verify payment and tax compliance automatically?",

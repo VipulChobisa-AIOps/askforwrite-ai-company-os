@@ -14,7 +14,7 @@ import json
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
 
-from app.services.catalog import get_all_packages, get_package
+from app.services.catalog import MODULAR_SME_TIERS, PRICING_CLUSTERS, get_all_packages, get_package
 
 router = APIRouter(tags=["seo-service-pages"])
 
@@ -25,6 +25,56 @@ def list_service_landing_pages() -> HTMLResponse:
     packages = get_all_packages()
     item_list_elements = []
     cards_html = []
+
+    tier_cards_html = []
+    tier_sku_map = {
+        "launch": "company_os_starter",
+        "growth": "growth_all_in_one",
+        "operations": "operations_suite",
+        "business_pro": "company_os_pro",
+        "enterprise": "company_os_enterprise",
+    }
+    for t_key, tier in MODULAR_SME_TIERS.items():
+        bp = tier.get("base_price", {})
+        ap = tier.get("annual_price", {})
+        inc_clusters = tier.get("included_clusters", [])
+        cluster_badges = "".join(
+            f'<span class="cluster-pill">{html.escape(str(PRICING_CLUSTERS.get(ck, {}).get("name", ck)).split(":")[0])}</span>'
+            for ck in inc_clusters
+        )
+        checkout_sku = tier_sku_map.get(t_key, t_key)
+        highlighted = " featured-tier" if t_key == "growth" else ""
+        credits = tier.get("included_credits", {})
+        tier_cards_html.append(
+            f"""
+            <article class="tier-card{highlighted}">
+              <div class="tier-top">
+                <span class="badge">{html.escape(t_key.replace('_', ' ').upper())}</span>
+                <div class="cluster-pills">{cluster_badges}</div>
+              </div>
+              <h3>{html.escape(str(tier.get('name', t_key)))}</h3>
+              <p class="desc">{html.escape(str(tier.get('target_sme', '')))}</p>
+              <div class="tier-price">₹{int(bp.get('inr', 0)):,}<span>/mo · ${int(bp.get('usd', 0))} USD</span></div>
+              <div class="tier-annual">Annual (-{int(ap.get('discount_pct', 20))}%): ₹{int(ap.get('inr', 0)):,}/mo (${int(ap.get('usd', 0))}/mo)</div>
+              <p class="meta"><strong>Capacity:</strong> {int(tier.get('agent_limit', 2))} Agents · {int(tier.get('seat_limit', 2))} Seats · {int(credits.get('lead_credits', 50)):,} Leads · {int(credits.get('ai_execution_credits', 150)):,} AI Runs</p>
+              <a class="tier-cta" href="/v1/pay/checkout?package={html.escape(checkout_sku)}">Subscribe via DirectPay →</a>
+            </article>
+            """
+        )
+
+    cluster_cards_html = []
+    for ck, cl in PRICING_CLUSTERS.items():
+        svcs = ", ".join(str(s) for s in cl.get("services", []))
+        cluster_cards_html.append(
+            f"""
+            <div class="cluster-card">
+              <div class="badge">CLUSTER {int(cl.get('cluster_number', 1))}</div>
+              <h3>{html.escape(str(cl.get('name', ck)))}</h3>
+              <p class="desc">{html.escape(str(cl.get('tagline', '')))}</p>
+              <p class="meta"><strong>Tools &amp; Services:</strong> <code>{html.escape(svcs)}</code></p>
+            </div>
+            """
+        )
 
     for idx, pkg in enumerate(packages, start=1):
         url = f"https://os.askforwrite.com/services/{pkg.key}"
@@ -76,10 +126,10 @@ def list_service_landing_pages() -> HTMLResponse:
                 "mainEntity": [
                     {
                         "@type": "Question",
-                        "name": "How does AskforWrite AI Company OS modular service pricing work?",
+                        "name": "How does AskforWrite AI Company OS clustered subscription pricing work?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "AskforWrite provides 14 modular AI services and bundled tiers with transparent fixed monthly INR and USD pricing, allowing SMBs and enterprises to subscribe only to the AI capabilities they need without agency retainers."
+                            "text": "AskforWrite groups its 16 AI tools into 4 functional clusters (Content/SEO/Creative, Sales/Discovery/AI Closer, Field Ops/Vertical AI, and Governance/Trust Ledger) across 5 monthly subscription tiers: Launch (₹2,999/$39), Growth Suite (₹6,999/$89), Operations Suite (₹9,999/$129), Business Pro (₹17,999/$229), and Enterprise (₹44,999/$549), with 20% annual savings and stackable modular add-ons."
                         },
                     },
                     {
@@ -116,22 +166,40 @@ def list_service_landing_pages() -> HTMLResponse:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Business Services &amp; Modular Automation Catalog | AskforWrite Company OS</title>
-  <meta name="description" content="Explore all 14 verified AI services from AskforWrite Company OS: Warehouse StockSense AI, Field Force GPS Automation, Produce Quality Vision AI, Urban Mobility Forecasting, SEO/GEO Blog Copilot, and Cryptographic Trust Ledgers.">
+  <title>Clustered AI Subscriptions &amp; Modular Service Catalog | AskforWrite Company OS</title>
+  <meta name="description" content="Explore AskforWrite Company OS clustered subscriptions (₹2,999 to ₹44,999/mo) across 4 AI capability clusters: Content & SEO Studio, Sales & AI Closer, Field & Vertical AI (Warehouse, Field Force, Produce Vision, Urban Mobility), and ECDSA Trust Ledger.">
   <link rel="canonical" href="https://os.askforwrite.com/services">
-  <meta property="og:title" content="AskforWrite AI Company OS — Verified AI Services &amp; Pricing Catalog">
-  <meta property="og:description" content="Governed multi-agent AI services with transparent INR/USD pricing, concrete deliverables, and ECDSA NIST P-256 audit verification.">
+  <meta property="og:title" content="AskforWrite AI Company OS — Clustered Subscriptions &amp; AI Services Catalog">
+  <meta property="og:description" content="4 functional AI clusters, 5 transparent INR/USD subscription tiers with 20% annual discount, stackable add-ons, and ECDSA NIST P-256 audit verification.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://os.askforwrite.com/services">
   <script type="application/ld+json">{json.dumps(schema_graph)}</script>
   <style>
     body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; margin: 0; padding: 0; line-height: 1.6; }}
-    header, main, footer {{ max-width: 1120px; margin: 0 auto; padding: 24px; }}
+    header, main, footer {{ max-width: 1180px; margin: 0 auto; padding: 24px; }}
     h1 {{ font-size: 2.2rem; margin-bottom: 8px; color: #ffffff; }}
-    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-top: 24px; }}
+    h2.section-title {{ font-size: 1.5rem; margin: 32px 0 8px; color: #e2e8f0; border-bottom: 1px solid #1e293b; padding-bottom: 8px; }}
+    .section-sub {{ color: #94a3b8; margin: 0 0 18px; }}
+    .clusters-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 28px; }}
+    .cluster-card {{ background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }}
+    .cluster-card h3 {{ margin: 8px 0 6px; font-size: 1.05rem; color: #f8fafc; }}
+    .tiers-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 16px; margin-bottom: 36px; }}
+    .tier-card {{ background: #111827; border: 1px solid #1e293b; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between; }}
+    .tier-card.featured-tier {{ border-color: #6366f1; box-shadow: 0 0 0 1px rgba(99,102,241,0.45); background: linear-gradient(180deg, rgba(79,70,229,0.14), #111827); }}
+    .tier-card h3 {{ margin: 10px 0 6px; font-size: 1.05rem; color: #ffffff; }}
+    .tier-top {{ display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .cluster-pills {{ display: flex; gap: 4px; flex-wrap: wrap; }}
+    .cluster-pill {{ font-size: 0.68rem; background: #1e293b; color: #cbd5e1; padding: 2px 6px; border-radius: 999px; }}
+    .tier-price {{ font-size: 1.45rem; font-weight: 800; color: #34d399; margin: 10px 0 2px; }}
+    .tier-price span {{ font-size: 0.82rem; font-weight: 500; color: #94a3b8; }}
+    .tier-annual {{ font-size: 0.78rem; color: #a5b4fc; margin-bottom: 10px; }}
+    .tier-cta {{ display: inline-block; text-align: center; background: #4f46e5; color: #ffffff; text-decoration: none; font-weight: 700; padding: 9px 12px; border-radius: 8px; margin-top: 12px; font-size: 0.85rem; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; margin-top: 20px; }}
     .service-card {{ background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }}
     .service-card h2 a {{ color: #60a5fa; text-decoration: none; }}
-    .badge {{ display: inline-block; font-size: 0.75rem; background: #1e3a8a; color: #93c5fd; padding: 2px 8px; border-radius: 999px; }}
+    .badge {{ display: inline-block; font-size: 0.72rem; background: #1e3a8a; color: #93c5fd; padding: 2px 8px; border-radius: 999px; font-weight: 700; }}
+    .desc {{ font-size: 0.9rem; color: #cbd5e1; }}
+    .meta {{ font-size: 0.82rem; color: #94a3b8; }}
     .price-row {{ display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid #1e293b; }}
     .price {{ font-weight: 700; color: #34d399; }}
     .cta-link {{ color: #93c5fd; text-decoration: none; font-weight: 600; }}
@@ -150,9 +218,22 @@ def list_service_landing_pages() -> HTMLResponse:
       <a href="/legal/refund-policy">Refund Policy</a>
     </nav>
     <h1>AskforWrite AI Company OS — Verified Service &amp; Capability Directory</h1>
-    <p>Every service listed below is backed by a verified execution engine, transparent INR/USD pricing, Human-in-the-Loop (HITL) governance, and ECDSA NIST P-256 cryptographic audit logs.</p>
+    <p>Clustered Subscriptions &amp; Modular Tools: every capability is organized into 4 functional AI clusters across 5 transparent monthly INR/USD tiers (save 20% annually), backed by HITL governance and ECDSA NIST P-256 cryptographic audit logs.</p>
   </header>
   <main>
+    <h2 class="section-title">1. The 4 Functional AI Capability Clusters</h2>
+    <p class="section-sub">Related tools, specialist agents, and operational services grouped cleanly so teams only pay for the capabilities they need.</p>
+    <section class="clusters-grid">
+      {"".join(cluster_cards_html)}
+    </section>
+
+    <h2 class="section-title">2. Clustered Monthly &amp; Annual Subscription Plans</h2>
+    <p class="section-sub">Start with a single cluster, bundle Growth or Operations, or unlock all 4 clusters with stackable add-on modules and 0%-commission AFW DirectPay checkout.</p>
+    <section class="tiers-grid">
+      {"".join(tier_cards_html)}
+    </section>
+
+    <h2 class="section-title">3. All Standalone Tools, Entry Packs &amp; Bundled SKUs ({len(packages)})</h2>
     <section class="grid">
       {"".join(cards_html)}
     </section>

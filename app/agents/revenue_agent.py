@@ -148,7 +148,7 @@ PAIN_POINT_DIAGNOSIS: dict[str, dict[str, object]] = {
             "Leads going cold because replies take more than 5 minutes",
             "High customer acquisition cost with low website conversion",
         ],
-        "roi_formula": "Provides an entire autonomous marketing & sales closer team for ₹9,999/mo",
+        "roi_formula": "Provides an entire autonomous marketing, SEO/GEO & 24/7 sales closer team for ₹6,999/mo ($89/mo)",
         "roi_multiplier": 10.0,
     },
 }

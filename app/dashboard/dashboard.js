@@ -2698,7 +2698,7 @@
               <div style="margin-top:10px;padding:10px;background:rgba(79,70,229,0.3);border-radius:6px;border:1px solid var(--purple)">
                 <div style="font-weight:700;font-size:0.8rem;color:white;margin-bottom:4px">🚀 Instant Onboarding Checkout:</div>
                 <a href="${esc(res.checkout_link)}" target="_blank" class="primary-btn" style="display:inline-block;padding:6px 14px;font-size:0.75rem;text-decoration:none">
-                  Pay ₹${res.price_inr?.toLocaleString() || '9,999'}/mo via Razorpay
+                  Pay ₹${res.price_inr?.toLocaleString() || '6,999'}/mo via DirectPay
                 </a>
               </div>
             `;
@@ -4662,24 +4662,95 @@
       }));
       cwState.ledger = ledgerRes.entries || [];
 
+      const clustersMap = contractsRes.pricing_clusters || {};
+      const addonsMap = contractsRes.modular_addons || {};
+      const clGrid = $('#cw-pricing-clusters-grid');
+      if (clGrid) {
+        const clusters = Object.values(clustersMap).sort((a, b) => (a.cluster_number || 0) - (b.cluster_number || 0));
+        clGrid.innerHTML = clusters.map(cl => `
+          <div style="background:rgba(15,23,42,0.72);border:1px solid var(--glass-border);border-radius:10px;padding:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:0.7rem;font-weight:700;color:var(--cyan);text-transform:uppercase;">Cluster ${escapeHtml(String(cl.cluster_number || ''))}</span>
+              <span style="font-size:0.74rem;font-weight:700;color:var(--green);">₹${Number(cl.standalone_monthly_inr || 0).toLocaleString('en-IN')}/mo · $${escapeHtml(String(cl.standalone_monthly_usd || 0))}</span>
+            </div>
+            <div style="font-weight:700;font-size:0.84rem;margin-bottom:4px;">${escapeHtml(String(cl.name || '').replace(/^Cluster \d+:\s*/, ''))}</div>
+            <div style="font-size:0.74rem;color:var(--text-muted);line-height:1.45;margin-bottom:6px;">${escapeHtml(cl.tagline || '')}</div>
+            <div style="font-size:0.7rem;color:#93c5fd;"><code>${escapeHtml((cl.services || []).join(', '))}</code></div>
+          </div>
+        `).join('') || '<div style="font-size:0.8rem;color:var(--text-muted);">Pricing clusters unavailable.</div>';
+      }
+
+      const addonBar = $('#cw-addon-chips-bar');
+      if (addonBar) {
+        const addons = Object.values(addonsMap);
+        addonBar.innerHTML = addons.length ? (
+          '<span style="color:var(--text-muted);font-weight:600;">Click to add module:</span>' +
+          addons.map(m => `
+            <button type="button" class="secondary-btn cw-addon-chip" data-addon="${escapeHtml(m.module_key)}" style="padding:4px 10px;font-size:0.74rem;">
+              + ${escapeHtml(m.module_key)} (₹${Number(m.monthly_price_inr || 0).toLocaleString('en-IN')} / $${escapeHtml(String(m.monthly_price_usd || 0))})
+            </button>
+          `).join('')
+        ) : '';
+        addonBar.querySelectorAll('.cw-addon-chip').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const inp = $('#cw-bill-addons');
+            if (!inp) return;
+            const key = btn.getAttribute('data-addon') || '';
+            const cur = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+            if (key && !cur.includes(key)) cur.push(key);
+            inp.value = cur.join(', ');
+          });
+        });
+      }
+
       const tierSel = $('#cw-bill-tier');
       if (tierSel && cwState.contracts.length) {
         const curT = tierSel.value;
         tierSel.innerHTML = cwState.contracts.map(c => (
-          `<option value="${escapeHtml(c.plan_key)}">${escapeHtml(c.plan_name || c.plan_key)} (₹${escapeHtml(String(c.base_price?.inr ?? 0))})</option>`
+          `<option value="${escapeHtml(c.plan_key)}">${escapeHtml(c.plan_name || c.name || c.plan_key)} (₹${Number(c.base_price?.inr ?? 0).toLocaleString('en-IN')}/mo • $${escapeHtml(String(c.base_price?.usd ?? 0))})</option>`
         )).join('');
         if (curT && cwState.contracts.some(c => c.plan_key === curT)) tierSel.value = curT;
       }
 
+      const tierCheckoutSku = {
+        launch: 'company_os_starter',
+        growth: 'growth_all_in_one',
+        operations: 'operations_suite',
+        business_pro: 'company_os_pro',
+        enterprise: 'company_os_enterprise',
+      };
       const cBox = $('#cw-pricing-contracts-list');
       if (cBox) {
-        cBox.innerHTML = cwState.contracts.map(c => `
-          <div style="border-bottom:1px solid var(--glass-border);padding:8px 0;font-size:0.8rem;">
-            <strong>${escapeHtml(c.plan_name || c.plan_key)}</strong> (<code>${escapeHtml(c.internal_sku || c.plan_key)}</code>) —
-            ₹${escapeHtml(String(c.base_price?.inr ?? 0))} / ${escapeHtml(c.billing_interval || 'monthly')} •
-            Credits: ${escapeHtml(String(c.included_credits || 0))} • Seats: ${escapeHtml(String(c.seat_limit || 0))} • Agents: ${escapeHtml(String((c.entitled_agents || []).length))}
+        cBox.innerHTML = cwState.contracts.map(c => {
+          const inrMo = Number(c.base_price?.inr ?? 0);
+          const usdMo = Number(c.base_price?.usd ?? 0);
+          const inrYr = Number(c.annual_price?.inr ?? Math.round(inrMo * 0.8));
+          const usdYr = Number(c.annual_price?.usd ?? Math.round(usdMo * 0.8));
+          const clusters = (c.included_clusters || []).map(ck => {
+            const clObj = clustersMap[ck];
+            return clObj ? `C${clObj.cluster_number}` : ck;
+          }).join(' + ');
+          const pkgSlug = tierCheckoutSku[c.plan_key] || c.internal_sku || c.plan_key;
+          return `
+          <div style="border-bottom:1px solid var(--glass-border);padding:10px 0;font-size:0.8rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div>
+                <strong>${escapeHtml(c.plan_name || c.name || c.plan_key)}</strong>
+                ${clusters ? `<span class="badge" style="margin-left:6px;font-size:0.68rem;">${escapeHtml(clusters)}</span>` : ''}
+              </div>
+              <a href="/v1/pay/checkout?package=${encodeURIComponent(pkgSlug)}" target="_blank" style="font-size:0.74rem;color:var(--cyan);font-weight:600;text-decoration:none;">Checkout ↗</a>
+            </div>
+            <div style="margin-top:4px;color:var(--green);font-weight:700;">
+              ₹${inrMo.toLocaleString('en-IN')}/mo ($${usdMo} USD)
+              <span style="color:#a5b4fc;font-weight:500;margin-left:8px;">Annual (-20%): ₹${inrYr.toLocaleString('en-IN')}/mo ($${usdYr})</span>
+            </div>
+            <div style="margin-top:2px;color:var(--text-muted);font-size:0.75rem;">
+              Modules: <code>${escapeHtml((c.included_modules || []).join(', '))}</code> •
+              Credits: ${escapeHtml(String(c.included_credits || 0))} • Seats: ${escapeHtml(String(c.seat_limit || 0))} • Agents: ${escapeHtml(String(c.agent_limit || (c.entitled_agents || []).length))}
+            </div>
           </div>
-        `).join('') || '<div class="empty-state"><p>No contracts available.</p></div>';
+          `;
+        }).join('') || '<div class="empty-state"><p>No contracts available.</p></div>';
       }
 
       const lBox = $('#cw-credit-ledger-list');

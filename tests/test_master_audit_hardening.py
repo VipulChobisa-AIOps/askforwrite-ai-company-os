@@ -339,8 +339,8 @@ class MasterAuditHardeningTests(unittest.TestCase):
         self.assertNotIn("temp_password", prov)
 
         self.db.refresh(org_before)
-        self.assertEqual(org_before.tier, "pro")
-        self.assertEqual(org_before.lead_credits_limit, 600)
+        self.assertEqual(org_before.tier, "business_pro")
+        self.assertEqual(org_before.lead_credits_limit, 1200)
         inv = self.db.query(InvoiceRecord).filter_by(org_id=org_id).first()
         self.assertIsNotNone(inv)
         self.assertEqual(inv.amount, 1999900)

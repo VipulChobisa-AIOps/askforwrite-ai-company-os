@@ -163,7 +163,7 @@ class RevenueAgentTests(unittest.TestCase):
         self.assertEqual(data["recommended_package_key"], "marketing_suite")
         self.assertEqual(data["provider"], "paypal")
         self.assertEqual(data["currency"], "USD")
-        self.assertEqual(data["price"], 39)
+        self.assertEqual(data["price"], 35)
         self.assertIn("paypal", data["payment_link"].lower())
 
     def test_pitch_lead_end_to_end_flow(self):
@@ -258,9 +258,9 @@ class RevenueAgentTests(unittest.TestCase):
         # Verify Organization created
         org = self.db.query(OrganizationRecord).filter_by(name="TechStartup Innovations").first()
         self.assertIsNotNone(org)
-        self.assertEqual(org.tier, "starter")
-        self.assertEqual(org.lead_credits_limit, 150)
-        self.assertEqual(org.outreach_credits_limit, 75)
+        self.assertEqual(org.tier, "launch")
+        self.assertEqual(org.lead_credits_limit, 50)
+        self.assertEqual(org.outreach_credits_limit, 25)
 
         # Verify User created with org-scoped tenant_admin role
         user = self.db.query(UserRecord).filter_by(email="founder@techstartup.in").first()

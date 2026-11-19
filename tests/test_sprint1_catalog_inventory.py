@@ -99,8 +99,8 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         self.assertIsNotNone(pkg)
         self.assertEqual(pkg.key, "warehouse_automation")
         self.assertEqual(pkg.category, "modular_tool")
-        self.assertEqual(pkg.price_inr, 4999)
-        self.assertEqual(pkg.price_usd, 59)
+        self.assertEqual(pkg.price_inr, 3999)
+        self.assertEqual(pkg.price_usd, 49)
         self.assertIn("inventory_analytics", pkg.entitled_capabilities)
         self.assertIn("Dynamic Reorder Point (ROP)", pkg.key_features[1])
 
@@ -128,7 +128,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
 
         all_acc = get_package("all_access")
         self.assertIsNotNone(all_acc)
-        self.assertEqual(all_acc.price_inr, 59999)
+        self.assertEqual(all_acc.price_inr, 44999)
         self.assertIn("warehouse_automation", all_acc.entitled_capabilities)
         self.assertIn("ask4_academic_order", all_acc.entitled_capabilities)
         self.assertIn("pixel_ai_pack", all_acc.entitled_capabilities)
@@ -197,7 +197,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         )
         self.assertEqual(diag["recommended_package_key"], "warehouse_automation")
         self.assertEqual(diag["currency"], "INR")
-        self.assertEqual(diag["price"], 4999)
+        self.assertEqual(diag["price"], 3999)
 
     def test_india_b2b_directory_entries(self):
         companies = [entry["company"] for entry in INDIA_B2B_DIRECTORY]

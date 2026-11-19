@@ -76,8 +76,8 @@ def get_growth_suite_status() -> dict[str, Any]:
         "status": "OPERATIONAL",
         "package_key": "growth_all_in_one",
         "package_name": pkg.name if pkg else "AskforWrite Autonomous AI Growth & Inbound Sales Suite",
-        "price_inr": pkg.price_inr if pkg else 9999,
-        "price_usd": pkg.price_usd if pkg else 129,
+        "price_inr": pkg.price_inr if pkg else 6999,
+        "price_usd": pkg.price_usd if pkg else 89,
         "pillars": {
             "creative_studio": "Pixel AI Multi-Aspect Asset Generator (afwpixelai)",
             "seo_blog_copilot": "4-Site WordPress Publishing with Schema.org JSON-LD",
@@ -232,8 +232,8 @@ def audit_domain_endpoint(
         "package": {
             "key": "growth_all_in_one",
             "name": pkg.name if pkg else "AskforWrite Autonomous AI Growth Suite",
-            "price_inr": pkg.price_inr if pkg else 9999,
-            "price_usd": pkg.price_usd if pkg else 129,
+            "price_inr": pkg.price_inr if pkg else 6999,
+            "price_usd": pkg.price_usd if pkg else 89,
         },
         "checkout_links": {
             "razorpay_inr": checkout_inr,

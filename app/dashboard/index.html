@@ -36,10 +36,10 @@
         "operatingSystem": "Web, Cloud, Android PWA",
         "offers": {
           "@type": "AggregateOffer",
-          "lowPrice": "499",
-          "highPrice": "49999",
+          "lowPrice": "999",
+          "highPrice": "44999",
           "priceCurrency": "INR",
-          "offerCount": "14"
+          "offerCount": "16"
         }
       },
       {
@@ -1503,7 +1503,7 @@
               </p>
             </div>
             <div style="text-align: right;">
-              <div style="font-size: 1.6rem; font-weight: 800; color: white;">₹9,999 <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400;">/month ($129 USD)</span></div>
+              <div style="font-size: 1.6rem; font-weight: 800; color: white;">₹6,999 <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: 400;">/month ($89 USD) · Annual -20%</span></div>
               <a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="primary-btn" style="display: inline-block; text-decoration: none; margin-top: 8px; padding: 8px 18px;">
                 Subscribe to Growth Suite
               </a>
@@ -2376,11 +2376,19 @@
           <h2>Subscription, Modular Plan &amp; Credit Ledger</h2>
           <button type="button" class="secondary-btn" id="btn-cw-refresh-billing">Refresh Billing</button>
         </div>
+        <div class="cw-card" style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+            <h3 style="margin:0;">4 Functional AI Pricing Clusters &amp; Stackable Add-Ons</h3>
+            <span style="font-size:0.78rem;color:var(--text-muted);">Annual billing saves 20% across all 5 subscription tiers • Entry packs &amp; add-ons stay stackable</span>
+          </div>
+          <div id="cw-pricing-clusters-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:12px;"></div>
+          <div id="cw-addon-chips-bar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:0.78rem;"></div>
+        </div>
         <div class="cw-grid-2" style="margin-bottom:16px;">
           <div class="cw-card">
             <h3>Modular Subscription Composer</h3>
-            <div><label class="modal-label" for="cw-bill-tier">Base Plan Tier</label><select id="cw-bill-tier" class="settings-select"><option value="launch">Launch Plan</option><option value="growth" selected>Growth Plan</option><option value="operations">Operations Plan</option><option value="business_pro">Business Pro</option><option value="enterprise">Enterprise Custom</option></select></div>
-            <div><label class="modal-label" for="cw-bill-addons">Add-on Modules (comma-separated keys)</label><input id="cw-bill-addons" class="settings-input" placeholder="seo_geo_copilot, trust_ledger"></div>
+            <div><label class="modal-label" for="cw-bill-tier">Base Plan Tier</label><select id="cw-bill-tier" class="settings-select"><option value="launch">Launch — Content &amp; SEO (₹2,999/mo)</option><option value="growth" selected>Growth Suite — Sales &amp; Marketing (₹6,999/mo)</option><option value="operations">Operations — Field &amp; Vertical AI (₹9,999/mo)</option><option value="business_pro">Business Pro — All 4 Clusters (₹17,999/mo)</option><option value="enterprise">Enterprise — Sovereign Scale (₹44,999/mo)</option></select></div>
+            <div><label class="modal-label" for="cw-bill-addons">Stackable Cluster Add-Ons (comma-separated keys)</label><input id="cw-bill-addons" class="settings-input" placeholder="seo, marketing, sales, inventory, field_force, customer_ops"></div>
             <div><label class="modal-label" for="cw-bill-credits">Extra Credit Top-Up</label><input id="cw-bill-credits" type="number" min="0" class="settings-input" value="0"></div>
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
               <button type="button" class="primary-btn" id="btn-cw-apply-subscription">Save Subscription</button>
@@ -2390,7 +2398,7 @@
             </div>
           </div>
           <div class="cw-card">
-            <h3>Canonical Pricing Contracts</h3>
+            <h3>Clustered Subscription Ladder &amp; Contracts</h3>
             <div id="cw-pricing-contracts-list"></div>
           </div>
         </div>
@@ -3420,10 +3428,12 @@
           <label class="modal-label" for="reg-package">Select Plan</label>
           <select id="reg-package" class="settings-select" style="width:100%;">
             <option value="free_trial">14-Day Free Trial (₹0 • 20 Discovery Credits)</option>
-            <option value="managed_seo_content_pilot" selected>Managed SEO &amp; Content Pilot (₹4,999 / 14-Day Done-For-You)</option>
-            <option value="growth_all_in_one">Growth All-in-One Suite (₹9,999/mo • Unlimited Creatives)</option>
-            <option value="company_os_starter">Company OS Starter (₹7,999/mo • 150 Credits)</option>
-            <option value="field_force">Field Force Modular Ops (₹3,999/mo • 50 Credits)</option>
+            <option value="managed_seo_content_pilot" selected>14-Day Done-For-You SEO Pilot (₹4,999 / $59 one-time)</option>
+            <option value="company_os_starter">Launch — Cluster 1: Content, SEO &amp; Creative (₹2,999/mo • $39)</option>
+            <option value="growth_all_in_one">Growth Suite — Clusters 1+2: Marketing &amp; AI Closer (₹6,999/mo • $89)</option>
+            <option value="operations_suite">Operations — Clusters 3+4: Field, Warehouse &amp; Vertical AI (₹9,999/mo • $129)</option>
+            <option value="company_os_pro">Business Pro — All 4 Clusters Full Company OS (₹17,999/mo • $229)</option>
+            <option value="company_os_enterprise">Enterprise — All 4 Clusters + Sovereign Scale (₹44,999/mo • $549)</option>
           </select>
         </div>
         <div class="form-group" style="margin-bottom: 18px;">

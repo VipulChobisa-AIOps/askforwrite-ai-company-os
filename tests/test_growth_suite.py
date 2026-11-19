@@ -53,9 +53,9 @@ class GrowthSuiteTests(unittest.TestCase):
         self.assertIsNotNone(pkg)
         self.assertEqual(pkg.key, "growth_all_in_one")
         self.assertEqual(pkg.category, "master_bundle")
-        self.assertEqual(pkg.price_inr, 9999)
-        self.assertEqual(pkg.price_usd, 129)
-        self.assertEqual(pkg.tier, "growth_all_in_one")
+        self.assertEqual(pkg.price_inr, 6999)
+        self.assertEqual(pkg.price_usd, 89)
+        self.assertEqual(pkg.tier, "growth")
         self.assertIn("pixel_ai_creative_studio", pkg.entitled_capabilities)
         self.assertIn("inbound_sales_closer", pkg.entitled_capabilities)
         self.assertIn("seo_content_automation", pkg.entitled_capabilities)
@@ -65,12 +65,12 @@ class GrowthSuiteTests(unittest.TestCase):
         # Validate payment links
         inr_link = build_payment_link(package_key="growth_all_in_one", company="Acme Retail", provider="razorpay")
         self.assertIn("razorpay.me", inr_link)
-        self.assertIn("amount=999900", inr_link)
+        self.assertIn("amount=699900", inr_link)
         self.assertIn("notes_package=growth_all_in_one", inr_link)
 
         usd_link = build_payment_link(package_key="growth_all_in_one", company="Acme Retail", provider="paypal")
         self.assertIn("paypal.me", usd_link)
-        self.assertIn("129", usd_link)
+        self.assertIn("89", usd_link)
 
     def test_generate_creative_assets(self):
         """Verify multi-format visual specs generation formatted for Pixel AI."""
@@ -184,7 +184,7 @@ class GrowthSuiteTests(unittest.TestCase):
             message="How much does this cost per month?",
             currency="INR",
         )
-        self.assertIn("₹9,999", res1["reply"])
+        self.assertIn("₹6,999", res1["reply"])
         self.assertFalse(res1["checkout_link_attached"])
 
         # 2. Price objection handling
@@ -243,7 +243,7 @@ class GrowthSuiteTests(unittest.TestCase):
         )
         self.assertEqual(diagnosis["recommended_package_key"], "growth_all_in_one")
         self.assertEqual(diagnosis["currency"], "INR")
-        self.assertEqual(diagnosis["price"], 9999)
+        self.assertEqual(diagnosis["price"], 6999)
         self.assertIn("razorpay.me", str(diagnosis["payment_link"]))
 
     def test_growth_suite_api_endpoints(self):

@@ -63,76 +63,76 @@ MODULE_CAPABILITY_MAP: dict[str, dict[str, Any]] = {
         "price_usd": 29,
     },
     "seo": {
-        "capabilities": ["seo_content_automation", "seo_blog_copilot"],
+        "capabilities": ["seo_content_automation", "seo_blog_copilot", "wordpress_publisher"],
         "agents": ["seo_content_agent"],
-        "price_inr": 2499,
+        "price_inr": 1999,
         "price_usd": 29,
     },
     "seo_content": {
-        "capabilities": ["seo_content_automation", "seo_blog_copilot"],
+        "capabilities": ["seo_content_automation", "seo_blog_copilot", "wordpress_publisher"],
         "agents": ["seo_content_agent"],
-        "price_inr": 2499,
+        "price_inr": 1999,
         "price_usd": 29,
     },
     "marketing": {
         "capabilities": ["marketing_campaign_suite", "pixel_ai_creative_studio"],
         "agents": ["marketing_creative_agent"],
-        "price_inr": 2999,
-        "price_usd": 39,
+        "price_inr": 2499,
+        "price_usd": 35,
     },
     "marketing_campaigns": {
         "capabilities": ["marketing_campaign_suite", "pixel_ai_creative_studio"],
         "agents": ["marketing_creative_agent"],
-        "price_inr": 2999,
-        "price_usd": 39,
+        "price_inr": 2499,
+        "price_usd": 35,
     },
     "sales": {
-        "capabilities": ["sales_proposal", "lead_generation", "inbound_sales_closer"],
+        "capabilities": ["sales_proposal", "lead_generation", "customer_discovery", "inbound_sales_closer", "support_followup"],
         "agents": ["sales_proposal_agent", "discovery_sdr_agent"],
-        "price_inr": 2999,
-        "price_usd": 39,
+        "price_inr": 3499,
+        "price_usd": 45,
     },
     "customer_ops": {
-        "capabilities": ["support_followup", "trust_ledger_audit"],
+        "capabilities": ["support_followup", "trust_ledger_audit", "mango_quality_analytics"],
         "agents": ["support_followup_agent", "trust_governance_agent"],
-        "price_inr": 1499,
-        "price_usd": 19,
+        "price_inr": 3499,
+        "price_usd": 45,
     },
     "customer_support": {
         "capabilities": ["support_followup"],
         "agents": ["support_followup_agent"],
-        "price_inr": 1499,
-        "price_usd": 19,
+        "price_inr": 1999,
+        "price_usd": 29,
     },
     "field_force": {
-        "capabilities": ["field_force_automation"],
+        "capabilities": ["field_force_automation", "delivery_field_force", "bike_rebalance_analytics"],
         "agents": ["field_ops_agent"],
         "price_inr": 3999,
         "price_usd": 49,
     },
     "field_operations": {
-        "capabilities": ["field_force_automation"],
+        "capabilities": ["field_force_automation", "delivery_field_force"],
         "agents": ["field_ops_agent"],
         "price_inr": 3999,
         "price_usd": 49,
     },
     "inventory": {
-        "capabilities": ["warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
+        "capabilities": ["warehouse_automation", "warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
         "agents": ["warehouse_stocksense_agent", "quality_vision_agent", "mobility_rebalance_agent"],
-        "price_inr": 3499,
-        "price_usd": 45,
+        "price_inr": 3999,
+        "price_usd": 49,
     },
     "inventory_quality": {
-        "capabilities": ["warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
+        "capabilities": ["warehouse_automation", "warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
         "agents": ["warehouse_stocksense_agent", "quality_vision_agent", "mobility_rebalance_agent"],
-        "price_inr": 3499,
-        "price_usd": 45,
+        "price_inr": 3999,
+        "price_usd": 49,
     },
     "governance_trust": {
         "capabilities": ["trust_ledger_audit"],
         "agents": ["trust_governance_agent", "ceo_manager_agent"],
-        "price_inr": 2499,
-        "price_usd": 29,
+        "price_inr": 3999,
+        "price_usd": 49,
     },
 }
 
@@ -151,7 +151,7 @@ def build_canonical_package_contract(
     interval = billing_interval.lower() if billing_interval.lower() in ("monthly", "annual", "one_time") else "monthly"
 
     # Derive entitled agents from included modules + tier scope
-    entitled_agents: list[str] = ["ceo_manager_agent"] if "growth" in sku_key or "enterprise" in sku_key or "all_access" in sku_key or "pro" in sku_key else []
+    entitled_agents: list[str] = ["ceo_manager_agent"] if any(k in sku_key for k in ("growth", "operations", "enterprise", "all_access", "pro")) else []
     for mod in base.get("included_modules", []):
         m_info = MODULE_CAPABILITY_MAP.get(mod)
         if m_info:
@@ -171,10 +171,20 @@ def build_canonical_package_contract(
     exec_limit = int(credits_dict.get("ai_execution_credits", 300))
 
     b_type = "one_time" if (interval == "one_time" or base.get("billing_type") == "one_time_purchase") else "recurring"
+    base_price_inr = int(base["base_price"].get("inr", 0))
+    base_price_usd = int(base["base_price"].get("usd", 0))
+    annual_price = base.get("annual_price") or {
+        "inr": round(base_price_inr * 0.8),
+        "usd": round(base_price_usd * 0.8),
+        "discount_pct": 20,
+    }
     contract = {
         **base,
-        # Canonical 15 fields (§5)
+        # Canonical 15 fields (§5) + cluster metadata
         "internal_sku": sku_key,
+        "plan_name": base.get("plan_name") or base.get("name") or sku_key,
+        "included_clusters": list(base.get("included_clusters", [])),
+        "annual_price": annual_price,
         "billing_type": b_type,
         "billing_interval": interval,
         "base_price": base["base_price"],
@@ -282,8 +292,10 @@ def compose_modular_pricing(
         cat_mod = MODULAR_SERVICE_MODULES.get(mod)
         if mod in mods and mod not in included_mods:
             addon_mods.append(mod)
-            if cat_mod and "monthly_inr" in cat_mod:
-                module_total += int(cat_mod["monthly_inr"] if cur == "INR" else cat_mod.get("monthly_usd", 29))
+            if cat_mod and ("monthly_price_inr" in cat_mod or "monthly_inr" in cat_mod):
+                inr_val = cat_mod.get("monthly_price_inr", cat_mod.get("monthly_inr", 0))
+                usd_val = cat_mod.get("monthly_price_usd", cat_mod.get("monthly_usd", 29))
+                module_total += int(inr_val if cur == "INR" else usd_val)
             elif mod_spec:
                 module_total += mod_spec["price_inr"] if cur == "INR" else mod_spec["price_usd"]
         if cat_mod:

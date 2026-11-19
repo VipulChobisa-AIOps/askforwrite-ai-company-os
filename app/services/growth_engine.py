@@ -205,7 +205,7 @@ def generate_and_stage_blog(
                 "operatingSystem": "All Cloud / Web Platforms",
                 "offers": {
                     "@type": "Offer",
-                    "price": "9999",
+                    "price": "6999",
                     "priceCurrency": "INR",
                 },
             },
@@ -351,7 +351,7 @@ def generate_omnichannel_social_campaign(
             {
                 "timestamp": "15-25s",
                 "section": "AI Proof Demo",
-                "visual": f"Screen recording of {product_name}: 1 click generates 3 ad formats, publishes an SEO blog, and AI Closer sends a ₹9,999 payment link on WhatsApp.",
+                "visual": f"Screen recording of {product_name}: 1 click generates 3 ad formats, publishes an SEO blog, and AI Closer sends a ₹6,999 payment link on WhatsApp.",
                 "voiceover": f"Meet {product_name}. One autonomous OS that designs your ads, publishes Schema-rich SEO articles, and closes clients on WhatsApp while you sleep.",
                 "on_screen_text": "1 Click. Complete Automation. ⚡",
             },
@@ -402,7 +402,7 @@ def generate_omnichannel_social_campaign(
         {
             "slide_number": 5,
             "title": "Deploy Your 24/7 AI Revenue Workforce",
-            "summary": "Turn your website and WhatsApp into an autonomous closing machine for ₹9,999/mo fixed.",
+            "summary": "Turn your website and WhatsApp into an autonomous closing machine for ₹6,999/mo fixed.",
             "cta": "Explore the Enterprise OS: https://os.askforwrite.com",
         },
     ]
