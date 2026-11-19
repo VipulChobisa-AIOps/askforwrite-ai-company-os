@@ -96,11 +96,14 @@ def public_opportunity_scan_endpoint(
     audit = audit_live_website_seo_geo(payload.url, timeout=3.0)
     top_leaks = audit.get("detected_gaps", [])[:3]
     if not top_leaks:
-        top_leaks = [
-            "Missing /llms.txt manifest for SearchGPT, Perplexity, and Claude crawler indexing",
-            "Missing Schema.org structured data for Google AI Overviews and rich answer snippets",
-            "Missing automated 24/7 inbound WhatsApp/web lead qualification closer",
-        ]
+        if audit.get("audit_status") == "LIVE_VERIFIED":
+            top_leaks = [
+                "No critical SEO, Schema.org FAQPage, or /llms.txt gaps detected — site is Google AI Overview & GEO ready",
+            ]
+        else:
+            top_leaks = [
+                "Live crawl timed out or blocked by target firewall — re-run scan or verify /llms.txt and Schema.org FAQPage manually",
+            ]
 
     from app.services.catalog import CATALOG, get_package
 
