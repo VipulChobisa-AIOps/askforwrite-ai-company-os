@@ -596,10 +596,16 @@ class MasterAuditHardeningTests(unittest.TestCase):
             page = self.client.get(f"/solutions/{slug}")
             self.assertEqual(page.status_code, 200, f"Failed GET /solutions/{slug}")
             self.assertIn(f'rel="canonical" href="https://os.askforwrite.com/solutions/{slug}"', page.text)
-            self.assertIn("google-site-verification", page.text)
-            self.assertIn("msvalidate.01", page.text)
+            self.assertNotIn("verification-ready", page.text)
             self.assertIn("BreadcrumbList", page.text)
             self.assertIn("FAQPage", page.text)
+
+        # Verify real Search Console / Bing tokens render when configured via env
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"GOOGLE_SITE_VERIFICATION": "real-gsc-token-xyz", "BING_SITE_VERIFICATION": "real-bing-token-xyz"}):
+            verified_page = self.client.get("/solutions/warehouse-automation")
+            self.assertIn('name="google-site-verification" content="real-gsc-token-xyz"', verified_page.text)
+            self.assertIn('name="msvalidate.01" content="real-bing-token-xyz"', verified_page.text)
 
         sitemap = self.client.get("/sitemap.xml")
         self.assertIn("https://os.askforwrite.com/solutions/warehouse-automation", sitemap.text)

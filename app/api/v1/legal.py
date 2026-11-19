@@ -17,10 +17,14 @@ Provides publicly accessible endpoints (no auth required):
 from __future__ import annotations
 
 from datetime import date
+import html as html_lib
+import json
 from typing import Any
 
-from fastapi import APIRouter, Query
-from fastapi.responses import PlainTextResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
+
+from app.services.seo_meta import BASE_URL, CANONICAL_ORG_SCHEMA, is_browser_or_crawler, social_meta_tags
 
 router = APIRouter(prefix="/legal", tags=["legal"])
 
@@ -352,6 +356,131 @@ def _to_plain_text(doc: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _to_html(doc: dict[str, Any], *, slug: str, short_title: str, meta_desc: str) -> str:
+    """Render a clean, crawlable, E-E-A-T-compliant HTML5 legal document with Schema.org WebPage JSON-LD."""
+    canonical = f"{BASE_URL}/legal/{slug}"
+    sections_html = []
+    if "sections" in doc:
+        for sec in doc["sections"]:
+            sections_html.append(
+                f'<section><h2>{html_lib.escape(str(sec["heading"]))}</h2>'
+                f'<p>{html_lib.escape(str(sec["body"]))}</p></section>'
+            )
+    else:
+        # MSME Statutory Declaration structured fields
+        reg_off = doc.get("registered_office", {})
+        bank = doc.get("banking_and_settlement_coordinates", {})
+        nic_items = "".join(
+            f'<li><code>{html_lib.escape(str(n["code"]))}</code> — {html_lib.escape(str(n["description"]))}</li>'
+            for n in doc.get("national_industry_classification_codes", [])
+        )
+        sections_html.append(
+            f"""
+            <section>
+              <h2>Statutory MSME Registration Identity</h2>
+              <ul>
+                <li><strong>Firm Legal Name:</strong> {html_lib.escape(str(doc.get("firm_legal_name", "ASKFORWRITE")))}</li>
+                <li><strong>Enterprise Category:</strong> {html_lib.escape(str(doc.get("enterprise_type", "")))}</li>
+                <li><strong>Udyam Registration Number:</strong> <code>{html_lib.escape(str(doc.get("udyam_registration_number", "")))}</code></li>
+                <li><strong>Issuing Ministry:</strong> {html_lib.escape(str(doc.get("issuing_ministry", "")))}</li>
+                <li><strong>Registered Office:</strong> {html_lib.escape(str(reg_off.get("locality", "")))}, {html_lib.escape(str(reg_off.get("city", "")))}, {html_lib.escape(str(reg_off.get("state", "")))}, {html_lib.escape(str(reg_off.get("country", "")))} - {html_lib.escape(str(reg_off.get("pincode", "")))}</li>
+              </ul>
+            </section>
+            <section>
+              <h2>National Industry Classification (NIC) Codes</h2>
+              <ul>{nic_items}</ul>
+            </section>
+            <section>
+              <h2>Verified Settlement &amp; Compliance Coordinates</h2>
+              <ul>
+                <li><strong>Bank:</strong> {html_lib.escape(str(bank.get("bank_name", "")))} ({html_lib.escape(str(bank.get("branch", "")))})</li>
+                <li><strong>Beneficiary:</strong> {html_lib.escape(str(bank.get("beneficiary_name", "")))}</li>
+                <li><strong>Merchant UPI VPA:</strong> <code>{html_lib.escape(str(bank.get("merchant_upi_vpa", "")))}</code></li>
+                <li><strong>Compliance Officer:</strong> Vipul Kumar Chobisa — <a href="mailto:info@askforwrite.in">info@askforwrite.in</a></li>
+              </ul>
+            </section>
+            <section>
+              <h2>MSMED Act, 2006 Statutory Protections</h2>
+              <p>{html_lib.escape(str(doc.get("statutory_protections", "")))}</p>
+            </section>
+            """
+        )
+
+    schema_graph = {
+        "@context": "https://schema.org",
+        "@graph": [
+            CANONICAL_ORG_SCHEMA,
+            {
+                "@type": "WebPage",
+                "@id": f"{canonical}#webpage",
+                "url": canonical,
+                "name": doc.get("title", short_title),
+                "description": meta_desc,
+                "dateModified": str(doc.get("effective_date", "2026-10-14")),
+                "publisher": {"@id": f"{BASE_URL}/#organization"},
+                "inLanguage": "en",
+            },
+            {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{BASE_URL}/"},
+                    {"@type": "ListItem", "position": 2, "name": short_title, "item": canonical},
+                ],
+            },
+        ],
+    }
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html_lib.escape(short_title)}</title>
+  <meta name="description" content="{html_lib.escape(meta_desc)}">
+  {social_meta_tags(title=short_title, description=meta_desc, canonical_url=canonical)}
+  <script type="application/ld+json">{json.dumps(schema_graph)}</script>
+  <style>
+    body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; margin: 0; line-height: 1.7; }}
+    header, main, footer {{ max-width: 900px; margin: 0 auto; padding: 24px; }}
+    nav a, footer a {{ color: #93c5fd; margin-right: 16px; text-decoration: none; font-size: 0.9rem; }}
+    h1 {{ font-size: 2rem; color: #ffffff; margin: 16px 0 8px; }}
+    h2 {{ font-size: 1.25rem; color: #38bdf8; margin-top: 28px; border-bottom: 1px solid #1e293b; padding-bottom: 6px; }}
+    .meta-bar {{ background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 18px; font-size: 0.88rem; color: #cbd5e1; margin-top: 14px; }}
+    section {{ background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px 24px; margin-top: 16px; }}
+    p, li {{ color: #cbd5e1; }}
+    footer {{ border-top: 1px solid #1e293b; margin-top: 32px; color: #94a3b8; font-size: 0.85rem; }}
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/services">Services &amp; Pricing</a>
+      <a href="/solutions">Solutions</a>
+      <a href="/dashboard/">Workspace</a>
+      <a href="/legal/tos">Terms</a>
+      <a href="/legal/privacy">Privacy</a>
+      <a href="/legal/refund-policy">Refunds</a>
+      <a href="/legal/declaration">MSME Declaration</a>
+    </nav>
+    <h1>{html_lib.escape(str(doc.get("title", short_title)))}</h1>
+    <div class="meta-bar">
+      <strong>Legal Entity:</strong> ASKFORWRITE &nbsp;•&nbsp;
+      <strong>MSME Udyam:</strong> <code>UDYAM-RJ-14-0018404</code> &nbsp;•&nbsp;
+      <strong>Effective:</strong> {html_lib.escape(str(doc.get("effective_date", "2026-10-14")))} &nbsp;•&nbsp;
+      <strong>Contact:</strong> <a href="mailto:info@askforwrite.in" style="color:#38bdf8;">info@askforwrite.in</a>
+    </div>
+  </header>
+  <main>
+    {"".join(sections_html)}
+  </main>
+  <footer>
+    <p>{html_lib.escape(str(doc.get("copyright", COMPANY_METADATA["copyright"])))} • Also available as <a href="/legal/{slug}?format=json">JSON</a> or <a href="/legal/{slug}?format=text">Plain Text</a>.</p>
+  </footer>
+</body>
+</html>"""
+
+
 # ── Public Endpoints ──────────────────────────────────────────────────────────
 
 @router.get(
@@ -360,7 +489,8 @@ def _to_plain_text(doc: dict[str, Any]) -> str:
     operation_id="get_terms_of_service",
 )
 def get_terms_of_service(
-    format: str = Query(default="json", pattern="^(json|text)$", description="Response format: json or text"),
+    request: Request,
+    format: str | None = Query(default=None, pattern="^(json|text|html)$", description="Response format: json, text, or html"),
 ) -> Any:
     """Return the AskforWrite AI Company OS Terms of Service.
 
@@ -369,6 +499,15 @@ def get_terms_of_service(
     """
     if format == "text":
         return PlainTextResponse(_to_plain_text(TERMS_OF_SERVICE))
+    if format == "html" or (format is None and is_browser_or_crawler(request)):
+        return HTMLResponse(
+            _to_html(
+                TERMS_OF_SERVICE,
+                slug="tos",
+                short_title="Terms of Service | AskforWrite AI Company OS",
+                meta_desc="Official Terms of Service & Enterprise Agreement for AskforWrite AI Company OS (ASKFORWRITE, MSME UDYAM-RJ-14-0018404), covering BYOK, HITL & DirectPay.",
+            )
+        )
     return TERMS_OF_SERVICE
 
 
@@ -378,7 +517,8 @@ def get_terms_of_service(
     operation_id="get_privacy_policy",
 )
 def get_privacy_policy(
-    format: str = Query(default="json", pattern="^(json|text)$", description="Response format: json or text"),
+    request: Request,
+    format: str | None = Query(default=None, pattern="^(json|text|html)$", description="Response format: json, text, or html"),
 ) -> Any:
     """Return the AskforWrite AI Company OS Privacy Policy.
 
@@ -387,6 +527,15 @@ def get_privacy_policy(
     """
     if format == "text":
         return PlainTextResponse(_to_plain_text(PRIVACY_POLICY))
+    if format == "html" or (format is None and is_browser_or_crawler(request)):
+        return HTMLResponse(
+            _to_html(
+                PRIVACY_POLICY,
+                slug="privacy",
+                short_title="Privacy Policy & BYOK Data Protection | AskforWrite",
+                meta_desc="Privacy Policy for AskforWrite AI Company OS: strict BYOK Gemini API isolation, multi-tenant data protection, ECDSA audit security & DPDPA 2023 compliance.",
+            )
+        )
     return PRIVACY_POLICY
 
 
@@ -396,7 +545,8 @@ def get_privacy_policy(
     operation_id="get_msme_declaration",
 )
 def get_msme_declaration(
-    format: str = Query(default="json", pattern="^(json|text)$", description="Response format: json or text"),
+    request: Request,
+    format: str | None = Query(default=None, pattern="^(json|text|html)$", description="Response format: json, text, or html"),
 ) -> Any:
     """Return official MSME Enterprise Declaration under Udyam Registration UDYAM-RJ-14-0018404."""
     if format == "text":
@@ -420,6 +570,15 @@ def get_msme_declaration(
             MSME_DECLARATION["copyright"],
         ]
         return PlainTextResponse("\n".join(text_lines))
+    if format == "html" or (format is None and is_browser_or_crawler(request)):
+        return HTMLResponse(
+            _to_html(
+                MSME_DECLARATION,
+                slug="declaration",
+                short_title="Statutory MSME Declaration (UDYAM-RJ-14-0018404)",
+                meta_desc="Official Government of India MSME Udyam registration declaration (UDYAM-RJ-14-0018404) and compliance identity for ASKFORWRITE AI Company OS.",
+            )
+        )
     return MSME_DECLARATION
 
 
@@ -429,11 +588,21 @@ def get_msme_declaration(
     operation_id="get_refund_policy",
 )
 def get_refund_policy(
-    format: str = Query(default="json", pattern="^(json|text)$", description="Response format: json or text"),
+    request: Request,
+    format: str | None = Query(default=None, pattern="^(json|text|html)$", description="Response format: json, text, or html"),
 ) -> Any:
     """Return the AskforWrite AI Company OS Refund & Cancellation Policy."""
     if format == "text":
         return PlainTextResponse(_to_plain_text(REFUND_POLICY))
+    if format == "html" or (format is None and is_browser_or_crawler(request)):
+        return HTMLResponse(
+            _to_html(
+                REFUND_POLICY,
+                slug="refund-policy",
+                short_title="Refund & Cancellation Policy | AskforWrite OS",
+                meta_desc="Transparent subscription cancellation, 7-day unutilized plan refund guarantee, and AFW DirectPay UPI/Wire/USDC settlement policy for AskforWrite.",
+            )
+        )
     return REFUND_POLICY
 
 

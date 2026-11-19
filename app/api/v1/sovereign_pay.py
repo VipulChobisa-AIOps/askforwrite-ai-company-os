@@ -175,6 +175,8 @@ def _render_checkout_html(session: Any) -> str:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/favicon.ico">
   <title>AFW DirectPay — Sovereign Checkout for {safe_company}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -781,7 +783,10 @@ def get_checkout_page_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Sovereign payment session '{session_id}' not found.",
         )
-    return HTMLResponse(content=_render_checkout_html(session))
+    return HTMLResponse(
+        content=_render_checkout_html(session),
+        headers={"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store"},
+    )
 
 
 @router.get("/checkout", response_class=HTMLResponse)
@@ -806,7 +811,10 @@ def direct_checkout_endpoint(
         preferred_rail="upi_direct" if currency.upper() == "INR" else "web3_usdc",
         db=db,
     )
-    return HTMLResponse(content=_render_checkout_html(session))
+    return HTMLResponse(
+        content=_render_checkout_html(session),
+        headers={"X-Robots-Tag": "noindex, nofollow", "Cache-Control": "no-store"},
+    )
 
 
 class PennyTestRequest(BaseModel):

@@ -91,6 +91,22 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         if is_production:
             headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
 
+        # Smart Cache-Control & X-Robots-Tag for SEO/AIO & Core Web Vitals
+        path = request.url.path
+        if "cache-control" not in {k.lower() for k in headers.keys()}:
+            if path in ("/favicon.ico", "/og-image.png") or path.startswith(("/dashboard/dashboard.", "/dashboard/icon-", "/static/")):
+                headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+            elif path in ("/", "/services", "/solutions", "/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt", "/.well-known/security.txt") or path.startswith(("/services/", "/solutions/", "/legal/")):
+                headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+            elif path.startswith("/dashboard"):
+                headers["Cache-Control"] = "public, max-age=300"
+
+        if "x-robots-tag" not in {k.lower() for k in headers.keys()}:
+            if path.startswith(("/v1/pay/", "/v1/auth/", "/v1/me/", "/v1/accounts/", "/v1/approvals", "/v1/ops/", "/v1/watchdog/", "/docs", "/redoc", "/openapi.json")):
+                headers["X-Robots-Tag"] = "noindex, nofollow"
+            elif path == "/dashboard/" or path == "/dashboard/index.html":
+                headers["X-Robots-Tag"] = "noindex, follow"
+
         return response
 
 
@@ -178,8 +194,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     TIER_LIMITS: dict[str, int] = {
         "enterprise": 2400,
+        "all_access": 2400,
+        "business_pro": 600,
         "pro": 600,
+        "operations": 360,
+        "growth": 300,
         "growth_all_in_one": 300,
+        "launch": 120,
         "starter": 120,
         "modular_field_ops": 120,
         "modular_marketing": 120,

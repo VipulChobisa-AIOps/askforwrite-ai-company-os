@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -233,7 +234,32 @@ app.include_router(p8_marketplace_router)
 app.include_router(ops_scorecard_router)
 app.include_router(neon_router)
 
-# ── Admin & Customer Portal Static Frontend ──────────────────────────────────
+# ── SEO Canonical Trailing-Slash 301s & Branded HTML 404 Handler ────────────
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    """Serve branded HTML 404 for browsers on non-API paths; preserve strict JSON for API clients."""
+    from app.services.seo_meta import is_browser_or_crawler, render_404_html
+
+    if exc.status_code == 404 and not request.url.path.startswith("/v1/") and is_browser_or_crawler(request):
+        return HTMLResponse(content=render_404_html(request.url.path), status_code=404)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard_slash_301() -> RedirectResponse:
+    return RedirectResponse(url="/dashboard/", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@app.get("/services/", include_in_schema=False)
+def services_slash_301() -> RedirectResponse:
+    return RedirectResponse(url="/services", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@app.get("/solutions/", include_in_schema=False)
+def solutions_slash_301() -> RedirectResponse:
+    return RedirectResponse(url="/solutions", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
 # ── Admin & Customer Portal Static Frontend ──────────────────────────────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
 if dashboard_dir.exists():
@@ -483,16 +509,11 @@ def gsc_oauth_browser_callback(
 
 @app.get("/", include_in_schema=False)
 def root(request: Request) -> Any:
-    """Root entrypoint: redirects browsers & search/AI crawlers to /dashboard/ (full FAQPage JSON-LD), returns JSON for API clients."""
-    accept = request.headers.get("accept", "").lower()
-    ua = request.headers.get("user-agent", "").lower()
-    wants_json = "application/json" in accept and "text/html" not in accept
-    is_browser_or_crawler = (
-        "text/html" in accept
-        or any(tok in ua for tok in ("mozilla", "googlebot", "bingbot", "gptbot", "perplexity", "claudebot", "applebot", "askforwrite"))
-    )
-    if is_browser_or_crawler and not wants_json:
-        return RedirectResponse(url="/dashboard/", status_code=302)
+    """Root entrypoint: serves the public SSR commercial homepage to browsers & ALL search/AI crawlers, JSON to API clients."""
+    from app.services.seo_meta import is_browser_or_crawler, render_public_homepage_html
+
+    if is_browser_or_crawler(request):
+        return HTMLResponse(content=render_public_homepage_html(), status_code=status.HTTP_200_OK)
     return {
         "status": "online",
         "service": "AskforWrite AI Company OS",
@@ -501,8 +522,38 @@ def root(request: Request) -> Any:
         "health_url": "/health",
         "dashboard_url": "/dashboard/",
         "api_prefix": "/v1",
-        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI."
+        "message": "Welcome to AskforWrite AI Company OS Gateway. Visit /dashboard/ for Owner UI or /docs for interactive Swagger UI.",
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon_ico() -> Response:
+    """Serve root /favicon.ico for browsers and Google SERP favicon crawler."""
+    ico_path = Path(__file__).resolve().parent / "dashboard" / "favicon.ico"
+    if ico_path.exists():
+        return FileResponse(str(ico_path), media_type="image/x-icon")
+    raise HTTPException(status_code=404, detail="Favicon not found")
+
+
+@app.get("/og-image.png", include_in_schema=False)
+def og_image_png() -> Response:
+    """Serve 1200x630 Open Graph / Twitter Card PNG preview image."""
+    img_path = Path(__file__).resolve().parent / "dashboard" / "og-image.png"
+    if img_path.exists():
+        return FileResponse(str(img_path), media_type="image/png")
+    raise HTTPException(status_code=404, detail="OG image not found")
+
+
+@app.get("/.well-known/security.txt", response_class=PlainTextResponse, include_in_schema=False)
+def security_txt() -> PlainTextResponse:
+    """RFC 9116 vulnerability disclosure & compliance contact."""
+    return PlainTextResponse(
+        "Contact: mailto:info@askforwrite.in\n"
+        "Expires: 2027-12-31T23:59:59.000Z\n"
+        "Preferred-Languages: en\n"
+        "Canonical: https://os.askforwrite.com/.well-known/security.txt\n"
+        "Policy: https://os.askforwrite.com/legal/privacy\n"
+    )
 
 
 @app.get("/login", include_in_schema=False)
@@ -553,27 +604,60 @@ def refund_redirect() -> RedirectResponse:
 
 @app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
 def robots_txt() -> PlainTextResponse:
-    """Technical SEO & AI Crawler directives."""
+    """Technical SEO & AI Search/Answer Engine Crawler directives."""
     content = (
         "User-agent: *\n"
         "Allow: /\n"
-        "Allow: /dashboard/\n"
+        "Allow: /services\n"
+        "Allow: /solutions\n"
         "Allow: /legal/\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n"
         "Allow: /v1/revenue/catalog\n"
         "Allow: /v1/previews/\n"
-        "Allow: /llms.txt\n"
         "Disallow: /v1/accounts/\n"
         "Disallow: /v1/approvals\n"
-        "Disallow: /v1/audit-export\n\n"
+        "Disallow: /v1/audit-export\n"
+        "Disallow: /v1/pay/\n"
+        "Disallow: /v1/auth/\n"
+        "Disallow: /v1/me/\n"
+        "Disallow: /v1/ops/\n"
+        "Disallow: /v1/watchdog/\n"
+        "Disallow: /docs\n"
+        "Disallow: /redoc\n"
+        "Disallow: /openapi.json\n\n"
         "User-agent: GPTBot\n"
         "Allow: /\n"
-        "Allow: /llms.txt\n\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
+        "User-agent: OAI-SearchBot\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
+        "User-agent: ChatGPT-User\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
         "User-agent: PerplexityBot\n"
         "Allow: /\n"
-        "Allow: /llms.txt\n\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
         "User-agent: ClaudeBot\n"
         "Allow: /\n"
-        "Allow: /llms.txt\n\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
+        "User-agent: anthropic-ai\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
+        "User-agent: Google-Extended\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
+        "User-agent: Applebot-Extended\n"
+        "Allow: /\n"
+        "Allow: /llms.txt\n"
+        "Allow: /llms-full.txt\n\n"
         "Sitemap: https://os.askforwrite.com/sitemap.xml\n"
     )
     return PlainTextResponse(content=content)
@@ -581,30 +665,39 @@ def robots_txt() -> PlainTextResponse:
 
 @app.get("/sitemap.xml", include_in_schema=False)
 def sitemap_xml() -> Response:
-    """XML Sitemap for search engines and AI indexers."""
+    """Dynamic canonical XML Sitemap with ISO lastmod dates — zero duplicate or non-canonical URLs."""
+    from app.api.v1.solutions_pages import SOLUTION_SLUGS
+    from app.services.catalog import get_all_packages
+    from app.services.seo_meta import BASE_URL, LASTMOD_ISO
+
+    entries: list[tuple[str, str, str]] = [
+        (f"{BASE_URL}/", "daily", "1.0"),
+        (f"{BASE_URL}/services", "weekly", "0.95"),
+        (f"{BASE_URL}/solutions", "weekly", "0.95"),
+    ]
+    for slug in SOLUTION_SLUGS.keys():
+        entries.append((f"{BASE_URL}/solutions/{slug}", "weekly", "0.90"))
+    for pkg in get_all_packages():
+        prio = "0.90" if pkg.category == "master_bundle" else "0.85"
+        entries.append((f"{BASE_URL}/services/{pkg.key}", "weekly", prio))
+    entries.extend([
+        (f"{BASE_URL}/legal/tos", "monthly", "0.6"),
+        (f"{BASE_URL}/legal/privacy", "monthly", "0.6"),
+        (f"{BASE_URL}/legal/declaration", "monthly", "0.6"),
+        (f"{BASE_URL}/legal/refund-policy", "monthly", "0.6"),
+        (f"{BASE_URL}/llms.txt", "weekly", "0.8"),
+        (f"{BASE_URL}/llms-full.txt", "weekly", "0.8"),
+    ])
+
+    url_nodes = "\n".join(
+        f"  <url><loc>{loc}</loc><lastmod>{LASTMOD_ISO}</lastmod><changefreq>{freq}</changefreq><priority>{prio}</priority></url>"
+        for loc, freq, prio in entries
+    )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        '  <url><loc>https://os.askforwrite.com/dashboard/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services/warehouse-automation</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services/field-force</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services/produce-quality-ai</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services/urban-mobility-ai</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/services/seo-blog-copilot</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions/warehouse-automation</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions/field-force</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions/produce-quality-ai</loc><changefreq>weekly</changefreq><priority>0.95</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions/urban-mobility-ai</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/solutions/seo-blog-copilot</loc><changefreq>weekly</changefreq><priority>0.90</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/llms.txt</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/v1/revenue/catalog</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/legal/tos</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/legal/privacy</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/legal/declaration</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
-        '  <url><loc>https://os.askforwrite.com/legal/refund-policy</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>\n'
-        '</urlset>\n'
+        f"{url_nodes}\n"
+        "</urlset>\n"
     )
     return Response(content=xml, media_type="application/xml")
 
@@ -620,7 +713,9 @@ def llms_txt() -> PlainTextResponse:
         "- MSME Udyam Registration: UDYAM-RJ-14-0018404 (Government of India)\n"
         "- Headquarters: Udaipur, Rajasthan, India - 313001\n"
         "- Support Contact: info@askforwrite.in\n"
-        "- Canonical Gateway: https://os.askforwrite.com\n\n"
+        "- Canonical Gateway: https://os.askforwrite.com\n"
+        "- Affiliated Domains: https://askforwrite.com, https://askforwrite.in, https://github.com/VipulChobisa-AIOps\n"
+        "- Complete Long-Form Specification: https://os.askforwrite.com/llms-full.txt\n\n"
         "## Clustered Subscription Plans (Save 20% on Annual Billing)\n"
         "- Cluster 1 (Content, SEO & Creative Studio): SEO/GEO Blog Copilot (`seo_blog_copilot`, INR 1,999/mo), PixelBot Marketing Suite (`marketing_suite`, INR 2,499/mo), WordPress Publisher, Pixel AI Pack (INR 1,499), ASK4 Research (INR 999).\n"
         "- Cluster 2 (Sales, Lead Discovery & 24/7 AI Closer): Live SMB Discovery, Opportunity Gap Scanner, Evidence Research, Sales Proposals & WhatsApp/Web AI Closer.\n"
@@ -632,20 +727,96 @@ def llms_txt() -> PlainTextResponse:
         "- Business Pro (`business_pro` / `company_os_pro`): INR 17,999/mo (USD 229/mo) — All 4 Clusters (15 Agents, 25 Seats, 1,200 Leads, 3,000 AI Runs).\n"
         "- Enterprise (`enterprise` / `company_os_enterprise` / `all_access`): INR 44,999/mo (USD 549/mo) — All 4 Clusters + Dedicated Architect SLA & Private Node.\n"
         "- 14-Day Done-For-You Pilot (`managed_seo_content_pilot`): INR 4,999 (USD 59) one-time.\n\n"
-        "## Public Machine-Readable Endpoints\n"
+        "## Public Machine-Readable & Documentation Endpoints\n"
+        "- Public Homepage: https://os.askforwrite.com/\n"
+        "- Full Context LLM Specification: https://os.askforwrite.com/llms-full.txt\n"
+        "- Pricing Contracts & Clusters JSON: https://os.askforwrite.com/v1/revenue/pricing/contracts\n"
         "- Commercial Catalog JSON: https://os.askforwrite.com/v1/revenue/catalog\n"
         "- Interactive Service Pages Hub: https://os.askforwrite.com/services\n"
+        "- Vertical AI Solutions Hub: https://os.askforwrite.com/solutions\n"
         "- Free 60-Second Website SEO/GEO Opportunity Scan: POST https://os.askforwrite.com/v1/previews/scan\n"
         "- Terms of Service: https://os.askforwrite.com/legal/tos\n"
         "- Privacy Policy & BYOK Data Protection: https://os.askforwrite.com/legal/privacy\n"
         "- Statutory MSME Declaration: https://os.askforwrite.com/legal/declaration\n"
         "- Refund & Cancellation Policy: https://os.askforwrite.com/legal/refund-policy\n"
-        "- Solutions Catalog Hub: https://os.askforwrite.com/solutions\n"
         "- Warehouse & Dark-Store Automation AI: https://os.askforwrite.com/solutions/warehouse-automation\n"
         "- Field Force Route & Attendance Verification AI: https://os.askforwrite.com/solutions/field-force\n"
         "- Agri-Produce Quality Grading AI: https://os.askforwrite.com/solutions/produce-quality-ai\n"
+        "- Urban EV Fleet & Micro-Mobility AI: https://os.askforwrite.com/solutions/urban-mobility-ai\n"
+        "- Autonomous SEO/AEO/GEO Blog Copilot: https://os.askforwrite.com/solutions/seo-blog-copilot\n"
     )
     return PlainTextResponse(content=content)
+
+
+@app.get("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
+def llms_full_txt() -> PlainTextResponse:
+    """Comprehensive deep-context LLM specification for RAG, SearchGPT, Perplexity, Claude, and Gemini."""
+    from app.services.catalog import MODULAR_SERVICE_MODULES, MODULAR_SME_TIERS, PRICING_CLUSTERS, get_all_packages
+
+    lines: list[str] = [
+        "# AskforWrite AI Company OS — Complete Technical & Commercial Specification (/llms-full.txt)",
+        "> Authoritative deep-context reference for AI Answer Engines (SearchGPT, Perplexity, Claude, Google AI Overviews).",
+        "",
+        "## 1. Verified Legal & Entity Identity",
+        "- Brand Name: AskforWrite / AskforWrite AI Company OS",
+        "- Registered Legal Entity: ASKFORWRITE (Micro Enterprise — Services, Ministry of MSME, Government of India)",
+        "- Udyam Registration Number: UDYAM-RJ-14-0018404",
+        "- Proprietor & Principal Compliance Officer: Vipul Kumar Chobisa",
+        "- Headquarters: Udaipur, Rajasthan, India - 313001",
+        "- Official Email: info@askforwrite.in",
+        "- Canonical OS Gateway: https://os.askforwrite.com",
+        "- Affiliated Properties: https://askforwrite.com, https://askforwrite.in, https://github.com/VipulChobisa-AIOps",
+        "",
+        "## 2. The 4 Functional AI Capability Clusters",
+    ]
+    for cl in sorted(PRICING_CLUSTERS.values(), key=lambda x: int(x.get("cluster_number", 0))):
+        lines.append(
+            f"- **{cl['name']}** (`{cl['cluster_key']}`): {cl['tagline']} "
+            f"Services: {', '.join(str(s) for s in cl['services'])}. "
+            f"Standalone from INR {int(cl['standalone_monthly_inr']):,}/mo (USD {int(cl['standalone_monthly_usd'])}/mo)."
+        )
+
+    lines.extend(["", "## 3. Unified 5-Tier Clustered Subscription Ladder (Annual Billing = 20% Off)"])
+    for t_key, tier in MODULAR_SME_TIERS.items():
+        bp = tier["base_price"]
+        ap = tier["annual_price"]
+        cr = tier["included_credits"]
+        lines.append(
+            f"- **{tier['name']}** (`{t_key}`): INR {int(bp['inr']):,}/mo (USD {int(bp['usd'])}/mo) | "
+            f"Annual (-20%): INR {int(ap['inr']):,}/mo (USD {int(ap['usd'])}/mo) | "
+            f"Clusters: {', '.join(tier['included_clusters'])} | "
+            f"Capacity: {tier['agent_limit']} Agents, {tier['seat_limit']} Seats, "
+            f"{cr['lead_credits']} Leads, {cr['outreach_credits']} Outreach, {cr['ai_execution_credits']} AI Runs/mo | "
+            f"Best for: {tier['target_sme']}."
+        )
+
+    lines.extend(["", "## 4. Stackable Modular Add-On Modules"])
+    for m_key, mod in MODULAR_SERVICE_MODULES.items():
+        lines.append(
+            f"- `{m_key}` ({mod['name']}): +INR {int(mod['monthly_price_inr']):,}/mo (+USD {int(mod['monthly_price_usd'])}/mo) "
+            f"| Cluster: `{mod['cluster_key']}` | Capabilities: {', '.join(mod['capabilities'])}."
+        )
+
+    lines.extend(["", "## 5. Complete 16-SKU Commercial Catalog & Deliverables"])
+    for pkg in get_all_packages():
+        lines.append(f"### {pkg.name} (`{pkg.key}`)")
+        lines.append(f"- URL: https://os.askforwrite.com/services/{pkg.key}")
+        lines.append(f"- Category: {pkg.category} | Tier: {pkg.tier} | Price: INR {pkg.price_inr:,} / USD {pkg.price_usd}")
+        lines.append(f"- Target Buyer: {pkg.target_buyer_persona}")
+        lines.append(f"- Problem Solved: {pkg.target_pain_point}")
+        lines.append(f"- Key Features: {'; '.join(pkg.key_features)}")
+        lines.append(f"- Deliverables: {'; '.join(pkg.deliverables)}")
+        lines.append("")
+
+    lines.extend([
+        "## 6. Security, Governance, Privacy & Settlement Architecture",
+        "- Human-in-the-Loop (HITL) Governance: All external outreach, commercial proposals, and manual payment settlements require explicit Owner/Admin approval before live execution.",
+        "- Cryptographic Provenance: Every workflow milestone, quality inspection, attendance check-in, and settlement receipt is sealed into an immutable ECDSA NIST P-256 Merkle Trust Ledger.",
+        "- Strict BYOK Gemini Privacy: Tenants provide their own Google Gemini API key (encrypted at rest, masked in all responses, strictly org_id-isolated, zero LLM token markup, zero model training on tenant data).",
+        "- Payment Rails: AFW DirectPay (0% aggregator fee via ISO Instant UPI QR to ask4write@icici, Web3 USDC on Polygon/Base/Solana, ICICI Bank Wire) plus Razorpay (INR) and PayPal (USD).",
+        "- Statutory Protection: DPDPA 2023 compliant with 7-day unutilized plan refund guarantee and MSMED Act, 2006 statutory identity (UDYAM-RJ-14-0018404).",
+    ])
+    return PlainTextResponse(content="\n".join(lines) + "\n")
 
 
 @app.get("/mobile/manifest.json", include_in_schema=False)

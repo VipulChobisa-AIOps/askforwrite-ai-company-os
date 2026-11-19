@@ -439,7 +439,8 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         sitemap = self.client.get("/sitemap.xml")
         self.assertEqual(sitemap.status_code, 200)
         self.assertIn("https://os.askforwrite.com/services", sitemap.text)
-        self.assertIn("https://os.askforwrite.com/services/warehouse-automation", sitemap.text)
+        self.assertIn("https://os.askforwrite.com/services/warehouse_automation", sitemap.text)
+        self.assertIn("https://os.askforwrite.com/solutions/warehouse-automation", sitemap.text)
 
     # ── 11. User State Matrix & Tenant vs Platform RBAC Isolation ─────────────
 

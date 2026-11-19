@@ -1,10 +1,12 @@
 """Public SEO, AEO, and GEO Service Landing Pages Router.
 
 Provides dedicated, crawlable, indexable HTML5 landing pages for:
-- GET /services — Complete Service Directory with ItemList Schema.org JSON-LD
-- GET /services/{service_key} — Individual Service Landing Page for each of the 14 Catalog SKUs
-  with canonical URL, Open Graph tags, semantic H1/H2/H3 hierarchy, buyer persona, problem solved,
-  deliverables, transparent INR/USD pricing, limitations, FAQs, and Schema.org @graph JSON-LD.
+- GET /services — Complete Clustered Pricing & Service Directory with ItemList & FAQPage JSON-LD
+- GET /services/{service_key} — Individual Service Landing Page for each of the 16 Catalog SKUs
+  with canonical URL, Open Graph + PNG og:image + Twitter Cards, tight <=60-char titles,
+  unified Organization entity graph (sameAs), deliverables, transparent INR/USD pricing, and FAQs.
+- Legacy /services/{hyphen-slug} aliases return a 301 Permanent Redirect to /solutions/{hyphen-slug}
+  to prevent duplicate content and canonical mismatch in Google Search Console.
 """
 
 from __future__ import annotations
@@ -12,9 +14,17 @@ from __future__ import annotations
 import html
 import json
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.services.catalog import MODULAR_SME_TIERS, PRICING_CLUSTERS, get_all_packages, get_package
+from app.services.seo_meta import (
+    BASE_URL,
+    CANONICAL_ORG_SCHEMA,
+    OG_IMAGE_URL,
+    build_short_title,
+    clamp_meta,
+    social_meta_tags,
+)
 
 router = APIRouter(tags=["seo-service-pages"])
 
@@ -77,7 +87,7 @@ def list_service_landing_pages() -> HTMLResponse:
         )
 
     for idx, pkg in enumerate(packages, start=1):
-        url = f"https://os.askforwrite.com/services/{pkg.key}"
+        url = f"{BASE_URL}/services/{pkg.key}"
         item_list_elements.append(
             {
                 "@type": "ListItem",
@@ -103,33 +113,40 @@ def list_service_landing_pages() -> HTMLResponse:
             """
         )
 
+    page_title = "Clustered AI Pricing & Services | AskforWrite OS"
+    page_desc = clamp_meta(
+        "Compare AskforWrite AI Company OS clustered plans (₹2,999–₹44,999/mo, 20% annual discount) across 4 AI clusters & 16 modular services with ECDSA audit proofs.",
+        155,
+    )
+
     schema_graph = {
         "@context": "https://schema.org",
         "@graph": [
-            {
-                "@type": "Organization",
-                "name": "AskforWrite",
-                "legalName": "ASKFORWRITE",
-                "identifier": "UDYAM-RJ-14-0018404",
-                "url": "https://os.askforwrite.com",
-                "email": "info@askforwrite.in",
-            },
+            CANONICAL_ORG_SCHEMA,
             {
                 "@type": "ItemList",
+                "@id": f"{BASE_URL}/services#catalog",
                 "name": "AskforWrite AI Company OS — Verified Commercial Services",
                 "numberOfItems": len(packages),
                 "itemListElement": item_list_elements,
             },
             {
+                "@type": "BreadcrumbList",
+                "itemListElement": [
+                    {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{BASE_URL}/"},
+                    {"@type": "ListItem", "position": 2, "name": "Services & Pricing", "item": f"{BASE_URL}/services"},
+                ],
+            },
+            {
                 "@type": "FAQPage",
-                "@id": "https://os.askforwrite.com/services#faq",
+                "@id": f"{BASE_URL}/services#faq",
                 "mainEntity": [
                     {
                         "@type": "Question",
                         "name": "How does AskforWrite AI Company OS clustered subscription pricing work?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "AskforWrite groups its 16 AI tools into 4 functional clusters (Content/SEO/Creative, Sales/Discovery/AI Closer, Field Ops/Vertical AI, and Governance/Trust Ledger) across 5 monthly subscription tiers: Launch (₹2,999/$39), Growth Suite (₹6,999/$89), Operations Suite (₹9,999/$129), Business Pro (₹17,999/$229), and Enterprise (₹44,999/$549), with 20% annual savings and stackable modular add-ons."
+                            "text": "AskforWrite groups its 16 AI tools into 4 functional clusters (Content/SEO/Creative, Sales/Discovery/AI Closer, Field Ops/Vertical AI, and Governance/Trust Ledger) across 5 monthly subscription tiers: Launch (₹2,999/$39), Growth Suite (₹6,999/$89), Operations Suite (₹9,999/$129), Business Pro (₹17,999/$229), and Enterprise (₹44,999/$549), with 20% annual savings and stackable modular add-ons.",
                         },
                     },
                     {
@@ -137,7 +154,7 @@ def list_service_landing_pages() -> HTMLResponse:
                         "name": "Can customers run AskforWrite services via both the Web Portal and REST API?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "Yes. Every subscribed organization receives entitlement-driven access to dedicated workspace dashboards inside os.askforwrite.com as well as authenticated Bearer-token execution via POST /v1/me/use-service."
+                            "text": "Yes. Every subscribed organization receives entitlement-driven access to dedicated workspace dashboards inside os.askforwrite.com as well as authenticated Bearer-token execution via POST /v1/me/use-service.",
                         },
                     },
                     {
@@ -145,7 +162,7 @@ def list_service_landing_pages() -> HTMLResponse:
                         "name": "How are SEO and Generative Engine Optimization (GEO) deliverables structured?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "AskforWrite's SEO Copilot and Growth Suite generate structured Markdown articles, Schema.org JSON-LD graphs (Article, FAQPage, Organization, SoftwareApplication), /llms.txt manifests for AI crawlers, and 7-channel social copy."
+                            "text": "AskforWrite's SEO Copilot and Growth Suite generate structured Markdown articles, Schema.org JSON-LD graphs (Article, FAQPage, Organization, SoftwareApplication), /llms.txt manifests for AI crawlers, and 7-channel social copy.",
                         },
                     },
                     {
@@ -153,7 +170,7 @@ def list_service_landing_pages() -> HTMLResponse:
                         "name": "How do organizations activate a service with zero payment gateway commission?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "Checkout links use AFW DirectPay supporting Instant UPI QR (GPay, PhonePe, Paytm, BHIM), Polygon/Base/Solana USDC stablecoins, and Direct Bank Wire with automated ECDSA NIST P-256 TrustBlock receipts."
+                            "text": "Checkout links use AFW DirectPay supporting Instant UPI QR (GPay, PhonePe, Paytm, BHIM), Polygon/Base/Solana USDC stablecoins, and Direct Bank Wire with automated ECDSA NIST P-256 TrustBlock receipts.",
                         },
                     },
                 ],
@@ -166,13 +183,9 @@ def list_service_landing_pages() -> HTMLResponse:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clustered AI Subscriptions &amp; Modular Service Catalog | AskforWrite Company OS</title>
-  <meta name="description" content="Explore AskforWrite Company OS clustered subscriptions (₹2,999 to ₹44,999/mo) across 4 AI capability clusters: Content & SEO Studio, Sales & AI Closer, Field & Vertical AI (Warehouse, Field Force, Produce Vision, Urban Mobility), and ECDSA Trust Ledger.">
-  <link rel="canonical" href="https://os.askforwrite.com/services">
-  <meta property="og:title" content="AskforWrite AI Company OS — Clustered Subscriptions &amp; AI Services Catalog">
-  <meta property="og:description" content="4 functional AI clusters, 5 transparent INR/USD subscription tiers with 20% annual discount, stackable add-ons, and ECDSA NIST P-256 audit verification.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://os.askforwrite.com/services">
+  <title>{html.escape(page_title)}</title>
+  <meta name="description" content="{html.escape(page_desc)}">
+  {social_meta_tags(title=page_title, description=page_desc, canonical_url=f"{BASE_URL}/services")}
   <script type="application/ld+json">{json.dumps(schema_graph)}</script>
   <style>
     body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; margin: 0; padding: 0; line-height: 1.6; }}
@@ -209,9 +222,10 @@ def list_service_landing_pages() -> HTMLResponse:
 <body>
   <header>
     <nav>
-      <a href="/dashboard/">Command Center</a>
+      <a href="/">Home</a>
       <a href="/services">All Services</a>
-      <a href="/dashboard/#portal">Customer Portal</a>
+      <a href="/solutions">Vertical Solutions</a>
+      <a href="/dashboard/">Workspace</a>
       <a href="/llms.txt">LLMs.txt</a>
       <a href="/legal/tos">Terms</a>
       <a href="/legal/privacy">Privacy</a>
@@ -239,27 +253,29 @@ def list_service_landing_pages() -> HTMLResponse:
     </section>
   </main>
   <footer>
-    <p>© 2026 ASKFORWRITE (MSME Udyam Registration: UDYAM-RJ-14-0018404) • Udaipur, Rajasthan, India - 313001 • <a href="mailto:info@askforwrite.in">info@askforwrite.in</a></p>
+    <p>© 2026 ASKFORWRITE (MSME Udyam Registration: UDYAM-RJ-14-0018404) • Udaipur, Rajasthan, India - 313001 • <a href="mailto:info@askforwrite.in">info@askforwrite.in</a> • <a href="/llms-full.txt">LLMs-Full.txt</a> • <a href="/sitemap.xml">Sitemap</a></p>
   </footer>
 </body>
 </html>"""
     return HTMLResponse(content=page_html, status_code=status.HTTP_200_OK)
 
 
-@router.get("/services/{service_key}", response_class=HTMLResponse, include_in_schema=False)
-def get_service_landing_page(service_key: str) -> HTMLResponse:
+@router.get("/services/{service_key}", response_class=HTMLResponse, response_model=None, include_in_schema=False)
+def get_service_landing_page(service_key: str) -> Response:
     """Render a dedicated, SEO/AEO/GEO-optimized HTML5 landing page for a specific catalog service."""
     clean_key = service_key.strip().lower()
     pkg = get_package(clean_key)
     if not pkg:
-        from app.api.v1.solutions_pages import SOLUTION_SLUGS, solution_detail_page
+        from app.api.v1.solutions_pages import SOLUTION_SLUGS
 
         if clean_key in SOLUTION_SLUGS:
-            return solution_detail_page(clean_key)
+            return RedirectResponse(url=f"/solutions/{clean_key}", status_code=status.HTTP_301_MOVED_PERMANENTLY)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Service '{service_key}' not found in catalog")
 
-    canonical_url = f"https://os.askforwrite.com/services/{pkg.key}"
+    canonical_url = f"{BASE_URL}/services/{pkg.key}"
     checkout_url = f"/v1/pay/checkout?package={pkg.key}"
+    short_title = build_short_title(pkg.name, suffix=" | AskforWrite", max_len=60)
+    meta_desc = clamp_meta(f"{pkg.description} Priced at ₹{pkg.price_inr:,} INR (${pkg.price_usd} USD) with instant activation and ECDSA audit proof.", 155)
 
     related_links = []
     for other in get_all_packages():
@@ -283,43 +299,46 @@ def get_service_landing_page(service_key: str) -> HTMLResponse:
         },
     ]
 
+    is_recurring = pkg.category not in ("b2c_one_off", "managed_pilot")
+    inr_offer: dict[str, object] = {
+        "@type": "Offer",
+        "price": str(pkg.price_inr),
+        "priceCurrency": "INR",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": f"{BASE_URL}{checkout_url}",
+    }
+    usd_offer: dict[str, object] = {
+        "@type": "Offer",
+        "price": str(pkg.price_usd),
+        "priceCurrency": "USD",
+        "priceValidUntil": "2027-12-31",
+        "availability": "https://schema.org/InStock",
+        "url": f"{BASE_URL}{checkout_url}&currency=USD",
+    }
+    if is_recurring:
+        inr_offer["priceSpecification"] = {"@type": "UnitPriceSpecification", "price": str(pkg.price_inr), "priceCurrency": "INR", "unitText": "MONTH"}
+        usd_offer["priceSpecification"] = {"@type": "UnitPriceSpecification", "price": str(pkg.price_usd), "priceCurrency": "USD", "unitText": "MONTH"}
+
     schema_graph = {
         "@context": "https://schema.org",
         "@graph": [
-            {
-                "@type": "Organization",
-                "name": "AskforWrite",
-                "legalName": "ASKFORWRITE",
-                "identifier": "UDYAM-RJ-14-0018404",
-                "url": "https://os.askforwrite.com",
-            },
+            CANONICAL_ORG_SCHEMA,
             {
                 "@type": "Service",
+                "@id": f"{canonical_url}#service",
                 "name": pkg.name,
                 "serviceType": pkg.category,
                 "description": pkg.description,
-                "provider": {"@type": "Organization", "name": "AskforWrite"},
+                "image": OG_IMAGE_URL,
+                "provider": {"@id": f"{BASE_URL}/#organization"},
                 "url": canonical_url,
                 "audience": {"@type": "BusinessAudience", "audienceType": pkg.target_buyer_persona},
-                "offers": [
-                    {
-                        "@type": "Offer",
-                        "price": str(pkg.price_inr),
-                        "priceCurrency": "INR",
-                        "availability": "https://schema.org/InStock",
-                        "url": f"https://os.askforwrite.com{checkout_url}",
-                    },
-                    {
-                        "@type": "Offer",
-                        "price": str(pkg.price_usd),
-                        "priceCurrency": "USD",
-                        "availability": "https://schema.org/InStock",
-                        "url": f"https://os.askforwrite.com{checkout_url}&currency=USD",
-                    },
-                ],
+                "offers": [inr_offer, usd_offer],
             },
             {
                 "@type": "FAQPage",
+                "@id": f"{canonical_url}#faq",
                 "mainEntity": [
                     {
                         "@type": "Question",
@@ -332,8 +351,8 @@ def get_service_landing_page(service_key: str) -> HTMLResponse:
             {
                 "@type": "BreadcrumbList",
                 "itemListElement": [
-                    {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://os.askforwrite.com/dashboard/"},
-                    {"@type": "ListItem", "position": 2, "name": "Services", "item": "https://os.askforwrite.com/services"},
+                    {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{BASE_URL}/"},
+                    {"@type": "ListItem", "position": 2, "name": "Services", "item": f"{BASE_URL}/services"},
                     {"@type": "ListItem", "position": 3, "name": pkg.name, "item": canonical_url},
                 ],
             },
@@ -353,13 +372,9 @@ def get_service_landing_page(service_key: str) -> HTMLResponse:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{html.escape(pkg.name)} — Pricing, Deliverables &amp; AI Workflow | AskforWrite</title>
-  <meta name="description" content="{html.escape(pkg.description[:155])}">
-  <link rel="canonical" href="{canonical_url}">
-  <meta property="og:title" content="{html.escape(pkg.name)} | AskforWrite AI Company OS">
-  <meta property="og:description" content="{html.escape(pkg.description)}">
-  <meta property="og:type" content="product">
-  <meta property="og:url" content="{canonical_url}">
+  <title>{html.escape(short_title)}</title>
+  <meta name="description" content="{html.escape(meta_desc)}">
+  {social_meta_tags(title=short_title, description=meta_desc, canonical_url=canonical_url, og_type="product")}
   <script type="application/ld+json">{json.dumps(schema_graph)}</script>
   <style>
     body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; margin: 0; padding: 0; line-height: 1.65; }}
@@ -375,8 +390,9 @@ def get_service_landing_page(service_key: str) -> HTMLResponse:
 <body>
   <header>
     <nav>
-      <a href="/dashboard/">Home</a>
+      <a href="/">Home</a>
       <a href="/services">All Services</a>
+      <a href="/solutions">Vertical Solutions</a>
       <a href="/dashboard/#portal">Customer Portal</a>
       <a href="/legal/tos">Terms</a>
       <a href="/legal/privacy">Privacy</a>
@@ -426,7 +442,7 @@ def get_service_landing_page(service_key: str) -> HTMLResponse:
     </section>
   </main>
   <footer>
-    <p>© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404) • <a href="/services">Back to All Services</a> • <a href="/llms.txt">AI Crawler Manifest (/llms.txt)</a></p>
+    <p>© 2026 ASKFORWRITE (UDYAM-RJ-14-0018404) • <a href="/">Home</a> • <a href="/services">Back to All Services</a> • <a href="/llms.txt">LLMs.txt</a> • <a href="/llms-full.txt">LLMs-Full.txt</a></p>
   </footer>
 </body>
 </html>"""
