@@ -21,9 +21,10 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote
 
 import httpx
+import qrcode
 from sqlalchemy.orm import Session
 
 from app.db.models import ApprovalRequest, SovereignPaymentSessionRecord
@@ -40,276 +41,77 @@ _SESSION_LOCK = threading.Lock()
 SOVEREIGN_PAY_SESSIONS: dict[str, SovereignPaySession] = {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pure-Python QR Model 2 Encoder (ISO/IEC 18004 compliant) for Dynamic SVG QR
+# Standards-Compliant ISO/IEC 18004 QR Code Encoder for Dynamic Inline SVG QR
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Version specifications for Byte mode (Error Correction Level L)
-# Version: (dimension, total_data_codewords, ec_codewords_per_block, num_blocks, alignment_pattern_coords)
-_QR_SPECS: dict[int, tuple[int, int, int, int, list[int]]] = {
-    1: (21, 19, 7, 1, []),
-    2: (25, 34, 10, 1, [6, 18]),
-    3: (29, 55, 15, 1, [6, 22]),
-    4: (33, 80, 20, 1, [6, 26]),
-    5: (37, 108, 26, 1, [6, 30]),
-    6: (41, 136, 18, 2, [6, 34]),
-    7: (45, 156, 20, 2, [6, 22, 38]),
-    8: (49, 194, 24, 2, [6, 24, 42]),
-    9: (53, 232, 30, 2, [6, 26, 46]),
-    10: (57, 274, 18, 2, [6, 28, 50]),
-}
 
-# Galois Field GF(2^8) with primitive polynomial 0x11d
-_GF_EXP = [0] * 512
-_GF_LOG = [0] * 256
-_val = 1
-for _i in range(255):
-    _GF_EXP[_i] = _val
-    _GF_EXP[_i + 255] = _val
-    _GF_LOG[_val] = _i
-    _val = (_val << 1) ^ (0x11d if (_val & 0x80) else 0)
-
-
-def _gf_mul(x: int, y: int) -> int:
-    if x == 0 or y == 0:
-        return 0
-    return _GF_EXP[_GF_LOG[x] + _GF_LOG[y]]
-
-
-def _rs_generator_poly(nsym: int) -> list[int]:
-    g = [1]
-    for i in range(nsym):
-        root = _GF_EXP[i]
-        next_g = [0] * (len(g) + 1)
-        for j, c in enumerate(g):
-            next_g[j] ^= _gf_mul(c, root)
-            next_g[j + 1] ^= c
-        g = next_g
-    return g
-
-
-def _rs_encode(msg: list[int], nsym: int) -> list[int]:
-    gen = _rs_generator_poly(nsym)
-    res = [0] * (len(msg) + nsym)
-    res[: len(msg)] = msg
-    for i in range(len(msg)):
-        coef = res[i]
-        if coef != 0:
-            for j in range(len(gen)):
-                res[i + j] ^= _gf_mul(gen[j], coef)
-    return res[len(msg) :]
+def _build_upi_uri(
+    merchant_vpa: str,
+    merchant_name: str,
+    amount: float,
+    note: str,
+    session_id: str,
+) -> str:
+    """Build a canonical NPCI UPI URI compatible with GPay, PhonePe, Paytm, and BHIM."""
+    vpa_clean = merchant_vpa.strip()
+    pn_encoded = quote(merchant_name.strip(), safe="")
+    clean_note = re.sub(r"[^A-Za-z0-9 \-]", " ", note).strip()
+    clean_note = re.sub(r"\s+", " ", clean_note)[:50]
+    tn_encoded = quote(clean_note, safe="")
+    uri = f"upi://pay?pa={vpa_clean}&pn={pn_encoded}&am={amount:.2f}&cu=INR&tn={tn_encoded}"
+    # Attach P2M merchant category code + transaction reference only when an official
+    # merchant category code is configured; omitting tr for non-P2M VPAs avoids GPay blocks.
+    merchant_mc = (os.getenv("AFW_MERCHANT_UPI_MC") or "").strip()
+    if merchant_mc:
+        tr_clean = re.sub(r"[^A-Za-z0-9]", "", session_id)[:35]
+        uri += f"&mc={quote(merchant_mc, safe='')}&tr={tr_clean}"
+    return uri
 
 
 def encode_qr_matrix(text: str) -> list[list[int]]:
-    """Encodes a string into a standard QR code binary matrix (0=white, 1=black)."""
-    data_bytes = text.encode("utf-8")
-    data_len = len(data_bytes)
-
-    chosen_ver = None
-    for ver, (dim, total_data, ec_per_block, num_blocks, align_coords) in _QR_SPECS.items():
-        count_bits = 8 if ver < 10 else 16
-        header_bits = 4 + count_bits
-        if (header_bits + data_len * 8) <= total_data * 8:
-            chosen_ver = ver
-            break
-    if not chosen_ver:
-        chosen_ver = 10
-
-    dim, total_data, ec_per_block, num_blocks, align_coords = _QR_SPECS[chosen_ver]
-
-    count_bits = 8 if chosen_ver < 10 else 16
-    bits = "0100" + f"{data_len:0{count_bits}b}"
-    for b in data_bytes:
-        bits += f"{b:08b}"
-    bits += "0000"
-    if len(bits) > total_data * 8:
-        bits = bits[: total_data * 8]
-    if len(bits) % 8 != 0:
-        bits += "0" * (8 - (len(bits) % 8))
-
-    pad_bytes = [236, 17]
-    pad_idx = 0
-    raw_codewords = []
-    for i in range(0, len(bits), 8):
-        raw_codewords.append(int(bits[i : i + 8], 2))
-    while len(raw_codewords) < total_data:
-        raw_codewords.append(pad_bytes[pad_idx % 2])
-        pad_idx += 1
-
-    block_size = total_data // num_blocks
-    data_blocks = []
-    ec_blocks = []
-    for b in range(num_blocks):
-        start = b * block_size
-        end = start + block_size if b < num_blocks - 1 else total_data
-        blk_data = raw_codewords[start:end]
-        data_blocks.append(blk_data)
-        ec_blocks.append(_rs_encode(blk_data, ec_per_block))
-
-    final_codewords = []
-    max_d = max(len(b) for b in data_blocks)
-    for i in range(max_d):
-        for b in data_blocks:
-            if i < len(b):
-                final_codewords.append(b[i])
-    for i in range(ec_per_block):
-        for eb in ec_blocks:
-            if i < len(eb):
-                final_codewords.append(eb[i])
-
-    final_bits = []
-    for cw in final_codewords:
-        for shift in range(7, -1, -1):
-            final_bits.append((cw >> shift) & 1)
-
-    matrix: list[list[int | None]] = [[None] * dim for _ in range(dim)]
-    reserved = [[False] * dim for _ in range(dim)]
-
-    def place_finder(top: int, left: int) -> None:
-        for r in range(7):
-            for c in range(7):
-                row, col = top + r, left + c
-                if r in (0, 6) or c in (0, 6) or (2 <= r <= 4 and 2 <= c <= 4):
-                    matrix[row][col] = 1
-                else:
-                    matrix[row][col] = 0
-                reserved[row][col] = True
-        for r in range(-1, 8):
-            for c in range(-1, 8):
-                row, col = top + r, left + c
-                if 0 <= row < dim and 0 <= col < dim:
-                    if not reserved[row][col]:
-                        matrix[row][col] = 0
-                        reserved[row][col] = True
-
-    place_finder(0, 0)
-    place_finder(0, dim - 7)
-    place_finder(dim - 7, 0)
-
-    # Timing patterns
-    for i in range(8, dim - 8):
-        v = 1 if i % 2 == 0 else 0
-        if not reserved[6][i]:
-            matrix[6][i] = v
-            reserved[6][i] = True
-        if not reserved[i][6]:
-            matrix[i][6] = v
-            reserved[i][6] = True
-
-    # Dark module
-    matrix[dim - 8][8] = 1
-    reserved[dim - 8][8] = True
-
-    # Alignment patterns
-    if len(align_coords) > 1:
-        for r in align_coords:
-            for c in align_coords:
-                if (r < 9 and c < 9) or (r < 9 and c > dim - 9) or (r > dim - 9 and c < 9):
-                    continue
-                for dr in range(-2, 3):
-                    for dc in range(-2, 3):
-                        rr, cc = r + dr, c + dc
-                        if abs(dr) == 2 or abs(dc) == 2 or (dr == 0 and dc == 0):
-                            matrix[rr][cc] = 1
-                        else:
-                            matrix[rr][cc] = 0
-                        reserved[rr][cc] = True
-
-    # Format info area reservation
-    for i in range(9):
-        if not reserved[8][i]:
-            reserved[8][i] = True
-        if not reserved[i][8]:
-            reserved[i][8] = True
-    for i in range(dim - 8, dim):
-        if not reserved[8][i]:
-            reserved[8][i] = True
-        if not reserved[i][8]:
-            reserved[i][8] = True
-
-    # Format info for EC Level L (01) & Mask 0 (000) -> 15 bits
-    format_bits = [1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0]
-
-    # Data module placement (zig-zag 2 columns right to left)
-    bit_idx = 0
-    row = dim - 1
-    direction = -1
-    col = dim - 1
-
-    while col > 0:
-        if col == 6:
-            col -= 1
-        for _ in range(dim):
-            for c_offset in [0, -1]:
-                c = col + c_offset
-                if not reserved[row][c]:
-                    bit_val = final_bits[bit_idx] if bit_idx < len(final_bits) else 0
-                    bit_idx += 1
-                    # Apply Mask 0: (row + c) % 2 == 0
-                    if (row + c) % 2 == 0:
-                        bit_val ^= 1
-                    matrix[row][c] = bit_val
-            row += direction
-        row -= direction
-        direction = -direction
-        col -= 2
-
-    # Place format bits
-    format_coords_1 = [
-        (8, 0), (8, 1), (8, 2), (8, 3), (8, 4), (8, 5), (8, 7), (8, 8),
-        (7, 8), (5, 8), (4, 8), (3, 8), (2, 8), (1, 8), (0, 8),
-    ]
-    for idx, (r, c) in enumerate(format_coords_1):
-        matrix[r][c] = format_bits[idx]
-
-    format_coords_2 = [
-        (dim - 1, 8), (dim - 2, 8), (dim - 3, 8), (dim - 4, 8), (dim - 5, 8), (dim - 6, 8), (dim - 7, 8),
-        (8, dim - 8), (8, dim - 7), (8, dim - 6), (8, dim - 5), (8, dim - 4), (8, dim - 3), (8, dim - 2), (8, dim - 1),
-    ]
-    for idx, (r, c) in enumerate(format_coords_2):
-        matrix[r][c] = format_bits[idx]
-
-    result: list[list[int]] = []
-    for r in range(dim):
-        row_vals = []
-        for c in range(dim):
-            row_vals.append(1 if matrix[r][c] == 1 else 0)
-        result.append(row_vals)
-
-    return result
+    """Encodes a string into a standard ISO/IEC 18004 QR code binary matrix (0=white, 1=black)."""
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=1,
+        border=0,
+    )
+    qr.add_data(text)
+    qr.make(fit=True)
+    return [[1 if cell else 0 for cell in row] for row in qr.get_matrix()]
 
 
 def generate_inline_qr_svg(text: str, size: int = 260) -> str:
-    """Generates a self-contained inline SVG string representing the QR code for a given text."""
+    """Generates a crisp, ISO/IEC 18004-compliant inline SVG QR code scannable by all UPI apps."""
     matrix = encode_qr_matrix(text)
     dim = len(matrix)
-    padding = 4
-    total_dim = dim + padding * 2
-    cell_size = size / total_dim
+    quiet_zone = 4
+    total_dim = dim + quiet_zone * 2
 
-    # Compress adjacent horizontal dark modules into single <rect> elements
-    rects: list[str] = []
-    for r in range(dim):
+    # Merge adjacent horizontal dark modules into exact integer SVG path segments
+    # with crispEdges rendering and pure black-on-white contrast for instant camera lock.
+    path_cmds: list[str] = []
+    for r, row in enumerate(matrix):
+        y = r + quiet_zone
         c = 0
         while c < dim:
-            if matrix[r][c] == 1:
+            if row[c]:
                 start_c = c
-                while c < dim and matrix[r][c] == 1:
+                while c < dim and row[c]:
                     c += 1
                 span = c - start_c
-                x = (start_c + padding) * cell_size
-                y = (r + padding) * cell_size
-                w = span * cell_size
-                rects.append(
-                    f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{cell_size:.2f}" fill="#0f172a" rx="1.5"/>'
-                )
+                path_cmds.append(f"M{start_c + quiet_zone} {y}h{span}v1h-{span}z")
             else:
                 c += 1
 
     svg_parts = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" width="{size}" height="{size}" class="afw-upi-qr">',
-        f'  <rect width="{size}" height="{size}" rx="16" fill="#ffffff"/>',
-        f'  {"".join(rects)}',
-        '</svg>',
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total_dim} {total_dim}" '
+            f'width="{size}" height="{size}" shape-rendering="crispEdges" class="afw-upi-qr">'
+        ),
+        f'  <rect width="{total_dim}" height="{total_dim}" fill="#ffffff"/>',
+        f'  <path fill="#000000" d="{"".join(path_cmds)}"/>',
+        "</svg>",
     ]
     return "\n".join(svg_parts)
 
@@ -688,12 +490,13 @@ def create_sovereign_pay_session(
     if clean_curr == "INR":
         merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
         merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
-        merchant_name_encoded = quote_plus(merchant_name)
-        note = f"AFW OS {pkg.key[:20]} {comp_clean[:20]}".strip()
-        note_encoded = quote_plus(note)
-        upi_uri = (
-            f"upi://pay?pa={merchant_vpa}&pn={merchant_name_encoded}&am={amount:.2f}"
-            f"&cu=INR&tn={note_encoded}&tr={session_id}"
+        note = f"AFW OS {pkg.key[:18]} {session_id[:8]}".strip()
+        upi_uri = _build_upi_uri(
+            merchant_vpa=merchant_vpa,
+            merchant_name=merchant_name,
+            amount=amount,
+            note=note,
+            session_id=session_id,
         )
         upi_qr_svg = generate_inline_qr_svg(upi_uri)
     else:
@@ -780,6 +583,22 @@ def create_sovereign_pay_session(
 
 def _record_to_session(record: SovereignPaymentSessionRecord) -> SovereignPaySession:
     """Reconstruct in-memory dataclass from durable database record."""
+    upi_uri = record.upi_uri or ""
+    upi_qr_svg = record.upi_qr_svg or ""
+    if upi_uri and record.currency == "INR":
+        # Regenerate standards-compliant QR SVG so previously stored checkout links
+        # immediately render a crisp, scannable QR code on refresh.
+        if not (os.getenv("AFW_MERCHANT_UPI_MC") or "").strip():
+            merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
+            merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
+            upi_uri = _build_upi_uri(
+                merchant_vpa=merchant_vpa,
+                merchant_name=merchant_name,
+                amount=float(record.amount),
+                note=f"AFW OS {(record.package_key or '')[:18]} {record.session_id[:8]}",
+                session_id=record.session_id,
+            )
+        upi_qr_svg = generate_inline_qr_svg(upi_uri)
     return SovereignPaySession(
         session_id=record.session_id,
         package_key=record.package_key,
@@ -792,8 +611,8 @@ def _record_to_session(record: SovereignPaymentSessionRecord) -> SovereignPaySes
         amount=record.amount,
         preferred_rail=record.preferred_rail,
         status=record.status,
-        upi_uri=record.upi_uri,
-        upi_qr_svg=record.upi_qr_svg,
+        upi_uri=upi_uri,
+        upi_qr_svg=upi_qr_svg,
         usdc_payload=record.usdc_payload,
         bank_wire_invoice=record.bank_wire_invoice,
         checkout_url=record.checkout_url,
@@ -1339,7 +1158,14 @@ def create_live_penny_test_session(
     provider_inv_id = f"inv_penny_{clean_rail}_{session_id[:8]}"
 
     merchant_vpa = os.getenv("AFW_MERCHANT_UPI_VPA") or os.getenv("MERCHANT_UPI_VPA", "ask4write@icici")
-    upi_uri = f"upi://pay?pa={merchant_vpa}&pn=AskforWrite&am=1.00&cu=INR&tn=AFW+Penny+Test&tr={session_id}"
+    merchant_name = os.getenv("AFW_MERCHANT_NAME", "AskforWrite AI Solutions")
+    upi_uri = _build_upi_uri(
+        merchant_vpa=merchant_vpa,
+        merchant_name=merchant_name,
+        amount=1.0,
+        note=f"AFW Penny Test {session_id[:8]}",
+        session_id=session_id,
+    )
     checkout_instructions: dict[str, Any] = {}
 
     if clean_rail == "upi_direct":

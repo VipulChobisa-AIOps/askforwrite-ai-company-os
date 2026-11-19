@@ -24,6 +24,7 @@ dependencies = [
     "numpy>=1.26,<3",
     "pillow>=10.0,<13",
     "python-multipart>=0.0.12,<1",
+    "qrcode>=8,<9",
 ]
 
 [project.optional-dependencies]
