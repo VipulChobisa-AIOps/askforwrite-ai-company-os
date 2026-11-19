@@ -228,6 +228,44 @@ def solutions_hub_page() -> HTMLResponse:
                 "name": "AskforWrite Verified Vertical AI Solutions",
                 "itemListElement": item_list_elements,
             },
+            {
+                "@type": "FAQPage",
+                "@id": f"{base_url}/solutions#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": "Which vertical AI solutions are available on AskforWrite AI Company OS?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "AskforWrite offers modular vertical AI solutions for Warehouse StockSense Inventory Automation, Field Force GPS & Route Verification, Agri-Produce Computer Vision Quality Grading, Urban EV Fleet & Micro-Mobility Rebalancing, and Autonomous SEO/GEO & Omnichannel Growth."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "How fast can a business deploy and access a vertical AI workspace?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Subscribers can select a modular plan, complete checkout via AFW DirectPay (0% fee UPI QR, USDC Web3, or Bank Wire), and immediately access their entitled dashboards, REST API endpoints, and Customer Self-Serve Portal."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Are AI decisions and commercial transactions cryptographically auditable?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Yes. Sensitive operational actions use Human-in-the-Loop (HITL) governance and every verified execution, quality certificate, and billing settlement is sealed into an immutable ECDSA NIST P-256 Merkle Trust Ledger."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "What pricing options are supported for Indian SMBs and global teams?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Modular vertical plans start from ₹3,999/month ($49 USD/month) with transparent INR and USD billing, zero gateway commissions via AFW DirectPay, and optional Bring-Your-Own-Key (BYOK) Gemini AI integration."
+                        },
+                    },
+                ],
+            },
         ],
     }
 

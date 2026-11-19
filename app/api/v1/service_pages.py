@@ -70,6 +70,44 @@ def list_service_landing_pages() -> HTMLResponse:
                 "numberOfItems": len(packages),
                 "itemListElement": item_list_elements,
             },
+            {
+                "@type": "FAQPage",
+                "@id": "https://os.askforwrite.com/services#faq",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": "How does AskforWrite AI Company OS modular service pricing work?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "AskforWrite provides 14 modular AI services and bundled tiers with transparent fixed monthly INR and USD pricing, allowing SMBs and enterprises to subscribe only to the AI capabilities they need without agency retainers."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Can customers run AskforWrite services via both the Web Portal and REST API?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Yes. Every subscribed organization receives entitlement-driven access to dedicated workspace dashboards inside os.askforwrite.com as well as authenticated Bearer-token execution via POST /v1/me/use-service."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "How are SEO and Generative Engine Optimization (GEO) deliverables structured?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "AskforWrite's SEO Copilot and Growth Suite generate structured Markdown articles, Schema.org JSON-LD graphs (Article, FAQPage, Organization, SoftwareApplication), /llms.txt manifests for AI crawlers, and 7-channel social copy."
+                        },
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "How do organizations activate a service with zero payment gateway commission?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Checkout links use AFW DirectPay supporting Instant UPI QR (GPay, PhonePe, Paytm, BHIM), Polygon/Base/Solana USDC stablecoins, and Direct Bank Wire with automated ECDSA NIST P-256 TrustBlock receipts."
+                        },
+                    },
+                ],
+            },
         ],
     }
 
