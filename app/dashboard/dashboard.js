@@ -104,6 +104,9 @@
     const pageEl = $(`#page-${pageName}`);
     if (pageEl) pageEl.classList.add('active');
 
+    // Hide bottom-right floating closer on Growth Suite (Pillar 3 & 4 already embeds it inline)
+    document.body.classList.toggle('afw-hide-floating-closer', pageName === 'growth');
+
     // Update title
     const titles = {
       dashboard: 'Dashboard',
@@ -123,8 +126,13 @@
       'commercial-os': 'P2 Commercial Acquisition & Revenue OS (India Agencies Pilot)',
       'customer-success': 'P3 Customer Success, Retention & Repeatable Growth Engine',
       'p4-growth': 'P4 Repeatable Growth & GTM Engine',
+      'p5-scale': 'P5 Multi-Tenant Scale, SLA & Provisioning',
+      'p6-packs': 'P6 Multi-Industry AI Vertical Packs',
+      'p7-autonomy': 'P7 Autonomous Workforce & Delegation DAGs',
+      'p8-marketplace': 'P8 Partner Marketplace & Master Release Scorecard',
+      ...(typeof CW_PAGE_TITLES !== 'undefined' ? CW_PAGE_TITLES : {}),
     };
-    $('#page-title').textContent = titles[pageName] || pageName;
+    if ($('#page-title')) $('#page-title').textContent = titles[pageName] || pageName;
 
     // Page-specific initialization hooks
     if (pageName === 'quality') {
@@ -133,12 +141,36 @@
       initMobilityPage();
     } else if (pageName === 'inventory') {
       initInventoryPage();
+    } else if (pageName === 'trust-chain' && typeof verifyTrustChainUi === 'function') {
+      verifyTrustChainUi(true);
     } else if (pageName === 'commercial-os' && typeof p2LoadControlCentre === 'function') {
       p2LoadControlCentre();
     } else if (pageName === 'customer-success' && typeof p3LoadControlCentre === 'function') {
       p3LoadControlCentre();
     } else if (pageName === 'p4-growth' && typeof p4LoadControlCentre === 'function') {
       p4LoadControlCentre();
+    } else if (pageName === 'p5-scale' && typeof p5LoadControlCentre === 'function') {
+      p5LoadControlCentre();
+    } else if (pageName === 'p6-packs' && typeof p6LoadControlCentre === 'function') {
+      p6LoadControlCentre();
+    } else if (pageName === 'p7-autonomy' && typeof p7LoadControlCentre === 'function') {
+      p7LoadControlCentre();
+    } else if (pageName === 'p8-marketplace' && typeof p8LoadControlCentre === 'function') {
+      p8LoadControlCentre();
+    } else if (pageName === 'cw-profile' && typeof cwLoadProfile === 'function') {
+      cwLoadProfile();
+    } else if (['cw-marketplace', 'cw-workforce', 'cw-connectors', 'cw-run-console'].includes(pageName) && typeof cwHydrateRegistry === 'function') {
+      cwHydrateRegistry();
+    } else if (pageName === 'cw-workflows' && typeof cwLoadWorkflows === 'function') {
+      cwLoadWorkflows();
+    } else if (pageName === 'cw-history' && typeof cwLoadEvidenceHistory === 'function') {
+      cwLoadEvidenceHistory();
+    } else if (pageName === 'cw-analytics' && typeof cwLoadAnalytics === 'function') {
+      cwLoadAnalytics();
+    } else if (pageName === 'cw-billing' && typeof cwLoadBilling === 'function') {
+      cwLoadBilling();
+    } else if (pageName === 'cw-settings' && typeof cwLoadEmergencyStops === 'function') {
+      cwLoadEmergencyStops();
     }
 
     // Update URL hash
@@ -286,17 +318,25 @@
         if ($('#portal-tier-badge')) {
           $('#portal-tier-badge').textContent = (me.tier || 'Starter').toUpperCase() + ' Tier';
         }
+        if ($('#portal-token-display') && CONFIG.accessToken) {
+          $('#portal-token-display').value = CONFIG.accessToken;
+        }
         if (me.credits) {
           const leadLimit = me.credits.lead_credits_limit || 0;
           const leadRem = me.credits.lead_credits_remaining || 0;
+          const leadLeftPct = Math.max(0, Math.min(100, Math.round(100 - (me.credits.lead_utilization_pct || 0))));
           if ($('#portal-stat-leads')) $('#portal-stat-leads').textContent = `${leadRem} / ${leadLimit}`;
-          if ($('#portal-lead-badge')) $('#portal-lead-badge').textContent = `${100 - (me.credits.lead_utilization_pct || 0)}% Left`;
-          if ($('#portal-fill-leads')) $('#portal-fill-leads').style.width = `${Math.min(100, me.credits.lead_utilization_pct || 0)}%`;
+          if ($('#portal-lead-badge')) $('#portal-lead-badge').textContent = `${leadLeftPct}% Left`;
+          if ($('#portal-fill-leads')) $('#portal-fill-leads').style.width = `${leadLeftPct}%`;
 
           const outLimit = me.credits.outreach_credits_limit || 0;
           const outRem = me.credits.outreach_credits_remaining || 0;
+          const outLeftPct = Math.max(0, Math.min(100, Math.round(100 - (me.credits.outreach_utilization_pct || 0))));
           if ($('#portal-stat-outreach')) $('#portal-stat-outreach').textContent = `${outRem} / ${outLimit}`;
-          if ($('#portal-fill-outreach')) $('#portal-fill-outreach').style.width = `${Math.min(100, me.credits.outreach_utilization_pct || 0)}%`;
+          if ($('#portal-fill-outreach')) $('#portal-fill-outreach').style.width = `${outLeftPct}%`;
+        }
+        if (typeof applyCustomerEntitlementNav === 'function' && Array.isArray(me.capabilities)) {
+          applyCustomerEntitlementNav(me.capabilities, me.tier);
         }
 
         // Masked key display
@@ -340,14 +380,18 @@
         if (invoices.length > 0) {
           tbody.innerHTML = invoices.map(inv => {
             const st = String(inv.status || 'PENDING').toUpperCase();
+            const majorAmt = (typeof inv.amount_major === 'number')
+              ? inv.amount_major
+              : (Number(inv.amount || 0) / 100);
+            const fmtAmt = majorAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             return `
               <tr>
                 <td><code>${esc(inv.invoice_id)}</code></td>
                 <td>AskforWrite AI Workspace</td>
-                <td>${inv.currency === 'USD' ? '$' : '₹'}${inv.amount}</td>
+                <td>${inv.currency === 'USD' ? '$' : '₹'}${esc(fmtAmt)}</td>
                 <td>${esc(inv.provider)}</td>
                 <td><span class="status-pill ${st === 'PAID' ? 'approved' : 'pending'}">${esc(st)}</span></td>
-                <td><a href="/v1/pay/checkout?package=growth_all_in_one&company=AskforWrite+Client" target="_blank" class="text-btn">Receipt ↗</a></td>
+                <td><button type="button" class="text-btn" onclick="alert('Invoice ID: ${esc(inv.invoice_id)}\nAmount: ${inv.currency === 'USD' ? '$' : '₹'}${esc(fmtAmt)}\nProvider: ${esc(inv.provider)}\nStatus: ${esc(st)}')">Receipt</button></td>
               </tr>
             `;
           }).join('');
@@ -1173,10 +1217,9 @@
 
       try {
         await api('POST', '/v1/quality/uat', {
-          inspector_id: inspectorId,
+          role: inspectorId || 'Quality Inspector',
           rating: rating,
-          observed_ripeness: groundtruth,
-          notes: notes,
+          comments: notes ? `${notes} (Observed: ${groundtruth})` : `Observed ripeness: ${groundtruth}`,
         });
         toast('Inspector UAT survey logged into Trust Registry!', 'success');
         if ($('#quality-uat-notes')) $('#quality-uat-notes').value = '';
@@ -1244,6 +1287,7 @@
 
         const headers = {};
         if (CONFIG.ownerApiKey) headers['X-API-Key'] = CONFIG.ownerApiKey;
+        else if (CONFIG.accessToken) headers['Authorization'] = `Bearer ${CONFIG.accessToken}`;
 
         const response = await fetch(`${CONFIG.apiBase}/v1/quality/inspect-image`, {
           method: 'POST',
@@ -1256,22 +1300,22 @@
         }
         res = await response.json();
       } else {
-        // Preset inspection
         const preset = qualityState.activePreset || 'ripe';
         res = await api('POST', '/v1/quality/inspect', {
-          preset: preset,
-          inspector_id: inspectorId,
+          preset_or_sample: preset,
+          crop_variety: 'Alphonso Mango',
+          batch_lot_id: `LOT-${inspectorId.slice(0, 12).toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`,
         });
       }
 
-      // Render Results
-      const classification = res.classification || {};
-      const ensemble = res.model_ensemble || {};
-      const colorimetry = res.colorimetry || {};
-      const texture = res.texture_glcm || {};
+      const report = res.inspection_report || res;
+      const classification = report.classification || report;
+      const visualMetrics = report.visual_metrics || {};
+      const texture = visualMetrics.glcm_texture_descriptors || report.texture_glcm || {};
+      const colorimetry = report.colorimetry || visualMetrics;
 
-      // Ripeness Badge
-      const ripeness = classification.ripeness || 'RIPE';
+      const rawRipeness = String(report.predicted_class || classification.ripeness || 'RIPE').trim();
+      const ripeness = rawRipeness.toUpperCase();
       const ripenessEl = $('#quality-ripeness-badge');
       if (ripenessEl) {
         ripenessEl.textContent = ripeness;
@@ -1285,38 +1329,57 @@
       }
 
       if ($('#quality-grade-badge')) {
-        $('#quality-grade-badge').textContent = classification.commercial_grade || 'Commercial Grade';
+        $('#quality-grade-badge').textContent = report.commercial_grade || classification.commercial_grade || 'Commercial Grade';
       }
       if ($('#quality-brix-val')) {
-        $('#quality-brix-val').textContent = `${classification.estimated_sugar_brix ?? 14.5}° Bx`;
+        const brix = report.estimated_brix_sugar_degrees ?? classification.estimated_sugar_brix ?? 14.5;
+        $('#quality-brix-val').textContent = `${Number(brix).toFixed(1)}° Bx`;
       }
       if ($('#quality-shelflife-val')) {
-        $('#quality-shelflife-val').textContent = `Est. Shelf-Life: ${classification.estimated_shelf_life_days ?? 5} days`;
+        const shelf = report.shelf_life_days ?? classification.estimated_shelf_life_days ?? 5;
+        $('#quality-shelflife-val').textContent = `Est. Shelf-Life: ${shelf} days`;
       }
       if ($('#quality-staging-rec')) {
-        $('#quality-staging-rec').textContent = classification.supply_chain_staging || 'Store in standard temperature-controlled staging.';
-      }
-      if ($('#quality-consensus-ratio')) {
-        $('#quality-consensus-ratio').textContent = `Model Consensus: ${ensemble.consensus_ratio || '4/4 Models Agreed'}`;
-      }
-      if ($('#quality-trust-pill')) {
-        $('#quality-trust-pill').textContent = res.task_id ? `TrustBlock #${res.task_id.substring(0, 8)}` : 'TrustBlock Sealed';
+        $('#quality-staging-rec').textContent = report.recommended_action || classification.supply_chain_staging || 'Store in standard temperature-controlled staging.';
       }
 
-      // 4-Model Ensemble Bars
-      const models = ensemble.individual_models || {};
-      const updateModelBar = (key, labelId, barId) => {
-        const m = models[key];
+      const rawEnsemble = report.model_ensemble || res.model_ensemble;
+      const ensembleArr = Array.isArray(rawEnsemble) ? rawEnsemble : [];
+      const agreedCount = ensembleArr.filter(m => String(m.pred || m.prediction || '').toUpperCase() === ripeness).length;
+      if ($('#quality-consensus-ratio')) {
+        const ratioText = ensembleArr.length
+          ? `${agreedCount}/${ensembleArr.length} Models Agreed (${Number(report.ensemble_confidence_pct || 0).toFixed(1)}%)`
+          : (rawEnsemble?.consensus_ratio || '4/4 Models Agreed');
+        $('#quality-consensus-ratio').textContent = `Model Consensus: ${ratioText}`;
+      }
+      if ($('#quality-trust-pill')) {
+        const tbHash = res.trust_block_hash || res.task_id;
+        $('#quality-trust-pill').textContent = tbHash ? `TrustBlock #${String(tbHash).substring(0, 8)}` : 'TrustBlock Sealed';
+      }
+
+      const findModel = (matchers, legacyKey) => {
+        if (ensembleArr.length) {
+          return ensembleArr.find(m => {
+            const hay = `${m.name || ''} ${m.algorithm || ''}`.toLowerCase();
+            return matchers.some(tok => hay.includes(tok));
+          });
+        }
+        return rawEnsemble?.individual_models?.[legacyKey];
+      };
+      const updateModelBar = (matchers, legacyKey, labelId, barId) => {
+        const m = findModel(matchers, legacyKey);
         const labelEl = $(`#${labelId}`);
         const barEl = $(`#${barId}`);
         if (m && labelEl && barEl) {
-          const pct = ((m.confidence || 0.9) * 100).toFixed(1);
-          labelEl.textContent = `${m.prediction} (${pct}%)`;
-          barEl.style.width = `${pct}%`;
-          if (m.prediction === 'RIPE') {
+          const rawConf = Number(m.conf ?? m.confidence ?? 0.9);
+          const pct = (rawConf > 1 ? rawConf : rawConf * 100).toFixed(1);
+          const pred = String(m.pred || m.prediction || ripeness).toUpperCase();
+          labelEl.textContent = `${pred} (${pct}%)`;
+          barEl.style.width = `${Math.min(100, Number(pct))}%`;
+          if (pred === 'RIPE') {
             labelEl.style.color = 'var(--green)';
             barEl.style.background = 'var(--green)';
-          } else if (m.prediction === 'UNRIPE') {
+          } else if (pred === 'UNRIPE') {
             labelEl.style.color = 'var(--amber)';
             barEl.style.background = 'var(--amber)';
           } else {
@@ -1326,18 +1389,22 @@
         }
       };
 
-      updateModelBar('svm_rbf', 'label-svm', 'bar-svm');
-      updateModelBar('random_forest', 'label-rf', 'bar-rf');
-      updateModelBar('gaussian_nb', 'label-gnb', 'bar-gnb');
-      updateModelBar('pytorch_cnn', 'label-cnn', 'bar-cnn');
+      updateModelBar(['svm', 'support vector'], 'svm_rbf', 'label-svm', 'bar-svm');
+      updateModelBar(['random forest', 'forest'], 'random_forest', 'label-rf', 'bar-rf');
+      updateModelBar(['naive bayes', 'gaussian'], 'gaussian_nb', 'label-gnb', 'bar-gnb');
+      updateModelBar(['cnn', 'pytorch', 'resnet'], 'pytorch_cnn', 'label-cnn', 'bar-cnn');
 
-      // Texture & Colorimetry
-      if ($('#val-mean-hue')) $('#val-mean-hue').textContent = `${(colorimetry.mean_hue_angle || 72.5).toFixed(1)}°`;
-      if ($('#val-glcm-homo')) $('#val-glcm-homo').textContent = (texture.homogeneity || 0.842).toFixed(3);
-      if ($('#val-glcm-contrast')) $('#val-glcm-contrast').textContent = (texture.contrast || 12.4).toFixed(1);
-      if ($('#val-glcm-energy')) $('#val-glcm-energy').textContent = (texture.energy || 0.315).toFixed(3);
-      if ($('#val-glcm-corr')) $('#val-glcm-corr').textContent = (texture.correlation || 0.912).toFixed(3);
-      if ($('#val-hist-bin')) $('#val-hist-bin').textContent = `#${colorimetry.dominant_bin_index ?? 146}`;
+      const meanHue = Number(visualMetrics.mean_hue_degrees ?? colorimetry.mean_hue_angle ?? 72.5);
+      const topBins = visualMetrics.color_histogram_top_bins;
+      const domBin = Array.isArray(topBins) && topBins.length
+        ? (topBins[0]?.bin ?? topBins[0]?.bin_index ?? topBins[0])
+        : (colorimetry.dominant_bin_index ?? 146);
+      if ($('#val-mean-hue')) $('#val-mean-hue').textContent = `${meanHue.toFixed(1)}°`;
+      if ($('#val-glcm-homo')) $('#val-glcm-homo').textContent = Number(texture.homogeneity ?? 0.842).toFixed(3);
+      if ($('#val-glcm-contrast')) $('#val-glcm-contrast').textContent = Number(texture.contrast ?? 12.4).toFixed(1);
+      if ($('#val-glcm-energy')) $('#val-glcm-energy').textContent = Number(texture.energy ?? 0.315).toFixed(3);
+      if ($('#val-glcm-corr')) $('#val-glcm-corr').textContent = Number(texture.correlation ?? 0.912).toFixed(3);
+      if ($('#val-hist-bin')) $('#val-hist-bin').textContent = `#${domBin}`;
 
       toast('Produce computer vision analysis completed & sealed in TrustBlock', 'success');
     } catch (err) {
@@ -1464,9 +1531,9 @@
 
       try {
         await api('POST', '/v1/mobility/uat', {
-          operator_id: operatorId,
-          dispatch_accuracy_rating: rating,
-          notes: notes,
+          role: operatorId || 'Fleet Dispatcher',
+          rating: rating,
+          comments: notes || 'Verified mobility rebalancing dispatch',
         });
         toast('Fleet Operator UAT survey submitted and registered!', 'success');
         if ($('#mobility-uat-notes')) $('#mobility-uat-notes').value = '';
@@ -1498,45 +1565,50 @@
         is_weekend: isWeekend,
       });
 
-      const forecast = res.forecast || {};
-      const rebalance = res.rebalancing || {};
+      const inner = res.result || res;
+      const forecast = inner.forecast || res.forecast || {};
+      const rebalance = inner.rebalancing || res.rebalancing || {};
 
-      // Forecast Demand
       if ($('#mobility-pred-demand')) {
-        $('#mobility-pred-demand').textContent = `${forecast.predicted_hourly_demand || 42} trips/hr`;
+        const demand = forecast.predicted_hourly_demand ?? forecast.predicted_demand ?? 42;
+        $('#mobility-pred-demand').textContent = `${Math.round(Number(demand))} trips/hr`;
       }
       if ($('#mobility-period-label')) {
-        $('#mobility-period-label').textContent = forecast.period || 'Circadian Simulated Demand';
+        $('#mobility-period-label').textContent = forecast.demand_regime || forecast.period || 'Circadian Simulated Demand';
       }
 
-      // Stations Churn Table
+      const stations = rebalance.station_inventory_states || rebalance.all_stations || [];
       const tbody = $('#mobility-stations-tbody');
-      if (tbody && rebalance.all_stations) {
-        tbody.innerHTML = rebalance.all_stations.map(st => {
+      if (tbody && stations.length) {
+        tbody.innerHTML = stations.map(st => {
+          const rawCat = String(st.churn_category || st.status || 'BALANCED').toUpperCase();
+          const availPct = Math.round(Number(st.availability_pct ?? st.available_pct ?? 50));
           let badgeHtml = '';
-          if (st.status === 'DEPLETED') {
+          if (rawCat.includes('DEPLET')) {
             badgeHtml = '<span class="status-pill rejected" style="background:rgba(239,68,68,0.15);color:var(--red);border:1px solid var(--red-glow)">DEPLETED</span>';
-          } else if (st.status === 'ACCUMULATED') {
+          } else if (rawCat.includes('ACCUMULAT')) {
             badgeHtml = '<span class="status-pill" style="background:rgba(6,182,212,0.15);color:var(--cyan);border:1px solid var(--cyan-glow)">ACCUMULATED</span>';
           } else {
             badgeHtml = '<span class="status-pill approved" style="background:rgba(16,185,129,0.15);color:var(--green);border:1px solid var(--green-glow)">BALANCED</span>';
           }
+          const stId = st.station_id ?? st.id ?? '—';
+          const zoneLabel = st.zone || (rawCat.includes('HIGH_CHURN') ? 'High-Churn Corridor' : 'Metro Hub');
 
           return `
             <tr>
               <td>
-                <div style="font-weight:600">${esc(st.name)}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">Station ID: #${st.id}</div>
+                <div style="font-weight:600">${esc(st.name || st.station_name || 'Station')}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">Station ID: #${esc(String(stId))}</div>
               </td>
-              <td><span style="font-size:0.78rem;color:var(--text-secondary)">${esc(st.zone)}</span></td>
-              <td>${st.capacity}</td>
-              <td><strong>${st.current_bikes}</strong></td>
+              <td><span style="font-size:0.78rem;color:var(--text-secondary)">${esc(zoneLabel)}</span></td>
+              <td>${esc(String(st.capacity ?? 0))}</td>
+              <td><strong>${esc(String(st.current_bikes ?? 0))}</strong></td>
               <td>
                 <div style="display:flex;align-items:center;gap:6px">
                   <div style="width:50px;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
-                    <div style="width:${Math.min(100, st.available_pct)}%;height:100%;background:${st.available_pct < 25 ? 'var(--red)' : st.available_pct > 75 ? 'var(--cyan)' : 'var(--green)'}"></div>
+                    <div style="width:${Math.min(100, Math.max(0, availPct))}%;height:100%;background:${availPct < 25 ? 'var(--red)' : availPct > 75 ? 'var(--cyan)' : 'var(--green)'}"></div>
                   </div>
-                  <span style="font-size:0.75rem">${st.available_pct}%</span>
+                  <span style="font-size:0.75rem">${availPct}%</span>
                 </div>
               </td>
               <td>${badgeHtml}</td>
@@ -1545,29 +1617,35 @@
         }).join('');
       }
 
-      // Rebalancing Priority Routes
       const routesList = $('#mobility-routes-list');
       const routesCount = $('#mobility-routes-count');
-      if (routesList && rebalance.priority_rebalance_routes) {
-        const routes = rebalance.priority_rebalance_routes;
+      const routes = rebalance.priority_rebalance_routes || [];
+      if (routesList) {
         if (routesCount) routesCount.textContent = `${routes.length} Route${routes.length === 1 ? '' : 's'} Active`;
 
         if (routes.length === 0) {
           routesList.innerHTML = '<div class="empty-state" style="padding:16px"><p>All stations currently within balanced threshold.</p></div>';
         } else {
-          routesList.innerHTML = routes.map(r => `
-            <div class="route-dispatch-card">
-              <div>
-                <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);margin-bottom:2px">
-                  ${esc(r.from_hub)} <span style="color:var(--cyan);margin:0 4px">➔</span> ${esc(r.to_hub)}
+          routesList.innerHTML = routes.map((r, idx) => {
+            const fromHub = r.pickup_station?.name || r.from_hub || 'Source Hub';
+            const toHub = r.dropoff_station?.name || r.to_hub || 'Target Hub';
+            const qty = r.transfer_quantity_bikes ?? r.transfer_quantity ?? 0;
+            const transit = r.estimated_transit_minutes ? `${r.estimated_transit_minutes} min` : `${r.distance_km || 2.4} km`;
+            const prio = r.priority ?? (idx + 1);
+            return `
+              <div class="route-dispatch-card">
+                <div>
+                  <div style="font-weight:700;font-size:0.82rem;color:var(--text-primary);margin-bottom:2px">
+                    ${esc(fromHub)} <span style="color:var(--cyan);margin:0 4px">➔</span> ${esc(toHub)}
+                  </div>
+                  <div style="font-size:0.74rem;color:var(--text-muted)">
+                    Transit: ${esc(transit)} • Transfer: <strong style="color:var(--green)">+${esc(String(qty))} bikes</strong>
+                  </div>
                 </div>
-                <div style="font-size:0.74rem;color:var(--text-muted)">
-                  Distance: ${r.distance_km || 2.4} km • Transfer: <strong style="color:var(--green)">+${r.transfer_quantity} bikes</strong>
-                </div>
+                <span class="badge" style="background:rgba(168,85,247,0.15);color:var(--purple);border:1px solid var(--purple-glow)">Priority #${esc(String(prio))}</span>
               </div>
-              <span class="badge" style="background:rgba(168,85,247,0.15);color:var(--purple);border:1px solid var(--purple-glow)">Priority #${r.priority}</span>
-            </div>
-          `).join('');
+            `;
+          }).join('');
         }
       }
     } catch (err) {
@@ -1640,9 +1718,10 @@
               <div class="approval-info" style="flex: 1;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
                   <span class="status-pill" style="background: ${sevBg}; color: ${sevColor}; font-size: 0.7rem; font-weight: 700;">${esc(sev)}</span>
-                  <strong style="font-size: 0.85rem;">${esc(a.alert_type)}</strong>
+                  <strong style="font-size: 0.85rem;">${esc(a.title || a.alert_type || 'Operational Alert')}</strong>
                 </div>
-                <div style="font-size: 0.8rem; color: var(--text-primary); margin-bottom: 4px;">${esc(a.message || '')}</div>
+                <div style="font-size: 0.8rem; color: var(--text-primary); margin-bottom: 4px;">${esc(a.description || a.message || '')}</div>
+                ${a.suggested_action ? `<div style="font-size: 0.74rem; color: var(--cyan); margin-bottom: 4px;">Recommended: ${esc(a.suggested_action)}</div>` : ''}
                 <div class="approval-meta" style="font-size: 0.72rem; color: var(--text-muted);">
                   ID: ${esc(a.id)} • Triggered: ${formatDate(a.created_at)}
                 </div>
@@ -1823,54 +1902,58 @@
 
   function renderInventoryAudit(data) {
     if (!data) return;
-    const metrics = data.audit_metrics || data.summary || {};
+    const inner = data.result || data;
+    const metrics = data.audit_metrics || inner.audit_metrics || data.summary || {};
 
     if ($('#inventory-total-skus')) $('#inventory-total-skus').textContent = metrics.total_skus ?? 0;
-    if ($('#inventory-total-value')) $('#inventory-total-value').textContent = `₹${(metrics.total_inventory_valuation || 0).toLocaleString()}`;
+    if ($('#inventory-total-value')) $('#inventory-total-value').textContent = `₹${Number(metrics.total_inventory_valuation || 0).toLocaleString()}`;
     if ($('#inventory-dead-stock-count')) $('#inventory-dead-stock-count').textContent = metrics.dead_stock_skus_count ?? 0;
-    if ($('#inventory-trapped-capital')) $('#inventory-trapped-capital').textContent = `₹${(metrics.capital_locked_in_dead_stock || 0).toLocaleString()}`;
+    if ($('#inventory-trapped-capital')) $('#inventory-trapped-capital').textContent = `₹${Number(metrics.capital_locked_in_dead_stock || 0).toLocaleString()}`;
 
-    // ABC-XYZ table
-    const abcItems = data.abc_analysis?.items || [];
+    const abcItems = inner.abc_analysis?.items || data.abc_analysis?.items || [];
     const abcTbody = $('#inventory-abc-xyz-tbody');
     if (abcTbody) {
       if (!abcItems.length) {
         abcTbody.innerHTML = '<tr class="empty-row"><td colspan="5"><div class="empty-state"><p>No SKU data found</p></div></td></tr>';
       } else {
         abcTbody.innerHTML = abcItems.map(item => {
-          const cls = item.category || 'B';
+          const cls = item.abc_xyz_class || item.category || 'B';
+          const annualVal = Number(item.annual_usage_value ?? item.annual_value ?? 0);
+          const cumPct = Number(item.cumulative_value_pct ?? item.cumulative_share_pct ?? 0);
+          const strategy = item.management_strategy
+            || (cls.startsWith('A') ? 'Tight JIT control & weekly review' : cls.startsWith('B') ? 'Balanced automated ROP' : 'Bulk periodic replenishment');
           return `
             <tr>
               <td>
                 <div style="font-weight:600">${esc(item.sku)}</div>
                 <div style="font-size:0.75rem;color:var(--text-muted)">${esc(item.name || '')}</div>
               </td>
-              <td>₹${(item.annual_value || 0).toLocaleString()}</td>
-              <td>${(item.cumulative_share_pct || 0).toFixed(1)}%</td>
+              <td>₹${annualVal.toLocaleString()}</td>
+              <td>${cumPct.toFixed(1)}%</td>
               <td><span class="status-pill" style="background:rgba(168,85,247,0.15);color:var(--purple);font-weight:700">Class ${esc(cls)}</span></td>
-              <td style="font-size:0.78rem;color:var(--text-secondary)">${esc(item.management_strategy || 'Standard control')}</td>
+              <td style="font-size:0.78rem;color:var(--text-secondary)">${esc(strategy)}</td>
             </tr>
           `;
         }).join('');
       }
     }
 
-    // Reorder recommendations
-    const reorders = data.reorder_recommendations || [];
+    const reorders = inner.reorder_recommendations || data.reorder_recommendations || [];
     const reorderTbody = $('#inventory-reorder-tbody');
     if (reorderTbody) {
       if (!reorders.length) {
         reorderTbody.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="empty-state"><p>All stock levels optimal</p></div></td></tr>';
       } else {
         reorderTbody.innerHTML = reorders.map(r => {
-          const needed = r.reorder_needed;
+          const needed = Boolean(r.reorder_needed);
+          const eoq = r.eoq ?? r.economic_order_qty ?? r.economic_order_quantity ?? '—';
           return `
             <tr>
               <td><strong>${esc(r.sku)}</strong></td>
-              <td>${r.current_stock}</td>
-              <td>${r.safety_stock}</td>
-              <td><strong>${r.reorder_point}</strong></td>
-              <td>${r.economic_order_quantity}</td>
+              <td>${esc(String(r.current_stock ?? 0))}</td>
+              <td>${esc(String(r.safety_stock ?? 0))}</td>
+              <td><strong>${esc(String(r.reorder_point ?? 0))}</strong></td>
+              <td>${esc(String(eoq))}</td>
               <td>
                 <span class="status-pill ${needed ? 'rejected' : 'approved'}">
                   ${needed ? 'ORDER NOW' : 'HEALTHY'}
@@ -1882,25 +1965,29 @@
       }
     }
 
-    // Dead stock list
     const deadStockList = $('#inventory-deadstock-list');
-    const deadItems = data.dead_stock_analysis?.dead_stock_items || [];
+    const deadItems = inner.dead_stock_analysis?.items || inner.dead_stock_analysis?.dead_stock_items || data.dead_stock_analysis?.items || [];
     if (deadStockList) {
       if (!deadItems.length) {
         deadStockList.innerHTML = '<div class="empty-state"><p>No dead stock detected. Inventory turnover healthy.</p></div>';
       } else {
-        deadStockList.innerHTML = deadItems.map(d => `
-          <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);padding:10px 14px;border-radius:var(--radius-sm)">
-            <div>
-              <div style="font-weight:700;color:var(--red);font-size:0.85rem">${esc(d.sku)} — ${esc(d.name || '')}</div>
-              <div style="font-size:0.75rem;color:var(--text-muted)">Idle for ${d.days_since_last_sale} days • ${d.units_idle} units trapped</div>
+        deadStockList.innerHTML = deadItems.map(d => {
+          const daysIdle = d.days_idle ?? d.days_since_last_sale ?? 0;
+          const qtyIdle = d.current_stock ?? d.units_idle ?? 0;
+          const action = d.recommended_liquidation_action || d.recommended_action || 'Liquidation';
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);padding:10px 14px;border-radius:var(--radius-sm)">
+              <div>
+                <div style="font-weight:700;color:var(--red);font-size:0.85rem">${esc(d.sku)} — ${esc(d.name || '')}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">Idle for ${esc(String(daysIdle))} days • ${esc(String(qtyIdle))} units trapped</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:800;color:var(--red);font-size:0.95rem">₹${Number(d.locked_capital || 0).toLocaleString()}</div>
+                <div style="font-size:0.75rem;color:var(--amber)">${esc(action)}</div>
+              </div>
             </div>
-            <div style="text-align:right">
-              <div style="font-weight:800;color:var(--red);font-size:0.95rem">₹${(d.locked_capital || 0).toLocaleString()}</div>
-              <div style="font-size:0.75rem;color:var(--amber)">${esc(d.recommended_action || 'Liquidation')}</div>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       }
     }
   }
@@ -2122,14 +2209,75 @@
     });
 
 
-    // Mobile Phone Simulator actions — Wired to real backend execution (No false client-side success toasts)
+    // Trust Chain Explorer live verification handler
+    async function verifyTrustChainUi(silent = false) {
+      const btn = $('#btn-verify-chain');
+      if (btn && !silent) {
+        btn.disabled = true;
+        btn.textContent = 'Verifying ECDSA Chain...';
+      }
+      try {
+        const isCust = !CONFIG.ownerApiKey && !!CONFIG.accessToken;
+        let data;
+        if (isCust) {
+          const r = await api('POST', '/v1/me/use-service', { service_key: 'trust_engine', payload: { action: 'verify_chain' } });
+          data = r.result || r;
+        } else {
+          data = await api('GET', '/v1/trust/verify');
+        }
+        const valid = Boolean(data.chain_valid);
+        const total = data.total_blocks ?? (data.block_index != null ? data.block_index + 1 : 1);
+        const tipHash = data.tip_hash || data.block_hash || data.genesis_hash || 'verified';
+        const timeline = $('#trust-chain-timeline') || $('#trust-blocks-list');
+        if (timeline) {
+          const statusRow = document.createElement('div');
+          statusRow.className = 'trust-block-card';
+          statusRow.style.borderColor = valid ? 'var(--green)' : 'var(--red)';
+          statusRow.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
+              <strong>${valid ? '✓ CRYPTOGRAPHIC CHAIN VERIFIED (NIST P-256)' : '✕ CHAIN INTEGRITY ERROR'}</strong>
+              <span class="status-pill ${valid ? 'approved' : 'rejected'}">${esc(String(total))} Blocks Sealed</span>
+            </div>
+            <div class="trust-hash-pill">Tip Hash: ${esc(String(tipHash))}</div>
+            <div class="trust-block-details">
+              <span>Protocol: ${esc(data.protocol || 'AFW-COMPANY-OS-TRUST-CHAIN-V2')}</span>
+              <span>Errors: ${esc(String((data.errors || []).length))}</span>
+            </div>
+          `;
+          const prevBanner = timeline.querySelector('[data-trust-live-banner="1"]');
+          if (prevBanner) prevBanner.remove();
+          statusRow.setAttribute('data-trust-live-banner', '1');
+          timeline.prepend(statusRow);
+        }
+        if (!silent) toast(valid ? `Trust Ledger verified (${total} blocks, 0 errors)` : 'Trust Ledger verification reported errors', valid ? 'success' : 'error');
+      } catch (err) {
+        if (!silent) toast(`Trust verification failed: ${err.message}`, 'error');
+      } finally {
+        if (btn && !silent) {
+          btn.disabled = false;
+          btn.textContent = 'Verify Cryptographic Chain';
+        }
+      }
+    }
+    window.verifyTrustChainUi = verifyTrustChainUi;
+    $('#btn-verify-chain')?.addEventListener('click', () => verifyTrustChainUi(false));
+
+    // Mobile Phone Simulator actions — tenant /v1/mobile/* endpoints for subscribers, watchdog fallback for Owner API key
     $('#btn-phone-checkin')?.addEventListener('click', async () => {
       try {
-        const res = await api('POST', '/v1/watchdog/invoke-tool', {
-          target_key: 'field_ops_dispatcher_agent',
-          payload: { action: 'gps_checkin', mode: 'local_engine' },
-        });
-        toast(`[${res.capability_status}] GPS Check-in verified (${res.evidence?.evidence_reference || 'TrustBlock'})`, 'success');
+        const isCust = !CONFIG.ownerApiKey && !!CONFIG.accessToken;
+        if (isCust) {
+          const res = await api('POST', '/v1/mobile/attendance/check-in', {
+            latitude: 24.5854, longitude: 73.7125, device_fingerprint: 'afw-pwa-sim',
+          });
+          toast(`GPS Check-in verified (${res.status || 'RECORDED'})`, 'success');
+        } else {
+          const res = await api('POST', '/v1/watchdog/invoke-tool', {
+            target_key: 'field_ops_dispatcher_agent',
+            payload: { action: 'gps_checkin', mode: 'local_engine' },
+          });
+          toast(`[${res.capability_status}] GPS Check-in verified (${res.evidence?.evidence_reference || 'TrustBlock'})`, 'success');
+        }
         animateNumber('#stat-visits', (state.fieldVisits?.length || 0) + 1);
       } catch (err) {
         toast(`BLOCKED: Field GPS check-in failed (${err.message})`, 'error');
@@ -2140,11 +2288,19 @@
       const client = ($('#phone-client-id')?.value || 'Client Visit').trim();
       const otp = ($('#phone-otp-code')?.value || '1234').trim();
       try {
-        const res = await api('POST', '/v1/watchdog/invoke-tool', {
-          target_key: 'field_ops_dispatcher_agent',
-          payload: { action: 'visit_verification', client, otp, mode: 'local_engine' },
-        });
-        toast(`[${res.capability_status}] Visit to "${client}" verified (${res.evidence?.evidence_reference || 'TrustBlock'})`, 'success');
+        const isCust = !CONFIG.ownerApiKey && !!CONFIG.accessToken;
+        if (isCust) {
+          const res = await api('POST', '/v1/mobile/visits/submit', {
+            client_name: client, latitude: 24.5854, longitude: 73.7125, otp_code: otp, notes: 'Mobile simulator check-in',
+          });
+          toast(`Visit to "${client}" verified (${res.status || 'RECORDED'})`, 'success');
+        } else {
+          const res = await api('POST', '/v1/watchdog/invoke-tool', {
+            target_key: 'field_ops_dispatcher_agent',
+            payload: { action: 'visit_verification', client, otp, mode: 'local_engine' },
+          });
+          toast(`[${res.capability_status}] Visit to "${client}" verified (${res.evidence?.evidence_reference || 'TrustBlock'})`, 'success');
+        }
         if ($('#phone-client-id')) $('#phone-client-id').value = '';
         if ($('#phone-otp-code')) $('#phone-otp-code').value = '';
       } catch (err) {
@@ -2156,12 +2312,20 @@
       const km = parseFloat($('#phone-distance-km')?.value || '15');
       const purpose = $('#phone-purpose')?.value || 'Client site visit';
       try {
-        const res = await api('POST', '/v1/watchdog/invoke-tool', {
-          target_key: 'field_ops_dispatcher_agent',
-          payload: { action: 'conveyance_claim', distance_km: km, purpose, mode: 'local_engine' },
-        });
+        const isCust = !CONFIG.ownerApiKey && !!CONFIG.accessToken;
         const amt = Math.round(km * 4.5);
-        toast(`[${res.capability_status}] Conveyance audited: ₹${amt} (${km} km) • ${res.evidence?.evidence_reference || 'TrustBlock'}`, 'success');
+        if (isCust) {
+          const res = await api('POST', '/v1/mobile/conveyance/claim', {
+            distance_km: km, claimed_amount_inr: amt, purpose,
+          });
+          toast(`Conveyance claim submitted: ₹${amt} (${km} km) • ${res.status || 'RECORDED'}`, 'success');
+        } else {
+          const res = await api('POST', '/v1/watchdog/invoke-tool', {
+            target_key: 'field_ops_dispatcher_agent',
+            payload: { action: 'conveyance_claim', distance_km: km, purpose, mode: 'local_engine' },
+          });
+          toast(`[${res.capability_status}] Conveyance audited: ₹${amt} (${km} km) • ${res.evidence?.evidence_reference || 'TrustBlock'}`, 'success');
+        }
         if ($('#phone-distance-km')) $('#phone-distance-km').value = '';
         if ($('#phone-purpose')) $('#phone-purpose').value = '';
       } catch (err) {
@@ -2212,6 +2376,66 @@
       if (e.key === 'Enter') handlePixelBotSend();
     });
 
+    // Growth Visualization Studio helpers (XSS-safe Markdown renderer + tab switcher)
+    let latestGrowthPayload = null;
+    function renderSafeMarkdown(md) {
+      const safeLines = String(md || '').split(/\r?\n/);
+      const out = [];
+      let inList = false;
+      const inlineFmt = (line) => esc(line)
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+      for (const raw of safeLines) {
+        const line = raw.trim();
+        if (!line) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          continue;
+        }
+        if (line.startsWith('### ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<h3>${inlineFmt(line.slice(4))}</h3>`);
+        } else if (line.startsWith('## ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<h2>${inlineFmt(line.slice(3))}</h2>`);
+        } else if (line.startsWith('# ')) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<h1>${inlineFmt(line.slice(2))}</h1>`);
+        } else if (/^([-*•]|\d+\.)\s+/.test(line)) {
+          if (!inList) { out.push('<ul>'); inList = true; }
+          out.push(`<li>${inlineFmt(line.replace(/^([-*•]|\d+\.)\s+/, ''))}</li>`);
+        } else {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push(`<p>${inlineFmt(line)}</p>`);
+        }
+      }
+      if (inList) out.push('</ul>');
+      return out.join('');
+    }
+
+    $$('#growth-viz-tabs .growth-viz-tab').forEach(tabBtn => {
+      tabBtn.addEventListener('click', () => {
+        const target = tabBtn.dataset.gviz;
+        $$('#growth-viz-tabs .growth-viz-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
+        $$('#growth-results-container .growth-viz-panel').forEach(p => {
+          p.classList.toggle('active', p.id === `gviz-panel-${target}`);
+        });
+      });
+    });
+
+    $('#btn-copy-growth-md')?.addEventListener('click', async () => {
+      const md = latestGrowthPayload?.seo_geo_blog?.markdown_body || '';
+      if (!md) return toast('Generate a campaign first', 'warning');
+      try { await navigator.clipboard.writeText(md); toast('Article Markdown copied!', 'success'); }
+      catch { toast('Copy failed', 'error'); }
+    });
+
+    $('#btn-copy-growth-schema')?.addEventListener('click', async () => {
+      const sc = latestGrowthPayload?.seo_geo_blog?.schema_graph_json_ld || latestGrowthPayload?.seo_geo_blog?.json_ld_schema;
+      if (!sc) return toast('Generate a campaign first', 'warning');
+      try { await navigator.clipboard.writeText(JSON.stringify(sc, null, 2)); toast('Schema JSON-LD copied!', 'success'); }
+      catch { toast('Copy failed', 'error'); }
+    });
+
     // Growth Suite Unified Campaign Generator
     $('#btn-run-growth-engine')?.addEventListener('click', async () => {
       const product = ($('#growth-product-input')?.value || 'Organic Wellness Tea').trim();
@@ -2235,35 +2459,113 @@
           idempotency_key: 'growth_' + Date.now(),
         };
         const res = await api('POST', '/v1/growth/campaign/unified', payload);
+        latestGrowthPayload = res;
         toast(`Growth Campaign synthesized & sealed in TrustBlock!`, 'success');
 
         const container = $('#growth-results-container');
         if (container) container.style.display = 'block';
+        if ($('#growth-viz-meta')) {
+          const tb = res.trust_block_hash ? `TrustBlock #${String(res.trust_block_hash).slice(0, 10)}` : 'Synthesized Live';
+          $('#growth-viz-meta').textContent = `${product} • ${audience} • ${tb}`;
+        }
+
+        const swatchBox = $('#growth-palette-swatches');
+        const palette = res.creative_assets?.color_palette || {};
+        if (swatchBox) {
+          const entries = Object.entries(palette).filter(([, v]) => typeof v === 'string');
+          swatchBox.innerHTML = entries.length
+            ? `<span style="font-size:0.76rem;color:var(--text-muted);font-weight:600;">Brand Palette:</span>` +
+              entries.map(([k, hex]) => `
+                <span class="growth-swatch">
+                  <span class="growth-swatch-dot" style="background:${esc(hex)}"></span>
+                  <span>${esc(k)}: ${esc(hex)}</span>
+                </span>
+              `).join('')
+            : '';
+        }
 
         const variantsList = $('#growth-variants-list');
         if (variantsList && res.creative_assets?.variants) {
           variantsList.innerHTML = res.creative_assets.variants.map(v => `
             <div class="variant-card">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
                 <div>
                   <span class="variant-ratio-badge">${esc(v.aspect_ratio)}</span>
-                  <strong style="font-size:0.85rem">${esc(v.channel_placement)}</strong>
+                  <strong style="font-size:0.86rem;color:#fff">${esc(v.channel_placement)}</strong>
                 </div>
-                <span style="font-size:0.75rem;color:var(--text-muted)">${esc(v.dimensions)}</span>
+                <span style="font-size:0.74rem;color:var(--text-muted)">${esc(v.dimensions)}</span>
               </div>
-              <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:6px"><strong>Prompt:</strong> ${esc(v.prompt_recipe)}</div>
-              <div style="display:flex;justify-content:space-between;align-items:center;font-size:0.78rem">
-                <span style="color:var(--cyan)">Overlay: "${esc(v.headline_overlay)}"</span>
-                <span class="badge" style="background:rgba(16,185,129,0.15);color:var(--green)">CTA: ${esc(v.call_to_action)}</span>
+              <div class="growth-visual-frame">
+                <span style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--cyan);font-weight:700">${esc(v.aspect_ratio)} Creative Spec • ${esc(v.dimensions)}</span>
+                <div style="font-size:0.95rem;font-weight:700;color:#ffffff;margin:8px 0;line-height:1.3">${esc(v.headline_overlay)}</div>
+                <div><span class="badge" style="background:rgba(16,185,129,0.2);color:var(--green)">CTA: ${esc(v.call_to_action)}</span></div>
               </div>
+              <div style="font-size:0.77rem;color:var(--text-secondary);line-height:1.45"><strong>Visual Prompt:</strong> ${esc(v.prompt_recipe)}</div>
             </div>
           `).join('');
         }
 
         const blogPreview = $('#growth-blog-preview');
         if (blogPreview && res.seo_geo_blog) {
-          blogPreview.textContent = res.seo_geo_blog.markdown_body;
+          blogPreview.innerHTML = renderSafeMarkdown(res.seo_geo_blog.markdown_body || '');
         }
+
+        const omniBox = $('#growth-omnichannel-list');
+        const omni = res.omnichannel_campaign || {};
+        if (omniBox) {
+          const cards = [];
+          if (omni.instagram_meta) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--cyan)">Instagram / Meta Ad</strong>\n\n<strong>Hook:</strong> ${esc(omni.instagram_meta.hook)}\n\n${esc(omni.instagram_meta.body)}\n\n<em>${esc((omni.instagram_meta.hashtags || []).join(' '))}</em></div>`);
+          }
+          if (omni.linkedin) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--purple)">LinkedIn Authority Post</strong>\n\n<strong>${esc(omni.linkedin.headline)}</strong>\n\n${esc(omni.linkedin.body)}</div>`);
+          }
+          if (omni.google_search_ads) {
+            const g = omni.google_search_ads;
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--green)">Google Search Ads</strong>\n\n• ${esc(g.headline_1)} | ${esc(g.headline_2)} | ${esc(g.headline_3)}\n\n${esc(g.description_1)}\n${esc(g.description_2)}</div>`);
+          }
+          if (Array.isArray(omni.instagram_reels_script)) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--amber)">30s Reels / Shorts Storyboard</strong>\n\n${omni.instagram_reels_script.map(s => `[${esc(s.time || s.scene || '')}] ${esc(s.voiceover || s.visual || JSON.stringify(s))}`).join('\n\n')}</div>`);
+          }
+          if (Array.isArray(omni.linkedin_carousel_slides)) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--cyan)">LinkedIn 5-Slide Carousel</strong>\n\n${omni.linkedin_carousel_slides.map((s, i) => `Slide ${i + 1}: ${esc(s.title || s.headline || '')} — ${esc(s.body || s.copy || '')}`).join('\n\n')}</div>`);
+          }
+          if (Array.isArray(omni.twitter_x_thread)) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:#fff">X / Twitter Thread</strong>\n\n${omni.twitter_x_thread.map(t => esc(t)).join('\n\n---\n\n')}</div>`);
+          }
+          if (omni.whatsapp_direct_broadcast) {
+            cards.push(`<div class="growth-channel-card"><strong style="color:var(--green)">WhatsApp Direct Broadcast</strong>\n\n${esc(omni.whatsapp_direct_broadcast.message_template)}</div>`);
+          }
+          omniBox.innerHTML = cards.length ? cards.join('') : '<div class="empty-state"><p>No omnichannel copy returned.</p></div>';
+        }
+
+        if ($('#growth-schema-preview')) {
+          const schemaObj = res.seo_geo_blog?.schema_graph_json_ld || res.seo_geo_blog?.json_ld_schema || {};
+          $('#growth-schema-preview').textContent = JSON.stringify(schemaObj, null, 2);
+        }
+        if ($('#growth-llms-preview')) {
+          const llms = res.seo_geo_blog?.llms_txt_manifest || res.seo_geo_blog?.llms_txt || 'No llms.txt manifest returned.';
+          $('#growth-llms-preview').textContent = typeof llms === 'string' ? llms : JSON.stringify(llms, null, 2);
+        }
+
+        const chkBox = $('#growth-checkout-links');
+        if (chkBox) {
+          const links = res.checkout_links || {};
+          const entries = Object.entries(links).filter(([, u]) => typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://') || u.startsWith('/')));
+          chkBox.innerHTML = entries.length
+            ? entries.map(([label, url]) => `
+                <div class="growth-channel-card" style="display:flex;flex-direction:column;justify-content:space-between;gap:10px">
+                  <div>
+                    <strong style="color:#fff;text-transform:uppercase;font-size:0.78rem">${esc(label.replace(/_/g, ' '))}</strong>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;word-break:break-all">${esc(url)}</div>
+                  </div>
+                  <a href="${esc(url)}" target="_blank" rel="noopener" class="primary-btn" style="text-decoration:none;justify-content:center">Open Checkout Link →</a>
+                </div>
+              `).join('')
+            : '<div class="empty-state"><p>Checkout links available in AFW DirectPay.</p></div>';
+        }
+
+        if (container) container.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
         toast(`Growth run failed: ${err.message}`, 'error');
       } finally {
@@ -2561,12 +2863,13 @@
     if (sidebarEl) sidebarEl.style.visibility = 'visible';
     if (mainEl) mainEl.style.visibility = 'visible';
 
-    // Apply strict role-based navigation visibility & settings separation
+    // Apply role + entitlement-based navigation visibility & settings separation
     const isCustomer = CONFIG.userRole === 'customer' || (!hasOwnerKey && hasAccessToken);
     const ownerTabs = [
       'dashboard', 'leads', 'outreach', 'organizations', 'revenue',
       'field-force', 'growth', 'mobile', 'trust-chain', 'quality', 'mobility', 'inventory',
       'commercial-os', 'customer-success', 'p4-growth',
+      'p5-scale', 'p6-packs', 'p7-autonomy', 'p8-marketplace',
     ];
     const customerTabs = [
       'portal', 'approvals', 'cw-profile', 'cw-marketplace', 'cw-workforce',
@@ -2610,6 +2913,31 @@
     return true;
   }
 
+  // Unlock vertical product workspaces for paid subscribers based on live /v1/me capabilities
+  function applyCustomerEntitlementNav(capabilities, tier) {
+    if (CONFIG.ownerApiKey) return;
+    const capSet = new Set((capabilities || []).map(c => String(typeof c === 'string' ? c : (c.capability || '')).toLowerCase()));
+    const isAll = capSet.has('all_access') || ['enterprise', 'company_os_enterprise'].includes(String(tier || '').toLowerCase());
+    const capToTabs = [
+      [['growth_all_in_one', 'growth_suite', 'marketing_campaign_suite', 'seo_content_automation', 'pixel_ai_creative_studio'], ['growth', 'p4-growth']],
+      [['customer_discovery', 'lead_generation', 'smb_discovery'], ['leads', 'outreach']],
+      [['field_force_automation', 'delivery_field_force', 'field_force'], ['field-force', 'mobile']],
+      [['computer_vision_quality_analytics', 'produce_quality_cv', 'quality_analytics'], ['quality']],
+      [['spatiotemporal_logistics_optimization', 'bike_mobility_ai', 'mobility_analytics'], ['mobility']],
+      [['warehouse_stocksense', 'inventory_analytics', 'warehouse_automation'], ['inventory']],
+      [['trust_ledger_audit', 'trust_engine'], ['trust-chain']],
+    ];
+    capToTabs.forEach(([reqCaps, tabs]) => {
+      const allowed = isAll || reqCaps.some(c => capSet.has(c));
+      if (allowed) {
+        tabs.forEach(t => {
+          const el = $(`#nav-${t}`);
+          if (el) el.style.display = 'flex';
+        });
+      }
+    });
+  }
+
   function switchAuthTab(tabName) {
     $$('.auth-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
     $$('.auth-tab-content').forEach(c => {
@@ -2650,6 +2978,9 @@
         portal: 'customer',
       });
 
+      CONFIG.ownerApiKey = '';
+      localStorage.removeItem('askforwrite_owner_key');
+      localStorage.removeItem('afw_api_key');
       CONFIG.accessToken = res.access_token;
       CONFIG.userRole = res.role || 'customer';
       CONFIG.userName = res.full_name || email;
@@ -2729,6 +3060,9 @@
         return;
       }
 
+      CONFIG.ownerApiKey = '';
+      localStorage.removeItem('askforwrite_owner_key');
+      localStorage.removeItem('afw_api_key');
       CONFIG.accessToken = res.access_token;
       CONFIG.userRole = res.role || 'customer';
       CONFIG.userName = res.full_name || fullName;
@@ -2777,6 +3111,8 @@
         throw new Error('Invalid Owner API Key (Authentication Failed)');
       }
 
+      CONFIG.accessToken = '';
+      localStorage.removeItem('afw_access_token');
       CONFIG.ownerApiKey = ownerKey;
       CONFIG.userRole = 'owner';
       CONFIG.userName = 'Vipul Choubisa';
@@ -2826,13 +3162,19 @@
     checkAuthGate();
   }
 
-  // ── Live Opportunity Scanner & Lead Magnet ────────────────
+  // ── Live Opportunity Scanner & Lead Magnet (XSS-Hardened) ─
+  function safeHref(url) {
+    const u = String(url || '').trim();
+    if (u.startsWith('/') || u.startsWith('https://') || u.startsWith('http://')) return esc(u);
+    return '#';
+  }
+
   function renderScanResult(data, container) {
     if (!container) return;
     const leaksHtml = (data.top_pain_leaks || []).map(leak => `
       <div class="scanner-leak-item">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;color:#ef4444;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>${leak}</span>
+        <span>${esc(leak)}</span>
       </div>
     `).join('');
 
@@ -2841,15 +3183,15 @@
         <div class="scanner-score-row">
           <div>
             <div style="font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); font-weight:700; letter-spacing:0.05em;">Live Audit Result</div>
-            <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary);">${data.company_name} <span style="font-size:0.85rem; font-weight:400; color:var(--text-muted);">(${data.domain})</span></div>
+            <div style="font-size:1.15rem; font-weight:700; color:var(--text-primary);">${esc(data.company_name || '')} <span style="font-size:0.85rem; font-weight:400; color:var(--text-muted);">(${esc(data.domain || '')})</span></div>
           </div>
           <div class="scanner-score-badge">
             <div style="text-align:right;">
               <div style="font-size:0.7rem; color:var(--text-muted); text-transform:uppercase; font-weight:600;">Opportunity Gap</div>
-              <div class="scanner-score-val">${data.seo_geo_gap_score}/100</div>
+              <div class="scanner-score-val">${esc(String(data.seo_geo_gap_score ?? 0))}/100</div>
             </div>
             <span style="font-size:0.72rem; padding:4px 8px; border-radius:6px; background:rgba(245, 158, 11, 0.15); color:#f59e0b; border:1px solid rgba(245, 158, 11, 0.3); font-weight:700;">
-              ${data.audit_status || 'LIVE_VERIFIED'}
+              ${esc(data.audit_status || 'LIVE_VERIFIED')}
             </span>
           </div>
         </div>
@@ -2865,20 +3207,20 @@
         <div class="scanner-offer-box">
           <div>
             <div style="font-weight:700; color:var(--text-primary); font-size:0.92rem; display:flex; align-items:center; gap:8px;">
-              <span>🚀 ${data.package_name || 'Autonomous SEO & AI Closer Fix Pack'}</span>
-              <span style="font-size:0.72rem; background:rgba(34, 197, 94, 0.2); color:#4ade80; padding:2px 8px; border-radius:10px; font-weight:700;">₹${data.price_inr} / $${data.price_usd}</span>
+              <span>🚀 ${esc(data.package_name || 'Autonomous SEO & AI Closer Fix Pack')}</span>
+              <span style="font-size:0.72rem; background:rgba(34, 197, 94, 0.2); color:#4ade80; padding:2px 8px; border-radius:10px; font-weight:700;">₹${esc(String(data.price_inr ?? 0))} / $${esc(String(data.price_usd ?? 0))}</span>
             </div>
             <div style="font-size:0.78rem; color:var(--text-secondary); margin-top:3px;">
-              ${data.remediation_offer || 'Instant deployment: /llms.txt manifest, structured SEO schema, and 50 live leads.'}
+              ${esc(data.remediation_offer || 'Instant deployment: /llms.txt manifest, structured SEO schema, and 50 live leads.')}
             </div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
-            ${data.preview_url ? `<a href="${data.preview_url}" target="_blank" class="secondary-btn" style="padding:8px 14px; font-size:0.82rem; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
+            ${data.preview_url ? `<a href="${safeHref(data.preview_url)}" target="_blank" rel="noopener" class="secondary-btn" style="padding:8px 14px; font-size:0.82rem; text-decoration:none; display:inline-flex; align-items:center; gap:6px;">
               <span>View Preview</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>` : ''}
-            <a href="${data.checkout_url}" target="_blank" class="primary-btn" style="padding:9px 18px; font-size:0.84rem; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg, #2563eb, #10b981);">
-              <span>Fix Now • ₹${data.price_inr}</span>
+            <a href="${safeHref(data.checkout_url)}" target="_blank" rel="noopener" class="primary-btn" style="padding:9px 18px; font-size:0.84rem; font-weight:700; text-decoration:none; display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg, #2563eb, #10b981);">
+              <span>Fix Now • ₹${esc(String(data.price_inr ?? 0))}</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
             </a>
           </div>
@@ -2937,7 +3279,7 @@
       if (container) {
         container.innerHTML = `
           <div style="padding:14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:var(--radius-sm); color:#fca5a5; font-size:0.85rem;">
-            Failed to audit URL: ${err.message || 'Please check that the website is accessible.'}
+            Failed to audit URL: ${esc(err.message || 'Please check that the website is accessible.')}
           </div>
         `;
       }
@@ -2984,14 +3326,16 @@
           payload = { query: rawParam };
         }
       } else {
-        if (serviceKey === 'pixel_ai_pack') {
-          payload = { product_name: rawParam, target_audience: 'B2B Enterprise Leaders' };
+        if (['pixel_ai_pack', 'seo_blog_copilot', 'marketing_suite', 'growth_all_in_one'].includes(serviceKey)) {
+          payload = { product_name: rawParam, query: rawParam, target_audience: 'B2B Enterprise Leaders' };
         } else if (serviceKey === 'ask4_academic_order') {
           payload = { topic: rawParam };
         } else if (serviceKey === 'mango_quality_analytics') {
-          payload = { crop_variety: rawParam, preset: 'ripe' };
+          payload = { variety: rawParam, crop_variety: rawParam, preset_or_sample: 'ripe', preset: 'ripe' };
+        } else if (['lead_discovery', 'lead_generation', 'customer_discovery'].includes(serviceKey)) {
+          payload = { objective: rawParam, query: rawParam };
         } else {
-          payload = { query: rawParam };
+          payload = { query: rawParam, incoming_message: rawParam };
         }
       }
     }
@@ -3630,7 +3974,10 @@
         iconBar.querySelectorAll('.portal-quick-tool-btn').forEach(btn => {
           btn.addEventListener('click', () => {
             const sel = $('#portal-service-selector');
-            if (sel) sel.value = btn.dataset.portalService;
+            if (sel) {
+              sel.value = btn.dataset.portalService;
+              handleRunTenantService();
+            }
           });
         });
       }
@@ -3849,6 +4196,7 @@
   }
 
   async function cwLoadProfile() {
+    if (!cwIsCustomer()) return;
     try {
       const data = await api('GET', '/v1/me/business-profile');
       const p = data.profile || {};
@@ -4224,7 +4572,7 @@
     try {
       const [contractsRes, ledgerRes] = await Promise.all([
         api('GET', '/v1/revenue/pricing/contracts'),
-        api('GET', '/v1/me/credits/ledger').catch(() => ({ entries: [] })),
+        cwIsCustomer() ? api('GET', '/v1/me/credits/ledger').catch(() => ({ entries: [] })) : Promise.resolve({ entries: [] }),
       ]);
       const tierMap = contractsRes.modular_tier_contracts || {};
       cwState.contracts = Object.entries(tierMap).map(([planKey, obj]) => ({
@@ -4308,11 +4656,16 @@
 
     $('#btn-cw-apply-subscription')?.addEventListener('click', async () => {
       try {
-        await api('POST', '/v1/me/modular-subscription', {
+        const res = await api('POST', '/v1/me/modular-subscription', {
           base_tier: $('#cw-bill-tier')?.value || 'growth',
           addon_modules: cwSplitList($('#cw-bill-addons')?.value),
           credit_packs: Number($('#cw-bill-credits')?.value || 0),
         });
+        if (res?.payment_required && res.checkout_url) {
+          toast('Payment required — opening AFW DirectPay checkout...', 'info');
+          window.open(res.checkout_url, '_blank', 'noopener');
+          return;
+        }
         toast('Modular subscription configured!', 'success');
         await cwLoadBilling();
         await cwHydrateRegistry();
@@ -4324,7 +4677,12 @@
     $('#btn-cw-purchase-credits')?.addEventListener('click', async () => {
       const packs = Math.max(1, Number($('#cw-bill-credits')?.value || 1));
       try {
-        await api('POST', '/v1/me/credits/purchase', { credit_packs: packs });
+        const res = await api('POST', '/v1/me/credits/purchase', { credit_packs: packs });
+        if (res?.payment_required && res.checkout_url) {
+          toast('Opening AFW DirectPay checkout for credit pack...', 'info');
+          window.open(res.checkout_url, '_blank', 'noopener');
+          return;
+        }
         toast(`Purchased ${packs} credit pack(s)`, 'success');
         await cwLoadBilling();
       } catch (e) {
@@ -4334,7 +4692,12 @@
 
     $('#btn-cw-renew-subscription')?.addEventListener('click', async () => {
       try {
-        await api('POST', '/v1/me/subscription/renew', {});
+        const res = await api('POST', '/v1/me/subscription/renew', {});
+        if (res?.payment_required && res.checkout_url) {
+          toast('Opening AFW DirectPay checkout for renewal...', 'info');
+          window.open(res.checkout_url, '_blank', 'noopener');
+          return;
+        }
         toast('Subscription renewed cleanly', 'success');
         await cwLoadBilling();
       } catch (e) {
@@ -5596,7 +5959,7 @@
     try {
       const [mktRes, scoreRes] = await Promise.all([
         api('GET', '/v1/p8/marketplace/overview'),
-        api('GET', '/v1/ops/roadmap-scorecard'),
+        api('GET', '/v1/ops/roadmap-scorecard').catch(() => ({ overall_release_readiness: 'TENANT_VIEW', phases: [] })),
       ]);
       const sum = mktRes.summary || {};
       if ($('#p8-kpi-devs')) $('#p8-kpi-devs').textContent = String(sum.verified_developer_count || 0);
@@ -5949,7 +6312,17 @@
     },
     p8InstallListing: async (listingId) => {
       try {
-        await api('POST', '/v1/p8/marketplace/installs', { listing_id: listingId, config: { source: 'dashboard' } });
+        const payload = { listing_id: listingId, config: { source: 'dashboard' } };
+        if (CONFIG.ownerApiKey) {
+          let orgId = state.organizations?.[0]?.id;
+          if (!orgId) {
+            const orgs = await api('GET', '/v1/accounts/orgs').catch(() => []);
+            const list = Array.isArray(orgs) ? orgs : (orgs.organizations || []);
+            orgId = list[0]?.id;
+          }
+          if (orgId) payload.org_id = orgId;
+        }
+        await api('POST', '/v1/p8/marketplace/installs', payload);
         toast('Marketplace package installed cleanly', 'success');
         await p8LoadControlCentre();
       } catch (e) {

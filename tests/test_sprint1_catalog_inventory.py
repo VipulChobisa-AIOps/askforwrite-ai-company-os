@@ -268,6 +268,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
     def test_inventory_uat_endpoint(self):
         resp = self.client.post(
             "/v1/inventory/uat",
+            headers=self.manager_headers,
             json={
                 "operator_id": "wh-auditor-99",
                 "rating": 5,

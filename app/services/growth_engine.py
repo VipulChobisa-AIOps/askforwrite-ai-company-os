@@ -142,7 +142,7 @@ def generate_and_stage_blog(
         "publisher": {
             "@type": "Organization",
             "name": "AskforWrite Company AI OS",
-            "logo": {"@type": "ImageObject", "url": "https://os.askforwrite.com/dashboard/logo.png"},
+            "logo": {"@type": "ImageObject", "url": "https://os.askforwrite.com/dashboard/icon-512.svg"},
         },
         "mainEntityOfPage": f"{target_domain}/{slug}",
     }
@@ -195,7 +195,7 @@ def generate_and_stage_blog(
                 "@id": "https://askforwrite.com/#organization",
                 "name": "AskforWrite AI Solutions",
                 "url": "https://askforwrite.com",
-                "logo": "https://os.askforwrite.com/dashboard/logo.png",
+                "logo": "https://os.askforwrite.com/dashboard/icon-512.svg",
             },
             {
                 "@type": "SoftwareApplication",
@@ -426,7 +426,7 @@ def generate_omnichannel_social_campaign(
         (
             f"4/4 Ready to automate your inbound revenue pipeline?\n\n"
             f"See the live Trojan-Horse preview and deploy {product_name} in under 5 minutes:\n"
-            f"👉 https://os.askforwrite.com/portal"
+            f"👉 https://os.askforwrite.com/dashboard/#portal"
         ),
     ]
 
@@ -441,10 +441,10 @@ def generate_omnichannel_social_campaign(
             "✅ Closes inquiries on WhatsApp 24/7 with instant payment links\n\n"
             "💡 *Common Concern:* \"Will it sound like a generic robot?\"\n"
             "Not at all. The engine uses your exact brand voice, understands Indian market nuances, and delivers human-grade closing with zero delays.\n\n"
-            "👉 Tap here to view your live preview and get started: https://os.askforwrite.com/checkout?pkg=growth_all_in_one"
+            "👉 Tap here to view your live preview and get started: https://os.askforwrite.com/v1/pay/checkout?package=growth_all_in_one"
         ),
         "objection_killer": "Start on a modular tier and validate outputs in sandbox simulation before any live external send.",
-        "checkout_cta": "https://os.askforwrite.com/checkout?pkg=growth_all_in_one",
+        "checkout_cta": "https://os.askforwrite.com/v1/pay/checkout?package=growth_all_in_one",
     }
 
     return {
@@ -469,7 +469,7 @@ def generate_omnichannel_social_campaign(
                 "• Structured ad & SEO draft generation grounded in your brand brief\n"
                 "• Human-in-the-Loop approval gate before live publishing or outreach\n"
                 f"• Real-time lead response on WhatsApp within 3 seconds\n\n"
-                f"Explore the autonomous operating model: https://os.askforwrite.com/portal"
+                f"Explore the autonomous operating model: https://os.askforwrite.com/dashboard/#portal"
             ),
             "call_to_action": "Read Case Study",
         },

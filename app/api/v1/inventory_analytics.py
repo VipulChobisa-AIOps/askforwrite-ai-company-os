@@ -130,10 +130,13 @@ def get_reorder_recommendations(
 @router.post("/uat")
 def submit_inventory_uat(
     payload: InventoryUATRequest,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Submit warehouse manager UAT survey feedback into operational ledger."""
+    check_tenant_entitlement(principal, "inventory_analytics", db)
     entry = log_inventory_uat(
-        operator_id=payload.operator_id,
+        operator_id=payload.operator_id or principal.subject,
         rating=payload.rating,
         notes=payload.notes,
         discrepancy_reported=payload.discrepancy_reported,

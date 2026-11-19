@@ -14,6 +14,7 @@ No API-Key role is needed; the JWT itself carries user_id, org_id, and role.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -87,6 +88,7 @@ class InvoiceSummary(BaseModel):
 
     invoice_id: str
     amount: int
+    amount_major: float = 0.0
     currency: str
     status: str
     provider: str
@@ -291,10 +293,87 @@ def get_me(
         is_active=user.is_active,
         credits=_credit_usage(org),
         capabilities=_build_capability_entries(entitled),
-        portal_url="https://os.askforwrite.com/portal",
+        portal_url="https://os.askforwrite.com/dashboard/#portal",
         has_custom_gemini_key=has_custom,
         gemini_key_masked=masked,
     )
+
+
+def _require_org_admin_write_access(principal: APIPrincipal) -> None:
+    """Block non-admin organization members (member/field_agent/viewer) from mutating billing, keys, or controls."""
+    role = (principal.role or "").strip().lower()
+    if role in ("member", "field_agent", "viewer", "readonly"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization admin privileges are required for this action.",
+        )
+
+
+def _maybe_require_production_checkout(
+    *,
+    principal: APIPrincipal,
+    db: Session,
+    org_id: str,
+    base_tier: str,
+    addon_modules: list[str] | None = None,
+    credit_packs: int = 0,
+    currency: str = "INR",
+    action: str = "configure",
+) -> dict[str, Any] | None:
+    """In live production, prevent non-owner users from self-upgrading to paid tiers or minting credits for ₹0.
+
+    Returns a payment-required checkout payload pointing to AFW DirectPay when payment is required,
+    or None when the change may proceed immediately (dev/test, platform owner/manager, or free/downgrade).
+    """
+    is_prod = os.getenv("APP_ENV", "").strip().lower() == "production"
+    if not is_prod or principal.role in ("owner", "manager"):
+        return None
+    clean_tier = (base_tier or "free").strip().lower()
+    is_paid_request = (
+        action == "purchase_credits"
+        or credit_packs > 0
+        or bool(addon_modules)
+        or clean_tier not in ("free", "starter_free", "trial")
+    )
+    if not is_paid_request or action in ("downgrade", "cancel"):
+        return None
+
+    org = db.get(OrganizationRecord, org_id)
+    user = db.get(UserRecord, principal.user_id) if principal.user_id else None
+    from app.services.catalog import CATALOG
+    from app.services.sovereign_pay import create_sovereign_pay_session
+
+    tier_to_pkg = {
+        "starter": "company_os_starter",
+        "growth": "growth_all_in_one",
+        "business_pro": "company_os_pro",
+        "pro": "company_os_pro",
+        "enterprise": "company_os_enterprise",
+    }
+    pkg_key = tier_to_pkg.get(clean_tier, clean_tier)
+    if pkg_key not in CATALOG:
+        pkg_key = "growth_all_in_one"
+
+    pay_session = create_sovereign_pay_session(
+        package_key=pkg_key,
+        company_name=org.name if org else "AskforWrite Subscriber",
+        customer_email=(user.email if user else principal.subject) or "billing@askforwrite.com",
+        currency=currency or "INR",
+        preferred_rail="upi_direct",
+        db=db,
+    )
+    return {
+        "status": "PAYMENT_REQUIRED",
+        "payment_required": True,
+        "org_id": org_id,
+        "package_key": pkg_key,
+        "session_id": pay_session.session_id,
+        "checkout_url": pay_session.checkout_url,
+        "upi_uri": pay_session.upi_uri,
+        "amount": pay_session.amount,
+        "currency": pay_session.currency,
+        "message": "Complete payment via AFW DirectPay checkout to activate this subscription upgrade or credit pack.",
+    }
 
 
 @router.post(
@@ -309,6 +388,7 @@ def update_me_gemini_key(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Save or clear the tenant's Bring-Your-Own-Key Gemini API Key."""
+    _require_org_admin_write_access(principal)
     user = db.get(UserRecord, principal.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -394,6 +474,7 @@ def get_me_billing(
         InvoiceSummary(
             invoice_id=inv.id,
             amount=inv.amount,
+            amount_major=round(float(inv.amount) / 100.0, 2),
             currency=inv.currency,
             status=inv.status,
             provider=inv.provider,
@@ -699,11 +780,11 @@ def use_tenant_service(
 
     if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading"):
         from app.services.quality_analytics import execute_produce_quality_inspection
-        variety = input_payload.get("variety", "Alphonso Mango")
+        variety = input_payload.get("variety") or input_payload.get("crop_variety") or "Alphonso Mango"
         lot_id = input_payload.get("lot_id") or input_payload.get("batch_lot_id") or f"LOT-PORTAL-{uuid.uuid4().hex[:6].upper()}"
         res = execute_produce_quality_inspection(
             db=db,
-            preset_or_sample=input_payload.get("preset", "ripe"),
+            preset_or_sample=input_payload.get("preset_or_sample") or input_payload.get("preset") or "ripe",
             batch_lot_id=lot_id,
             crop_variety=variety,
             idempotency_key=f"portal-mango-{uuid.uuid4()}",
@@ -801,10 +882,11 @@ def use_tenant_service(
 
     elif service_key in ("seo_blog_copilot", "seo_copilot"):
         from app.services.growth_engine import generate_and_stage_blog
+        prod_name = input_payload.get("product_name") or input_payload.get("query") or org.name
         exec_result = generate_and_stage_blog(
-            product_name=input_payload.get("product_name", org.name),
+            product_name=prod_name,
             target_audience=input_payload.get("target_audience", "B2B Decision Makers"),
-            keywords=input_payload.get("keywords", [org.name, "AI Automation", "Enterprise Growth"]),
+            keywords=input_payload.get("keywords", [prod_name, "AI Automation", "Enterprise Growth"]),
         )
 
     elif service_key in ("managed_seo_content_pilot", "managed_pilot"):
@@ -865,21 +947,22 @@ def use_tenant_service(
 
     elif service_key in ("marketing_suite", "omnichannel_social"):
         from app.services.growth_engine import generate_omnichannel_social_campaign
+        prod_name = input_payload.get("product_name") or input_payload.get("query") or org.name
         exec_result = generate_omnichannel_social_campaign(
-            product_name=input_payload.get("product_name", org.name),
+            product_name=prod_name,
             target_audience=input_payload.get("target_audience", "B2B Decision Makers"),
-            keywords=input_payload.get("keywords", [org.name, "Growth Automation"]),
+            keywords=input_payload.get("keywords", [prod_name, "Growth Automation"]),
         )
 
     elif service_key in ("growth_all_in_one", "growth_suite"):
         from app.services.growth_engine import execute_unified_growth_run
-        prod_name = input_payload.get("product_name") or input_payload.get("product_or_service") or org.name
+        prod_name = input_payload.get("product_name") or input_payload.get("product_or_service") or input_payload.get("query") or org.name
         exec_result = execute_unified_growth_run(
             db=db,
             client_name=input_payload.get("client_name", org.name),
             product_or_service=prod_name,
             target_audience=input_payload.get("target_audience", "B2B Enterprise Buyers"),
-            keywords=input_payload.get("keywords", [org.name, "AI Operations", "Growth"]),
+            keywords=input_payload.get("keywords", [prod_name, "AI Operations", "Growth"]),
             correlation_id=str(uuid.uuid4()),
             agent_id=user.email,
             idempotency_key=f"portal-growth-{uuid.uuid4()}",
@@ -888,7 +971,7 @@ def use_tenant_service(
     elif service_key in ("lead_discovery", "customer_discovery", "lead_generation"):
         from app.services.discovery import execute_discovery
         from app.services.watchdog import _VerifiedSimulationSourceProvider
-        objective = input_payload.get("objective", f"B2B enterprise prospects for {org.name}")
+        objective = input_payload.get("objective") or input_payload.get("query") or f"B2B enterprise prospects for {org.name}"
         limit = max(1, min(int(input_payload.get("limit", 2)), 10))
         exec_result = execute_discovery(
             db=db,
@@ -937,17 +1020,19 @@ def use_tenant_service(
             "trust_block_hash": block.block_hash,
         }
 
-    elif service_key in ("sales_capture", "sales_proposal", "revenue_engine", "inbound_sales_closer"):
+    elif service_key in ("sales_capture", "sales_proposal", "revenue_engine", "inbound_sales_closer", "support_followup", "customer_ops"):
         from app.services.growth_engine import handle_inbound_sales_chat
+        default_msg = (
+            "Follow up on customer support ticket and share onboarding next steps."
+            if service_key in ("support_followup", "customer_ops")
+            else "We are ready to buy the Managed SEO & Content Pilot and automate lead discovery."
+        )
         exec_result = handle_inbound_sales_chat(
             db=db,
             session_id=f"portal-sales-{uuid.uuid4().hex[:8]}",
             prospect_name=input_payload.get("prospect_name", user.full_name or "Enterprise Buyer"),
             prospect_contact=input_payload.get("prospect_email", user.email),
-            message=input_payload.get(
-                "incoming_message",
-                "We are ready to buy the Managed SEO & Content Pilot and automate lead discovery.",
-            ),
+            message=input_payload.get("incoming_message") or input_payload.get("query") or default_msg,
             channel=input_payload.get("channel", "web_chat"),
             requested_by=user.email,
         )
@@ -1169,6 +1254,7 @@ def save_tenant_business_profile(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Persist full 13-field SME Business Profile into DB, extract requirements, and generate explainable recommendations."""
+    _require_org_admin_write_access(principal)
     from app.services.onboarding import save_profile_and_generate_recommendations
     from app.services.watchdog import assess_sme_business_requirements
 
@@ -1292,10 +1378,23 @@ def confirm_tenant_business_profile(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Explicit customer confirmation step for recommended SME services and subscription."""
+    _require_org_admin_write_access(principal)
     from app.services.onboarding import confirm_recommended_selection
 
     if not principal.org_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant organization required")
+    if body.activate_selection:
+        gate = _maybe_require_production_checkout(
+            principal=principal,
+            db=db,
+            org_id=principal.org_id,
+            base_tier=body.base_plan_key,
+            addon_modules=body.selected_modules,
+            currency=body.currency,
+            action="configure",
+        )
+        if gate is not None:
+            return gate
     try:
         return confirm_recommended_selection(
             db,
@@ -1322,6 +1421,7 @@ def configure_tenant_modular_subscription(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Compose a modular SME subscription and persist the 15-field contract + credits."""
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
     from app.services.catalog import get_modular_pricing_contract
 
@@ -1331,6 +1431,19 @@ def configure_tenant_modular_subscription(
     org = db.get(OrganizationRecord, user.org_id)
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+
+    gate = _maybe_require_production_checkout(
+        principal=principal,
+        db=db,
+        org_id=org.id,
+        base_tier=body.base_tier,
+        addon_modules=body.addon_modules,
+        credit_packs=body.credit_packs,
+        currency=body.currency,
+        action="configure",
+    )
+    if gate is not None:
+        return gate
 
     res = apply_subscription_configuration(
         db,
@@ -1373,10 +1486,23 @@ def upgrade_tenant_subscription(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
 
     if not principal.org_id:
         raise HTTPException(status_code=400, detail="Tenant organization required")
+    gate = _maybe_require_production_checkout(
+        principal=principal,
+        db=db,
+        org_id=principal.org_id,
+        base_tier=body.base_tier,
+        addon_modules=body.addon_modules,
+        credit_packs=body.credit_packs,
+        currency=body.currency,
+        action="upgrade",
+    )
+    if gate is not None:
+        return gate
     return apply_subscription_configuration(
         db,
         org_id=principal.org_id,
@@ -1401,6 +1527,7 @@ def downgrade_tenant_subscription(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
 
     if not principal.org_id:
@@ -1429,6 +1556,7 @@ def cancel_tenant_subscription(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
 
     if not principal.org_id:
@@ -1447,10 +1575,21 @@ def renew_tenant_subscription(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
 
     if not principal.org_id:
         raise HTTPException(status_code=400, detail="Tenant organization required")
+    org = db.get(OrganizationRecord, principal.org_id)
+    gate = _maybe_require_production_checkout(
+        principal=principal,
+        db=db,
+        org_id=principal.org_id,
+        base_tier=org.tier if org else "growth",
+        action="renew",
+    )
+    if gate is not None:
+        return gate
     return apply_subscription_configuration(
         db,
         org_id=principal.org_id,
@@ -1465,10 +1604,21 @@ def purchase_tenant_credits(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.billing_ledger import apply_subscription_configuration
 
     if not principal.org_id:
         raise HTTPException(status_code=400, detail="Tenant organization required")
+    gate = _maybe_require_production_checkout(
+        principal=principal,
+        db=db,
+        org_id=principal.org_id,
+        base_tier="growth",
+        credit_packs=body.credit_packs,
+        action="purchase_credits",
+    )
+    if gate is not None:
+        return gate
     return apply_subscription_configuration(
         db,
         org_id=principal.org_id,
@@ -1598,6 +1748,7 @@ def trigger_tenant_emergency_stop(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.services.execution_guard import set_emergency_stop
 
     if not principal.org_id:
@@ -1739,6 +1890,7 @@ def decide_tenant_approval(
     principal: APIPrincipal = Depends(get_current_principal),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
+    _require_org_admin_write_access(principal)
     from app.db.models import ApprovalRequest, WorkflowRunRecord
 
     if not principal.org_id:

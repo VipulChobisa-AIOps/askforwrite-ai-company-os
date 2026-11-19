@@ -447,7 +447,7 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
         "wordpress_publisher": {"seo_content_automation", "seo_blog_copilot", "managed_seo_content_pilot", "all_access"},
         "marketing_suite": {"marketing_campaign_suite", "marketing_suite", "all_access"},
         "omnichannel_social": {"marketing_campaign_suite", "marketing_suite", "all_access"},
-        "growth_all_in_one": {"growth_all_in_one", "all_access"},
+        "growth_all_in_one": {"growth_all_in_one", "growth_suite", "all_access"},
         "growth_suite": {"growth_all_in_one", "growth_suite", "all_access"},
         "trust_engine": {"trust_ledger_audit", "trust_engine", "all_access"},
         "trust_ledger": {"trust_ledger_audit", "trust_engine", "all_access"},
@@ -472,6 +472,9 @@ def is_service_entitled(service_key: str, entitled_caps: set[str], pkg_key: str 
         if clean_pkg == clean_key or clean_pkg in required:
             return True
         if clean_pkg in ("all_access", "company_os_enterprise", "enterprise"):
+            return True
+    if clean_key in ("growth_suite", "growth_all_in_one"):
+        if {"marketing_campaign_suite", "seo_content_automation"}.issubset(entitled_caps):
             return True
     return bool(required & entitled_caps) or clean_key in entitled_caps
 

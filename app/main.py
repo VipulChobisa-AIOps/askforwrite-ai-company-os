@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -1754,3 +1754,65 @@ def fulfill_pending_orders_endpoint(
         limit=limit,
         fulfilled_by=principal.subject,
     )
+
+
+@app.get("/portal", include_in_schema=False)
+def redirect_customer_portal() -> RedirectResponse:
+    """Canonical shortcut to the self-serve Customer Portal inside the dashboard."""
+    return RedirectResponse(url="/dashboard/#portal", status_code=302)
+
+
+@app.get("/checkout", include_in_schema=False)
+def redirect_checkout(
+    pkg: str | None = Query(default=None),
+    package: str | None = Query(default=None),
+    company: str | None = Query(default=None),
+) -> RedirectResponse:
+    """Canonical shortcut for marketing/WhatsApp links pointing to /checkout."""
+    from urllib.parse import urlencode
+
+    params: dict[str, str] = {}
+    resolved_pkg = package or pkg or "growth_all_in_one"
+    params["package"] = resolved_pkg
+    if company:
+        params["company"] = company
+    return RedirectResponse(url=f"/v1/pay/checkout?{urlencode(params)}", status_code=302)
+
+
+@app.get("/activate", include_in_schema=False)
+def activate_workspace_landing(
+    token: str | None = Query(default=None),
+) -> HTMLResponse:
+    """Landing confirmation for welcome-email activation links (/activate?token=...)."""
+    import html as _html
+
+    safe_note = (
+        "Your workspace activation token has been received. Sign in below with your registered email and password (or temporary credentials from your welcome email)."
+        if token
+        else "Your AskforWrite AI Company OS workspace is ready. Sign in to access your dashboard."
+    )
+    body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workspace Activated — AskforWrite AI Company OS</title>
+  <style>
+    body {{ margin:0; font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; background:#090a0f; color:#f8fafc; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }}
+    .box {{ max-width:460px; width:100%; background:#111521; border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:32px; text-align:center; box-shadow:0 24px 60px rgba(0,0,0,0.6); }}
+    .badge {{ display:inline-block; padding:4px 12px; border-radius:999px; background:rgba(16,185,129,0.14); color:#10b981; font-size:0.78rem; font-weight:700; margin-bottom:14px; }}
+    h1 {{ font-size:1.45rem; margin:0 0 10px; }}
+    p {{ color:#94a3b8; font-size:0.92rem; line-height:1.55; margin:0 0 24px; }}
+    a.btn {{ display:inline-block; background:#ffffff; color:#090a0f; font-weight:700; text-decoration:none; padding:12px 22px; border-radius:10px; }}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="badge">✓ WORKSPACE READY</div>
+    <h1>AskforWrite AI Company OS</h1>
+    <p>{_html.escape(safe_note)}</p>
+    <a class="btn" href="/dashboard/#portal">Open Customer Login →</a>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=body, status_code=200)

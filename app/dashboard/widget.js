@@ -54,11 +54,14 @@
       position: fixed;
       bottom: 24px;
       right: 24px;
-      z-index: 999999;
+      z-index: 900;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 14px;
       line-height: 1.5;
       color: #f3f4f6;
+    }
+    body.afw-hide-floating-closer .afw-widget-container {
+      display: none !important;
     }
     .afw-launcher-btn {
       width: 60px;
@@ -119,7 +122,7 @@
       opacity: 0;
       transform: translateY(20px) scale(0.96);
       pointer-events: none;
-      z-index: 999999;
+      z-index: 900;
     }
     .afw-chat-window.afw-open {
       opacity: 1;

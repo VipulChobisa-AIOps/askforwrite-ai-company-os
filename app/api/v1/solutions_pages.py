@@ -45,7 +45,7 @@ SOLUTION_SLUGS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "q": "What is the pricing and turnaround time?",
-                "a": "Plans start at ₹1,499/month ($25 USD) with instant self-serve workspace provisioning and sub-second replenishment calculation."
+                "a": "Plans start at ₹4,999/month ($59 USD) with instant self-serve workspace provisioning and sub-second replenishment calculation."
             },
             {
                 "q": "Can we verify payment and tax compliance automatically?",
@@ -76,7 +76,7 @@ SOLUTION_SLUGS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "q": "How quickly can a field team onboard?",
-                "a": "Self-serve onboarding takes under 2 minutes after checkout (`₹999/mo` or `$19/mo`), with immediate API and Customer Portal access."
+                "a": "Self-serve onboarding takes under 2 minutes after checkout (`₹3,999/mo` or `$49/mo`), with immediate API and Customer Portal access."
             }
         ],
     },
@@ -104,7 +104,7 @@ SOLUTION_SLUGS: Dict[str, Dict[str, Any]] = {
             },
             {
                 "q": "How much does the Produce Quality AI suite cost?",
-                "a": "₹999/month ($15 USD) with unlimited batch grading runs via the Customer Portal and API."
+                "a": "₹3,999/month ($49 USD) with unlimited batch grading runs via the Customer Portal and API."
             }
         ],
     },
@@ -415,7 +415,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
         <section>
             <h2>Verified Platform Deliverables &amp; API Execution</h2>
             <ul>{deliverables_html}</ul>
-            <p style="font-size:0.9rem;color:#94a3b8;">Authenticated customers can execute this workflow immediately via <code>POST /v1/me/use-service</code> with <code>{{"service_sku": "{sku_key}"}}</code> or through the Self-Serve Customer Portal at <code>/portal</code>.</p>
+            <p style="font-size:0.9rem;color:#94a3b8;">Authenticated customers can execute this workflow immediately via <code>POST /v1/me/use-service</code> with <code>{{"service_key": "{sku_key}"}}</code> or through the Self-Serve Customer Portal at <code>/dashboard/#portal</code>.</p>
         </section>
 
         <section>
