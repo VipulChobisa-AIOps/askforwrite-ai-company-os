@@ -26,9 +26,9 @@ services:
       - key: NEON_DATABASE_URL
         sync: false
       - key: MANAGER_API_KEY
-        generateValue: true
+        value: "x_NwJFYiaMGYDs2k2Ztqyav0FxQd98hn1szgMRSta6AIBJuvpYnJ2c7BY5nuINcI"
       - key: OWNER_API_KEY
-        generateValue: true
+        value: "JCNgmM5bVjXTKLaBwfAcP8E_uRxGBvp9XaF-xB5c_LhXDL0w5nnk4HOaIy6qeoGC"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY
@@ -204,9 +204,9 @@ services:
       - key: PAYPAL_CANCEL_URL
         value: "https://askforwrite.in/payment/cancel"
       - key: MANAGER_API_KEY
-        generateValue: true
+        value: "x_NwJFYiaMGYDs2k2Ztqyav0FxQd98hn1szgMRSta6AIBJuvpYnJ2c7BY5nuINcI"
       - key: OWNER_API_KEY
-        generateValue: true
+        value: "JCNgmM5bVjXTKLaBwfAcP8E_uRxGBvp9XaF-xB5c_LhXDL0w5nnk4HOaIy6qeoGC"
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY
