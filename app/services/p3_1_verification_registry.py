@@ -17,8 +17,6 @@ import os
 import re
 import shutil
 import time
-import urllib.error
-import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -320,25 +318,33 @@ def _parse_render_services() -> dict[str, Any]:
 
 
 def _probe_health_url(url: str, timeout_seconds: float) -> dict[str, Any]:
+    from urllib.parse import urlparse
+    import httpx
+
     t0 = time.monotonic()
-    req = urllib.request.Request(url, headers={"User-Agent": "AskforWrite-P31-Verifier"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
-            body = resp.read(512).decode("utf-8", errors="replace")
-            return {
-                "url": url,
-                "reachable": 200 <= resp.status < 300,
-                "http_status": resp.status,
-                "latency_ms": round((time.monotonic() - t0) * 1000.0, 1),
-                "body_excerpt": body[:240],
-            }
-    except urllib.error.HTTPError as exc:
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return {
             "url": url,
             "reachable": False,
-            "http_status": exc.code,
+            "http_status": None,
             "latency_ms": round((time.monotonic() - t0) * 1000.0, 1),
-            "error": str(exc),
+            "error": f"Disallowed or invalid health probe URL scheme: '{parsed.scheme}'",
+        }
+    try:
+        resp = httpx.get(
+            url,
+            headers={"User-Agent": "AskforWrite-P31-Verifier"},
+            timeout=timeout_seconds,
+            follow_redirects=False,
+        )
+        body = (resp.text or "")[:512]
+        return {
+            "url": url,
+            "reachable": 200 <= resp.status_code < 300,
+            "http_status": resp.status_code,
+            "latency_ms": round((time.monotonic() - t0) * 1000.0, 1),
+            "body_excerpt": body[:240],
         }
     except Exception as exc:
         return {

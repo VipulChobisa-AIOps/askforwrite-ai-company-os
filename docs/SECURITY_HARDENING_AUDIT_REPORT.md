@@ -6,6 +6,12 @@
 **Overall Release Readiness:** **`BLOCKED`**
 **Production Cutover Approved:** **`false`**
 
+> **Canonical Reconciliation Addendum (2026-11-23 — Audit against `main`):**
+> - **Credential Exposure Correction:** The historical diff scan below (Section 1 item 3 / Section 5.1) missed literal `OWNER_API_KEY` and `MANAGER_API_KEY` values that were already present in `render.yaml` (both production and staging blocks). Both literals have now been replaced with `sync: false` in `render.yaml`. Those previously committed values **must be treated as compromised**, revoked and rotated in Render Dashboard, and checked against access logs before production cutover.
+> - **P0 Code Remediations Applied on `main`:** Issue #12 (WordPress fail-closed HITL approval + distinct `PUBLISHED`/`SIMULATED`/`PUBLISH_FAILED` states + idempotent reconciliation), Issue #14 (Field Force `delivery_field_force` entitlement + tenant scope + canonical `principal.user_id` ownership on every route), Issue #15 (provisioning fail-closed with zero `company_os_starter` fallbacks across DirectPay/Razorpay/PayPal), Issue #13 (minor-unit refund regression coverage), and Bandit `B104`/`B310` remediation (`0` Medium/High findings).
+> - **Database Status Alignment:** Isolated Neon staging (`afw_staging` -> `afw_restore_drill`) passed `STAGING_VERIFIED` backup/restore parity, while production `neondb` remains untouched and requires an owner-authorized backup + migration window (including revision `p6e1f2a3b4c5`).
+> - **Release Cutover Status:** Remains **`BLOCKED`** (`production_cutover_approved: false`) until Render secret rotation, live staging deployment & health/RBAC/E2E verification, production DB backup/migration, and real payment settlement verification complete.
+
 ---
 
 ## 1. Executive Summary

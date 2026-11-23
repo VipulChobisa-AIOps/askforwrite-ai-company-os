@@ -319,6 +319,11 @@ def _recorded_page(
     allowed_5xx_paths: tuple[str, ...] = (),
 ) -> Generator[tuple[BrowserContext, Page, dict[str, list[str]]], None, None]:
     context = browser.new_context(viewport={"width": width, "height": height})
+    # Keep isolated local E2E deterministic even if external font CDNs are unreachable
+    context.route(
+        re.compile(r"^https?://fonts\.(googleapis|gstatic)\.com/"),
+        lambda route: route.fulfill(status=200, content_type="text/css", body=""),
+    )
     page = context.new_page()
     telemetry: dict[str, list[str]] = {
         "console_errors": [],

@@ -276,7 +276,7 @@ def decide_approval(
                 external_action_performed = True
                 auto_executed_action = "outreach_dispatched"
 
-        # 2. Linked SEO draft live publishing via 4-site WordPress Bridge
+        # 2. Linked SEO draft publishing via WordPress Bridge (fail-closed — never mask failures as PUBLISHED)
         seo_draft = (
             db.query(SeoDraftRecord).filter_by(approval_id=approval.id).first()
             or (db.query(SeoDraftRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
@@ -287,20 +287,34 @@ def decide_approval(
         gate_type = getattr(approval, "gate_type", None) or (approval.detail.get("gate_type") if approval.detail else None)
         if seo_draft or gate_type == "live_publishing" or approval.action == "live_publishing":
             if seo_draft:
-                from app.services.wordpress_publisher import publish_seo_draft_to_wordpress
+                if not seo_draft.approval_id:
+                    seo_draft.approval_id = approval.id
+                    db.add(seo_draft)
+                db.flush()
+                from app.services.wordpress_publisher import WordPressPublishError, publish_seo_draft_to_wordpress
                 try:
-                    publish_seo_draft_to_wordpress(
+                    wp_result = publish_seo_draft_to_wordpress(
                         db=db,
                         draft_id=seo_draft.id,
                         correlation_id=effective_corr_id,
                         published_by=decided_by,
                     )
-                except Exception:
-                    seo_draft.status = "PUBLISHED"
-                    seo_draft.decided_at = datetime.now(UTC)
-                    db.add(seo_draft)
-            external_action_performed = True
-            auto_executed_action = "seo_draft_published"
+                    wp_status = wp_result.get("status")
+                    if wp_status == "PUBLISHED":
+                        external_action_performed = True
+                        auto_executed_action = "seo_draft_published"
+                    elif wp_status == "SIMULATED":
+                        external_action_performed = False
+                        auto_executed_action = "seo_draft_simulated"
+                    else:
+                        external_action_performed = False
+                        auto_executed_action = "seo_draft_publish_failed"
+                except (WordPressPublishError, RuntimeError):
+                    external_action_performed = False
+                    auto_executed_action = "seo_draft_publish_failed"
+            else:
+                external_action_performed = False
+                auto_executed_action = "seo_draft_approved_no_draft_found"
 
         # 3. Linked Marketing Campaign auto-dispatch
         from app.db.models import MarketingCampaignRecord

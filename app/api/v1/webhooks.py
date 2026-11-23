@@ -191,11 +191,11 @@ async def payment_webhook_endpoint(
 
     # P2 Commercial Settlement Reconciliation hook (only after signature + provisioning checks)
     p2_reconciliation = None
-    if provision_result is not None:
+    if provision_result is not None and provision_result.get("package_key"):
         from app.services.p2_proposal_settlement import reconcile_verified_payment
 
         p2_email = str(provision_result.get("email") or "").strip() or None
-        p2_pkg = str(provision_result.get("package_key") or "managed_seo_content_pilot")
+        p2_pkg = str(provision_result.get("package_key") or "")
         raw_payload = event.data if isinstance(event.data, dict) else {}
         p2_amt = 0.0
         p2_curr = "INR"

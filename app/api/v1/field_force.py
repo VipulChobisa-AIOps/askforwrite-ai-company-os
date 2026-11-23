@@ -1,10 +1,15 @@
 """AskforWrite Autonomous Field Force Engine API router.
 
+Enforces paid entitlement (`delivery_field_force`), tenant scope (`org_id`),
+and canonical `principal.user_id` member ownership on EVERY endpoint (Issue #14).
+
 Endpoints for:
 - Geofence management (create hubs/client sites, list)
-- Zero-Trust attendance check-in (anti-spoofing, speed anomaly check, cryptographic sealing)
-- Attendance check-out
+- Zero-Trust attendance check-in & check-out (anti-spoofing, velocity checks, cryptographic sealing)
 - Tamper-evident attendance history & muster
+- Field tasks, autonomous dispatch, dynamic route optimization
+- Client visit verification, voice debrief, visit history
+- Fraud-proof conveyance calculation, claim submission, and claim listing
 """
 
 from __future__ import annotations
@@ -80,12 +85,32 @@ def require_field_member(
     return principal
 
 
-def _is_matching_user(principal: APIPrincipal, candidate_id: str | None) -> bool:
-    """Check if candidate_id matches authenticated principal's user_id, subject, or email."""
-    if not candidate_id:
-        return False
-    allowed = {c for c in (principal.user_id, principal.subject, principal.email) if c}
-    return candidate_id in allowed
+def _require_canonical_member_user_id(principal: APIPrincipal) -> str:
+    """Return canonical principal.user_id for member ownership/filtering (never fall back to email-like subject)."""
+    if not principal.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Canonical user_id claim is required for member field-force operations",
+        )
+    return principal.user_id
+
+
+def _enforce_member_self_ownership(
+    principal: APIPrincipal,
+    candidate_user_id: str | None,
+    *,
+    action_description: str,
+) -> str | None:
+    """Enforce that non-manager members only act on or query their own canonical principal.user_id."""
+    if principal.role != "member" or principal.is_platform_operator:
+        return candidate_user_id
+    canonical_uid = _require_canonical_member_user_id(principal)
+    if candidate_user_id is not None and candidate_user_id != canonical_uid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Members may only {action_description} for their own user_id",
+        )
+    return canonical_uid
 
 
 def _ensure_target_user_in_org(db: Session, principal: APIPrincipal, candidate_user_id: str | None) -> None:
@@ -98,6 +123,23 @@ def _ensure_target_user_in_org(db: Session, principal: APIPrincipal, candidate_u
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: target user belongs to another organization",
         )
+
+
+def _authorize_field_read(
+    db: Session,
+    principal: APIPrincipal,
+    requested_user_id: str | None,
+    *,
+    action_description: str,
+) -> str | None:
+    """Shared guard for all Field Force read/list routes: entitlement + tenant scope + canonical member ownership."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, requested_user_id)
+    return _enforce_member_self_ownership(
+        principal,
+        requested_user_id,
+        action_description=action_description,
+    )
 
 
 # ── Geofence Management ────────────────────────────────────────────────
@@ -142,14 +184,16 @@ def checkin_endpoint(
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Performs zero-trust presence verification and cryptographically seals check-in.
-
-    Validates anti-mock GPS sensors, checks velocity teleportation anomalies,
-    verifies geofence boundaries, and seals into the ECDSA P-256 trust chain.
-    """
+    """Performs zero-trust presence verification and cryptographically seals check-in."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
-    if principal.user_id:
+    if principal.role == "member" and not principal.is_platform_operator:
+        payload.user_id = _enforce_member_self_ownership(
+            principal,
+            payload.user_id,
+            action_description="record attendance check-in",
+        ) or _require_canonical_member_user_id(principal)
+    elif principal.user_id:
         payload.user_id = principal.user_id
 
     try:
@@ -206,7 +250,13 @@ def checkout_endpoint(
     """Performs end-of-shift check-out and cryptographic sealing."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
-    if principal.user_id:
+    if principal.role == "member" and not principal.is_platform_operator:
+        payload.user_id = _enforce_member_self_ownership(
+            principal,
+            payload.user_id,
+            action_description="record attendance check-out",
+        ) or _require_canonical_member_user_id(principal)
+    elif principal.user_id:
         payload.user_id = principal.user_id
 
     try:
@@ -228,11 +278,12 @@ def attendance_history_endpoint(
     db: Session = Depends(get_db),
 ):
     """Returns append-only attendance records sealed in the ledger."""
-    # Members can only view their own records; Managers can view all tenant records
-    target_user_id = user_id
-    if principal.role == "member":
-        target_user_id = principal.user_id or principal.subject
-
+    target_user_id = _authorize_field_read(
+        db,
+        principal,
+        user_id,
+        action_description="view attendance history",
+    )
     return get_attendance_history(
         db=db,
         org_id=principal.org_id,
@@ -268,11 +319,13 @@ def list_tasks_endpoint(
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Lists field tasks. Members only see their own assigned tasks."""
-    target_user_id = user_id
-    if principal.role == "member":
-        target_user_id = principal.user_id or principal.subject
-
+    """Lists field tasks. Members only see their own assigned tasks by canonical user_id."""
+    target_user_id = _authorize_field_read(
+        db,
+        principal,
+        user_id,
+        action_description="list field tasks",
+    )
     return list_field_tasks(
         db=db,
         org_id=principal.org_id,
@@ -317,19 +370,14 @@ def optimize_route_endpoint(
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Sequences an executive's daily client visits using TSP Nearest-Neighbor with priority weighting.
-
-    Minimizes total travel distance, estimates transit times, and saves up to 30% fuel.
-    """
-    # Members can only optimize their own route; Managers can optimize any employee
+    """Sequences an executive's daily client visits using TSP Nearest-Neighbor with priority weighting."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
-    if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Members may only optimize their own assigned route",
-        )
-
+    _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="optimize routes",
+    )
     return optimize_route_sequence(
         db=db,
         org_id=principal.org_id,
@@ -353,6 +401,11 @@ def verify_visit_endpoint(
     """Verifies a physical client visit using geo-proximity, client Geo-OTP, and AI Vision inspection."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
+    _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="verify client visits",
+    )
     try:
         record = verify_client_visit(
             db=db,
@@ -375,6 +428,11 @@ def voice_debrief_endpoint(
     """Processes a spoken voice debrief and extracts structured CRM meeting fields."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
+    _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="submit voice debriefs",
+    )
     try:
         visit, result = process_voice_debrief(
             db=db,
@@ -401,10 +459,12 @@ def list_visits_endpoint(
     db: Session = Depends(get_db),
 ):
     """Lists completed client visits and their cryptographic proofs."""
-    target_user_id = user_id
-    if principal.role == "member":
-        target_user_id = principal.user_id or principal.subject
-
+    target_user_id = _authorize_field_read(
+        db,
+        principal,
+        user_id,
+        action_description="list client visits",
+    )
     return list_client_visits(
         db=db,
         org_id=principal.org_id,
@@ -420,11 +480,19 @@ def list_visits_endpoint(
 def calculate_conveyance_endpoint(
     payload: ConveyanceCalculateRequest,
     principal: APIPrincipal = Depends(require_field_member),
+    db: Session = Depends(get_db),
 ):
     """Calculates road-snapped travel distance and eliminates fake indoor stationary GPS jitter."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
+    effective_user_id = _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="calculate conveyance distance",
+    )
     result = calculate_fraud_proof_distance(payload.gps_breadcrumbs)
     return {
-        "user_id": payload.user_id,
+        "user_id": effective_user_id or payload.user_id,
         "claim_date": payload.claim_date,
         "transport_mode": payload.transport_mode,
         "distance_telemetry": result,
@@ -444,12 +512,11 @@ def submit_conveyance_endpoint(
     """Submits a conveyance and expense claim for automated policy verification and settlement."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
-    if principal.role == "member" and not _is_matching_user(principal, payload.user_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Members may only submit conveyance claims for themselves",
-        )
-
+    _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="submit conveyance claims",
+    )
     claim = submit_conveyance_and_expense_claim(
         db=db,
         org_id=principal.org_id,
@@ -466,10 +533,12 @@ def list_conveyance_endpoint(
     db: Session = Depends(get_db),
 ):
     """Lists conveyance claims and audit records."""
-    target_user_id = user_id
-    if principal.role == "member":
-        target_user_id = principal.user_id or principal.subject
-
+    target_user_id = _authorize_field_read(
+        db,
+        principal,
+        user_id,
+        action_description="list conveyance claims",
+    )
     return list_conveyance_claims(
         db=db,
         org_id=principal.org_id,

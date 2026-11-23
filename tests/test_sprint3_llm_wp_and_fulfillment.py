@@ -132,7 +132,7 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         self.assertEqual(data["total_networks"], len(expected))
 
     def test_publish_seo_draft_to_wordpress_direct_and_endpoint(self):
-        """Direct WordPress publisher call must publish, log AuditLog, and seal a TrustBlock."""
+        """Approved draft publishes in SIMULATED mode when WP creds unset (never falsely PUBLISHED); logs AuditLog & seals TrustBlock."""
         task = TaskRecord(
             id=f"task-seo-{uuid.uuid4().hex[:8]}",
             correlation_id=f"corr-{uuid.uuid4().hex[:8]}",
@@ -141,13 +141,27 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         )
         self.db.add(task)
 
+        draft_id = f"draft-{uuid.uuid4().hex[:8]}"
+        appr1 = ApprovalRequest(
+            id=f"appr-seo1-{uuid.uuid4().hex[:8]}",
+            task_id=task.id,
+            action="live_publishing",
+            detail={"seo_draft_id": draft_id, "network": "askforwrite.com"},
+            idempotency_key=f"idemp-seo1-{uuid.uuid4().hex[:8]}",
+            request_hash=f"hash-{uuid.uuid4().hex[:8]}",
+            status="APPROVED",
+            requested_by="seo_copilot",
+            decided_by="owner",
+        )
+        self.db.add(appr1)
         draft = SeoDraftRecord(
-            id=f"draft-{uuid.uuid4().hex[:8]}",
+            id=draft_id,
             task_id=task.id,
             target_network="askforwrite.com",
             keywords=["deep learning", "multimodal ai"],
             content="# Deep Learning in 2026\n\nMultimodal foundation models are automating enterprise workflows.",
-            status="DRAFT",
+            status="PENDING_APPROVAL",
+            approval_id=appr1.id,
         )
         self.db.add(draft)
         self.db.commit()
@@ -159,26 +173,44 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
             correlation_id=f"corr-{uuid.uuid4().hex[:8]}",
         )
 
-        self.assertEqual(pub_res["status"], "PUBLISHED")
+        self.assertEqual(pub_res["status"], "SIMULATED")
+        self.assertTrue(pub_res["is_simulated"])
+        self.assertFalse(pub_res["live_published"])
         self.assertEqual(pub_res["network"], "askforwrite.com")
-        self.assertTrue(pub_res["url"].startswith("https://askforwrite.com/articles/"))
+        self.assertTrue(pub_res["simulated_url"].startswith("https://askforwrite.com/articles/"))
+        self.assertIsNone(pub_res["url"])
         self.assertIsNotNone(pub_res["block_hash"])
 
         self.db.refresh(draft)
-        self.assertEqual(draft.status, "PUBLISHED")
+        self.assertEqual(draft.status, "SIMULATED")
+        self.assertIsNone(draft.provider_post_id)
         self.assertIsNotNone(draft.decided_at)
 
         new_blocks = self.db.query(TrustBlock).count()
         self.assertEqual(new_blocks, initial_blocks + 1)
 
-        # Test HTTP endpoint POST /v1/seo/drafts/{id}/publish
+        # Test HTTP endpoint POST /v1/seo/drafts/{id}/publish with linked APPROVED ApprovalRequest
+        draft2_id = f"draft-api-{uuid.uuid4().hex[:8]}"
+        appr2 = ApprovalRequest(
+            id=f"appr-seo2-{uuid.uuid4().hex[:8]}",
+            task_id=task.id,
+            action="live_publishing",
+            detail={"seo_draft_id": draft2_id, "network": "ask4write.com"},
+            idempotency_key=f"idemp-seo2-{uuid.uuid4().hex[:8]}",
+            request_hash=f"hash-{uuid.uuid4().hex[:8]}",
+            status="APPROVED",
+            requested_by="seo_copilot",
+            decided_by="owner",
+        )
+        self.db.add(appr2)
         draft2 = SeoDraftRecord(
-            id=f"draft-api-{uuid.uuid4().hex[:8]}",
+            id=draft2_id,
             task_id=task.id,
             target_network="ask4write.com",
             keywords=["tech jobs", "ai careers"],
             content="# AI Career Acceleration\n\nUpskilling for autonomous agent orchestration.",
-            status="DRAFT",
+            status="PENDING_APPROVAL",
+            approval_id=appr2.id,
         )
         self.db.add(draft2)
         self.db.commit()
@@ -186,11 +218,12 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         api_resp = self.client.post(f"/v1/seo/drafts/{draft2.id}/publish", headers=self.headers)
         self.assertEqual(api_resp.status_code, 200)
         api_data = api_resp.json()
-        self.assertEqual(api_data["status"], "PUBLISHED")
-        self.assertTrue(api_data["url"].startswith("https://ask4write.com/articles/"))
+        self.assertEqual(api_data["status"], "SIMULATED")
+        self.assertTrue(api_data["is_simulated"])
+        self.assertTrue(api_data["simulated_url"].startswith("https://ask4write.com/articles/"))
 
     def test_seo_approval_auto_triggers_wordpress_publishing(self):
-        """When an SEO draft approval is decided as APPROVED, it must auto-publish via WordPress bridge."""
+        """When an SEO draft approval is decided as APPROVED, it triggers WordPress bridge truthfully (SIMULATED when side effects blocked)."""
         task = TaskRecord(
             id=f"task-seo-bridge-{uuid.uuid4().hex[:8]}",
             correlation_id=f"corr-{uuid.uuid4().hex[:8]}",
@@ -234,10 +267,10 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         )
 
         self.assertEqual(decision["status"], "APPROVED")
-        self.assertEqual(decision.get("auto_executed_action"), "seo_draft_published")
+        self.assertEqual(decision.get("auto_executed_action"), "seo_draft_simulated")
 
         self.db.refresh(draft)
-        self.assertEqual(draft.status, "PUBLISHED")
+        self.assertEqual(draft.status, "SIMULATED")
 
         audit = (
             self.db.query(AuditLog)

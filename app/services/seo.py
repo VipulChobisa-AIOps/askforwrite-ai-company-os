@@ -25,6 +25,7 @@ def execute_seo_draft(
     idempotency_key: str,
     correlation_id: str,
     agent_id: str,
+    org_id: str | None = None,
 ) -> dict:
     request_hash = hashlib.sha256(json.dumps({"network": target_network, "keywords": keywords}, sort_keys=True).encode()).hexdigest()
 
@@ -88,6 +89,7 @@ def execute_seo_draft(
     content_draft = generate(prompt, fallback_text=fallback)
     
     draft = SeoDraftRecord(
+        org_id=org_id,
         task_id=task_id,
         target_network=target_network,
         keywords=keywords,
@@ -98,12 +100,15 @@ def execute_seo_draft(
     db.flush()  # flush to get draft.id
 
     # Request Owner Approval for LIVE_PUBLISHED
+    approval_detail: dict = {"seo_draft_id": draft.id, "network": target_network}
+    if org_id:
+        approval_detail["org_id"] = org_id
     approval = request_approval(
         db=db,
         task_id=task_id,
         lead_id=None,
         action="live_publishing",
-        detail={"seo_draft_id": draft.id, "network": target_network},
+        detail=approval_detail,
         idempotency_key=f"approval_seo_{draft.id}",
         requested_by=agent_id,
         correlation_id=correlation_id

@@ -1302,27 +1302,39 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         approval.status = "APPROVED"
         self.db.commit()
 
-        # 3. Publish draft -> Must succeed and indicate delivery verification
+        # 3. Publish draft in simulated mode -> Must truthfully report SIMULATED (Issue #12)
         resp_published = self.client.post(
             f"/v1/seo/drafts/{draft.id}/publish",
             headers=self.manager_headers,
         )
         self.assertEqual(resp_published.status_code, 200)
         data = resp_published.json()
-        self.assertEqual(data["status"], "PUBLISHED")
+        self.assertEqual(data["status"], "SIMULATED")
         self.assertIn("delivery_verification", data)
-        self.assertIn("is_simulated", data)
+        self.assertTrue(data["is_simulated"])
 
-        # 4. Failed live WordPress REST call must NOT leave draft marked PUBLISHED
+        # 4. Failed live WordPress REST call (with valid linked APPROVED approval) must NOT leave draft marked PUBLISHED
+        draft_fail_id = f"draft-fail-{uuid.uuid4().hex[:8]}"
+        approval_fail = ApprovalRequest(
+            id=f"appr-fail-{uuid.uuid4().hex[:8]}",
+            task_id=task_id,
+            action="wordpress_publish",
+            detail={"domain": "askforwrite.in", "seo_draft_id": draft_fail_id},
+            idempotency_key=f"idemp-fail-{uuid.uuid4().hex}",
+            request_hash=hashlib.sha256(b"wp_publish_fail").hexdigest(),
+            requested_by="manager",
+            status="APPROVED",
+        )
         draft_fail = SeoDraftRecord(
-            id=f"draft-fail-{uuid.uuid4().hex[:8]}",
+            id=draft_fail_id,
             task_id=task_id,
             target_network="askforwrite.in",
             keywords=["fail", "test"],
             content="# Title\nBody",
             status="DRAFT",
+            approval_id=approval_fail.id,
         )
-        self.db.add(draft_fail)
+        self.db.add_all([approval_fail, draft_fail])
         self.db.commit()
 
         with patch.dict(

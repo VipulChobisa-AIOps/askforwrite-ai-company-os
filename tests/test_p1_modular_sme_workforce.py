@@ -476,24 +476,41 @@ def test_e_simulation_locks_live_side_effects_and_blocks_ssrf(monkeypatch: pytes
     monkeypatch.setenv("WP_SITE_URL", "https://askforwrite.in")
     monkeypatch.setenv("WP_USERNAME", "wp-sim-user")
     monkeypatch.setenv("WP_APP_PASSWORD", "wp-sim-app-pw")
-    from app.db.models import SeoDraftRecord
+    from app.db.models import ApprovalRequest, SeoDraftRecord
 
     draft_id = str(uuid.uuid4())
+    task_id = str(uuid.uuid4())
+    appr_id = str(uuid.uuid4())
     with SessionLocal() as db:
+        db.add(
+            ApprovalRequest(
+                id=appr_id,
+                task_id=task_id,
+                action="live_publishing",
+                detail={"seo_draft_id": draft_id, "network": "askforwrite.in"},
+                idempotency_key=f"sim-wp-{appr_id}",
+                request_hash=f"hash-{appr_id}",
+                status="APPROVED",
+                requested_by="seo_copilot",
+                decided_by="owner",
+            )
+        )
         db.add(
             SeoDraftRecord(
                 id=draft_id,
-                task_id=str(uuid.uuid4()),
+                task_id=task_id,
                 target_network="askforwrite.in",
                 keywords=["modular sme os", "seo copilot"],
                 content="# Test Article\n\nBody copy for simulation verification.",
                 status="APPROVED",
+                approval_id=appr_id,
             )
         )
         db.commit()
         with patch("httpx.post") as mock_wp_post:
             wp_res = publish_seo_draft_to_wordpress(db=db, draft_id=draft_id)
             mock_wp_post.assert_not_called()
+    assert wp_res["status"] == "SIMULATED"
     assert wp_res["is_simulated"] is True
     assert wp_res["mode"] == "WORDPRESS_SIMULATED_REST"
     assert any(

@@ -1,21 +1,25 @@
 # AskforWrite AI Company OS (v2.0 Sovereign Edition)
 
 <p align="center">
-  <img src="https://img.shields.io/badge/CI%2FCD-Pytest%20%2B%20Ruff-brightgreen?style=for-the-badge&logo=github-actions" alt="CI/CD Status" />
+  <a href="https://github.com/VipulChobisa-AIOps/askforwrite-ai-company-os/actions/workflows/ci.yml">
+    <img src="https://github.com/VipulChobisa-AIOps/askforwrite-ai-company-os/actions/workflows/ci.yml/badge.svg" alt="CI/CD Status" />
+  </a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Security-ECDSA%20NIST%20P--256%20Merkle-8A2BE2?style=for-the-badge" alt="Security" />
-  <img src="https://img.shields.io/badge/Payments-AFW%20DirectPay%200%25%20Fee-orange?style=for-the-badge" alt="Sovereign Payments" />
+  <img src="https://img.shields.io/badge/Payments-AFW%20DirectPay%200%25%20Platform%20Fee-orange?style=for-the-badge" alt="Sovereign Payments" />
   <img src="https://img.shields.io/badge/Hosting-Render%20Blueprint-46E3B7?style=for-the-badge" alt="Render Hosting" />
 </p>
+
+> **Release Readiness Status:** **PRE-PRODUCTION / `BLOCKED` FOR COMMERCIAL CUTOVER** (`production_cutover_approved: false`). Core P0 security, multi-tenant isolation, WordPress HITL fail-closed enforcement, and payment provisioning fail-closed controls are implemented and locally tested. Live staging verification, secret rotation in Render, production Neon migration, and a first verified real-customer pilot payment (`managed_seo_content_pilot`) remain required before declaring production earning readiness. See [`docs/P3_1_RELEASE_READINESS_REPORT.md`](docs/P3_1_RELEASE_READINESS_REPORT.md) and [`docs/SECURITY_HARDENING_AUDIT_REPORT.md`](docs/SECURITY_HARDENING_AUDIT_REPORT.md).
 
 ---
 
 ## Executive Overview
 
-**AskforWrite AI Company OS** is a production-grade, enterprise autonomous company operating system designed to run an entire digital corporation autonomously under **Human-in-the-Loop (HITL)** governance.
+**AskforWrite AI Company OS** is a multi-tenant, **Human-in-the-Loop (HITL)** AI operations platform engineered by **Vipul Kumar Chobisa**.
 
-Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-generation SDR engine, a cryptographic NIST P-256 Merkle DAG audit ledger, zero-fee direct payment rails (**AFW DirectPay**), and a **P1 Modular SME AI Workforce** with unified Service/Agent/Connector registries, 8-state HITL workflows, atomic credit accounting, and durable execution evidence.
+It combines modular SME business workflows (starting commercially with the **14-Day Managed SEO & Content Pilot**), an ECDSA NIST P-256 Merkle DAG audit ledger, multi-rail payment orchestration (**Razorpay**, **PayPal**, and **AFW DirectPay**), unified Service/Agent/Connector registries, 8-state HITL approval workflows, atomic credit accounting, and durable execution evidence. All outbound communications, WordPress publications, and refunds require explicit human authorization.
 
 ---
 
@@ -36,7 +40,7 @@ Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-ge
 | [P3 Operations & Runbook](docs/P3_OPERATIONS_AND_RUNBOOK.md) | Onboarding templates, QA & attribution guard, health alerts, HITL support/refunds/growth/deletion |
 | [P3 Operational Readiness Report](docs/P3_OPERATIONAL_READINESS_REPORT.md) | Concurrency ceiling, timeout DLQ recovery, DB probe, backup drills & live constraints |
 | [P3 Real-World Acceptance Checklist](docs/P3_REAL_WORLD_ACCEPTANCE_CHECKLIST.md) | 12-step live verification tracker (`NOT_TESTED` / `SANDBOX_VERIFIED` / `LIVE_VERIFIED`) |
-| [P3 Test & Limitations Report](docs/P3_TEST_AND_LIMITATIONS_REPORT.md) | Exact verification outputs (`454 passed`), sandbox vs live boundaries & deployment constraints |
+| [P3 Test & Limitations Report](docs/P3_TEST_AND_LIMITATIONS_REPORT.md) | Historical P3 snapshot (`454 passed` at snapshot time), sandbox vs live boundaries & deployment constraints |
 
 ### P2 Commercial Documentation Suite (`docs/`)
 
@@ -47,7 +51,7 @@ Engineered by **Vipul Kumar Chobisa**, it combines an autonomous 24/7 revenue-ge
 | [P2 Founder Operating Guide](docs/P2_FOUNDER_OPERATING_GUIDE.md) | Daily founder workflow across intake, briefs, HITL outreach, discovery, proposals & renewal |
 | [P2 Payment & Activation Guide](docs/P2_PAYMENT_AND_ACTIVATION_GUIDE.md) | Webhook HMAC + DirectPay UTR settlement, idempotent provisioning & refund revocation |
 | [P2 Real-World Acceptance Checklist](docs/P2_REAL_WORLD_ACCEPTANCE_CHECKLIST.md) | 12-step live verification tracker (`NOT_TESTED` / `SANDBOX_VERIFIED` / `LIVE_VERIFIED`) |
-| [P2 Test & Limitations Report](docs/P2_TEST_AND_LIMITATIONS_REPORT.md) | Exact verification outputs (`448 passed`), sandbox vs live boundaries & launch prerequisites |
+| [P2 Test & Limitations Report](docs/P2_TEST_AND_LIMITATIONS_REPORT.md) | Historical P2 snapshot (`448 passed` at snapshot time), sandbox vs live boundaries & launch prerequisites |
 
 ### Core P1 Architecture & Operations Suite (`docs/`)
 
@@ -128,51 +132,61 @@ flowchart TD
 
 ---
 
-## 8-Vertical Commercial Catalog & Pricing Matrix
+## Canonical Commercial Catalog & Pricing Matrix
 
-All 8 verticals feature automated lead discovery, dynamic pain point diagnosis, personalized pitch generation, and instant cryptographic onboarding. *Note: Projected ROI figures are model estimates based on industry benchmarks, not guaranteed financial returns.*
+**Single Source of Truth:** [`app/services/catalog.py`](app/services/catalog.py) (also summarized in [`docs/SERVICE_CATALOG.md`](docs/SERVICE_CATALOG.md)). One-time purchases and the 14-day pilot are strictly separated from monthly recurring subscriptions. *Illustrative efficiency notes below are internal benchmark projections, not verified customer case studies or guaranteed financial returns.*
 
-| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Deliverables | Pricing (INR / USD) | Est. Client ROI* |
-|---|---|---|---|---|---|
-| **`managed_seo_content_pilot`** | 14-Day Managed SEO & Content Pilot (1 Technical Audit, 1 Commercial Keyword Map, 2 Human-Reviewed Articles, Schema JSON-LD, WordPress HITL Delivery) | B2B Founders, Niche Agencies, Marketing Leaders | 1 Audit Report, 1 Keyword Plan, 2 Reviewed Articles staged to CMS, NIST P-256 Seal | **₹4,999 / $59** | **Guaranteed Pilot Deliverables** (14-day delivery) |
-| **`growth_all_in_one`** | Full-Funnel Growth Suite (Pixel AI prompt specs, 4-site SEO/GEO copilot, campaign copy scripts, 24/7 objection closer) | Founders, D2C Brands, Scaling Agencies | Structured prompt recipes, reviewed SEO drafts, copy scripts, webhook sales closer | **₹9,999 / $129** | **Estimated 25x ROI** (Replaces 3 agency retainers) |
-| **`mango_quality_analytics`** | AgriTech Produce Vision & Ripeness AI (HSV Color + GLCM Texture + Shelf-Life) | Exporters, Packhouses, Fresh Fruit Distributors | Batch inspection API, cryptographic quality certificates | **₹3,999 / $49** | **Estimated 18x ROI** (Cuts export rejection by 85%) |
-| **`bike_rebalance_analytics`** | Urban Mobility & Spatio-Temporal Logistics (OLS ML Demand Forecasting + Station Churn) | Micro-mobility operators, EV fleet managers | Hourly demand forecasts, priority rebalance truck routes | **₹3,999 / $49** | **Estimated 15x ROI** (Recovers 30% lost commuter trips) |
-| **`warehouse_automation`** | StockSense Warehouse AI (Pareto ABC, Dynamic EOQ/ROP, Dead-Stock Scoring) | 3PL Warehouses, Supply Chain Directors | Inventory health matrices, replenishment schedules | **₹4,999 / $59** | **Estimated 20x ROI** (Unlocks dead capital >90 days) |
-| **`field_force`** | Field Operations Automation (Anti-Spoof GPS, Timestamped Proof-of-Visit, Auto-Conveyance) | Logistics operators, FMCG sales networks | Live on-ground logs, route compliance, conveyance audit | **₹3,999 / $49** | **Estimated 12x ROI** (Eliminates proxy attendance fraud) |
-| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot (2026 GEO/AIO, Schema JSON-LD, /llms.txt) | Content agencies, Media publishers | Automated 4-site publishing pipeline, topical authority maps | **₹1,999 / $29** | **Estimated 14x ROI** (Generates 30+ organic articles/mo) |
-| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Conversational Copy, Multi-Platform Ads) | Performance marketers, B2B SaaS | Multi-channel ad variations, nurture sequences, chatbot embed | **₹2,999 / $39** | **Estimated 16x ROI** (Doubles landing page conversions) |
-| **`trust_engine`** | AFW 2030 Cryptographic Trust Engine (ECDSA NIST P-256 Merkle DAG Audit Ledger) | Regulated fintechs, Health-tech, Legal firms | Proof-of-execution certificates, auditor JSON export | **₹4,999 / $69** | **Verifiable AI Governance** (NIST P-256 verification) |
+### Entry Packs & Managed Pilot (One-Time / Non-Renewing)
+
+| SKU Key | Core Scope | Billing Type | Pricing (INR / USD) | Notes |
+|---|---|---|---|---|
+| **`managed_seo_content_pilot`** | 14-Day Managed SEO & Content Pilot (1 Technical Audit, 1 Commercial Keyword Map, 2 Human-Reviewed Articles, Schema JSON-LD, HITL WordPress Delivery) | `managed_pilot_14d` (One-Time) | **₹4,999 / $59** | Primary initial commercial wedge; manual conversion after 14 days |
+| **`ask4_academic_order`** | ASK4 Academic Research & Order Fulfillment (Single Report + BibTeX + NIST P-256 Seal) | `one_time_purchase` | **₹999 / $15** | Single-engagement fulfillment |
+| **`pixel_ai_pack`** | Pixel AI Visual Creative Pack (20 multi-aspect prompt recipes & campaign kit) | `one_time_purchase` | **₹1,499 / $19** | Prompt/blueprint pack (image rendering requires external diffusion API) |
+
+### Modular Specialist Tools (Monthly Subscriptions)
+
+| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Pricing (INR / USD / mo) | Illustrative Projection* |
+|---|---|---|---|---|
+| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot (GEO/AIO, Schema JSON-LD, HITL approval gate) | Content agencies, Media publishers | **₹1,999 / $29** | Model projection: faster editorial drafting (human review required) |
+| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Campaign copy, multi-platform ad variations) | Performance marketers, B2B SaaS | **₹2,499 / $35** | Model projection: accelerated creative iteration |
+| **`field_force`** | Field Operations Automation (Anti-Spoof GPS, Proof-of-Visit, Auto-Conveyance) | Logistics operators, FMCG sales networks | **₹3,999 / $49** | Model projection: stronger attendance & mileage auditability |
+| **`mango_quality_analytics`** | AgriTech Produce Vision & Ripeness AI (HSV Color + GLCM Texture + Shelf-Life) | Exporters, Packhouses, Fresh Fruit Distributors | **₹3,999 / $49** | Model projection: standardized batch grading workflow |
+| **`bike_rebalance_analytics`** | Urban Mobility & Spatio-Temporal Logistics (OLS Demand Forecasting + Station Churn) | Micro-mobility operators, EV fleet managers | **₹3,999 / $49** | Model projection: improved dock rebalancing planning |
+| **`warehouse_automation`** | StockSense Warehouse AI (Pareto ABC, Dynamic EOQ/ROP, Dead-Stock Scoring) | 3PL Warehouses, Supply Chain Directors | **₹3,999 / $49** | Model projection: structured dead-stock & reorder visibility |
+| **`trust_engine`** | AFW 2030 Cryptographic Trust Engine (ECDSA NIST P-256 Merkle DAG Audit Ledger) | Regulated fintechs, Health-tech, Legal firms | **₹3,999 / $49** | Verifiable cryptographic audit trail (`/v1/trust/verify`) |
 
 ### Transparent Operational Boundaries & Verification
-* **Pixel AI Creative Studio**: Generates high-converting structured prompt specifications, aspect ratio blueprints (1:1, 9:16, 16:9), and typography overlays (prompt recipes). Rendering image files directly requires an external diffusion provider API key.
-* **WordPress Publishing**: Connects directly to WordPress REST APIs. If live credentials are not configured, executions are transparently marked as `SIMULATED_CREDENTIALS_UNSET`. All production publishes strictly require human owner approval (`ApprovalRequest.status == "APPROVED"`).
+* **Pixel AI Creative Studio**: Generates structured prompt specifications, aspect ratio blueprints (1:1, 9:16, 16:9), and typography overlays (prompt recipes). Rendering image files directly requires an external diffusion provider API key.
+* **WordPress Publishing**: Connects directly to WordPress REST APIs and **fails closed** unless a valid, linked `ApprovalRequest` in `APPROVED` state exists for the exact draft and tenant. Simulated runs (`SIMULATED`) and delivery failures (`PUBLISH_FAILED`) are strictly separated from verified live publications (`PUBLISHED`, requiring a verified post ID and canonical URL).
 * **Social & Inbound SDR**: Delivers tailored ad copy scripts, nurture sequences, and conversational closer logic. Production dispatch across WhatsApp and ad platforms operates via webhook integrations and external delivery bridges.
+* **Provisioning & Payments**: Webhooks fail closed if package SKU, currency, or paid amount is missing, unrecognized, or underpaid — accounts are never silently provisioned onto Starter.
 
+### Clustered Monthly Subscription Tiers (`MODULAR_SME_TIERS`, 20% Off Annual)
 
-### Master Bundles
-
-* **AskforWrite Company OS Starter (`company_os_starter`)**: All 7 Specialist AI Agents, CEO Orchestrator, HITL governance, 150 lead credits/mo — **₹7,999 / $99**
-* **AskforWrite Company OS Pro (`company_os_pro`)**: High-volume live scraping, priority execution, multi-tenant RBAC, 600 lead credits/mo — **₹19,999 / $249**
-* **AskforWrite Company OS Enterprise (`company_os_enterprise`)**: Bespoke private Docker/K8s deployment, custom fine-tuned LLM fallback, 5,000 lead credits/mo — **₹49,999 / $499**
+* **Launch / Starter (`company_os_starter` / `launch`)**: Cluster 1 (Content, SEO & Creative Studio), 50 lead credits/mo, 25 outreach credits/mo — **₹2,999 / $39 / mo** (₹2,399 / $31 annual equiv.)
+* **Growth Suite (`growth_all_in_one` / `growth`)**: Cluster 1 + Cluster 2 (Sales, Lead Discovery & AI Closer), 300 lead credits/mo, 150 outreach credits/mo — **₹6,999 / $89 / mo** (₹5,599 / $71 annual equiv.)
+* **Operations Suite (`operations_suite` / `operations`)**: Cluster 3 (Warehouse, Field Force, Produce Vision, Urban Mobility) + Cluster 4 (Trust Ledger), 200 lead credits/mo, 100 outreach credits/mo — **₹9,999 / $129 / mo** (₹7,999 / $103 annual equiv.)
+* **Business Pro (`company_os_pro` / `business_pro`)**: All 4 Clusters (Full Company OS), 1,200 lead credits/mo, 600 outreach credits/mo — **₹17,999 / $229 / mo** (₹14,399 / $183 annual equiv.)
+* **Enterprise (`company_os_enterprise` / `enterprise`)**: All 4 Clusters + Dedicated Sovereign Scale, 5,000 lead credits/mo, 2,500 outreach credits/mo — **₹44,999 / $549 / mo** (₹35,999 / $439 annual equiv.)
+* **All-Access Master Suite (`all_access`)**: Unrestricted Master Suite, 10,000 lead credits/mo, 5,000 outreach credits/mo — **₹44,999 / $549 / mo**
 
 ---
 
-## AFW DirectPay — Sovereign Zero-Fee Payment Rails
+## AFW DirectPay — Direct Payment Rails & Fee Boundaries
 
-Unlike traditional aggregators (Stripe, Razorpay, PayPal) that deduct 2% to 4.5% plus foreign currency fees, **AFW DirectPay** settles funds directly into your accounts at **0% platform fee**:
+**AFW DirectPay** charges **0% AskforWrite platform commission** when settling directly to merchant accounts. Third-party fees still apply depending on the rail selected (third-party gateway fees when paying via Razorpay or PayPal, bank wire/SWIFT/FX fees on cross-border bank transfers, and blockchain network gas fees on Web3 rails).
 
 1. **Rail 1: Instant Dynamic UPI SVG QR (India INR)**
    * Renders a lightweight, self-contained pure-Python inline SVG QR code.
-   * Directly routes payers to verified merchant VPA: `ask4write@icici`.
-   * Payer submits 12-digit Bank Reference (UTR) for instant verification.
-2. **Rail 2: Global Web3 Stablecoin (USDC / USDT)**
-   * Supports instant global settlement across **Polygon PoS (Sub-cent fees)**, **Base L2**, and **Solana**.
-   * Merchant addresses: `0x811db32e3802eD9a75F7bbd24f6C3C03216346a2` (EVM) and `CNCZWYQL8AC8vDuN6mn4Qfnj2pKghMDuNRzEyepWtXfR` (Solana).
-   * Verified by transaction hash (`0x...` or base58). Private keys stored in local git-ignored vault (`.sovereign_wallets.json`).
+   * Directly routes payers to merchant VPA (`AFW_MERCHANT_UPI_VPA`, default `ask4write@icici`).
+   * Payer submits 12-digit Bank Reference (UTR); settlement stays gated in the Owner HITL confirmation queue until verified against the merchant bank statement.
+2. **Rail 2: Global Web3 Stablecoin (USDC / USDT — Disabled Pending Legal/Tax Sign-Off)**
+   * Technical adapter supports Polygon PoS, Base L2, and Solana transaction-hash verification (network gas fees apply).
+   * **Commercial Gate:** Keep disabled for Indian commercial invoicing until CA / FEMA / GST / VDA tax and accounting review is completed.
 3. **Rail 3: Direct Bank Wire (NEFT / RTGS / IMPS / SWIFT)**
-   * Direct settlement to ICICI Bank Ltd (`ICIC0006940`, Account `6940XXXXXX26` (configured via `AFW_BANK_ACCOUNT_NUMBER`), Udaipur Bus Stand Branch).
-   * Automatically issues a digitally sealed proforma invoice with cryptographic verification codes.
+   * Direct settlement to merchant bank account configured via `AFW_BANK_*` environment variables (bank/SWIFT wire charges may apply per remitting bank).
+   * Issues a proforma invoice with cryptographic verification codes; provisioning activates only after owner settlement confirmation.
 
 ---
 

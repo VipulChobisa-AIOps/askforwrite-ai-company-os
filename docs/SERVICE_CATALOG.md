@@ -43,24 +43,39 @@ Do **not** maintain separate hardcoded frontend service lists. Both backend exec
 
 ---
 
-## 3. Preserved Legacy & Pilot SKUs (`CATALOG`)
+## 3. Canonical Commercial Catalog SKUs (`app/services/catalog.py`)
 
-| SKU Key | INR Price | USD Price |
-|---|---|---|
-| `ask4_academic_order` | ₹999 | \$15 |
-| `pixel_ai_pack` | ₹1,499 | \$19 |
-| `seo_blog_copilot` | ₹1,999 | \$29 |
-| `marketing_suite` | ₹2,999 | \$39 |
-| `field_force` | ₹3,999 | \$49 |
-| `mango_quality_analytics` | ₹3,999 | \$49 |
-| `bike_rebalance_analytics` | ₹3,999 | \$49 |
-| `managed_seo_content_pilot` | ₹4,999 | \$59 |
-| `warehouse_automation` | ₹4,999 | \$59 |
-| `trust_engine` | ₹4,999 | \$69 |
-| `company_os_starter` | ₹7,999 | \$99 |
-| `growth_all_in_one` | ₹9,999 | \$129 |
-| `company_os_pro` | ₹19,999 | \$249 |
-| `company_os_enterprise` | ₹49,999 | \$499 |
-| `all_access` | ₹59,999 | \$599 |
+All landing pages, checkout sessions, invoices, provisioning, and entitlements consume **`app/services/catalog.py`** as the single source of truth. One-time purchases and the 14-day pilot are strictly separated from auto-renewing monthly subscriptions via `billing_type` in `build_canonical_package_contract()`.
 
-Note: Not every SKU is automatically an auto-renewing SaaS plan. Single engagements (`managed_seo_content_pilot`, `ask4_academic_order`, `pixel_ai_pack`) and one-time payments preserve explicit `billing_type` distinctions in `build_canonical_package_contract()`.
+### 3.1 One-Time Purchases & Managed Pilot (Non-Renewing)
+
+| SKU Key | Product Name | Billing Type | INR Price | USD Price |
+|---|---|---|---|---|
+| `ask4_academic_order` | ASK4 Academic Research & Order Fulfillment (Single) | `one_time_purchase` | ₹999 | \$15 |
+| `pixel_ai_pack` | Pixel AI Visual Creative Pack (20 Visuals) | `one_time_purchase` | ₹1,499 | \$19 |
+| `managed_seo_content_pilot` | Managed SEO & Content Pilot (14-Day) | `managed_pilot_14d` | ₹4,999 | \$59 |
+
+### 3.2 Modular Specialist Tools (Monthly Subscriptions)
+
+| SKU Key | Product Name | Cluster | Billing Type | INR / mo | USD / mo |
+|---|---|---|---|---|---|
+| `seo_blog_copilot` | AskforWrite SEO Blog Copilot | Cluster 1 (Content & Creative) | `recurring_subscription` | ₹1,999 | \$29 |
+| `marketing_suite` | PixelBot Omnichannel Marketing Suite | Cluster 1 (Content & Creative) | `recurring_subscription` | ₹2,499 | \$35 |
+| `field_force` | Field Operations Automation Suite | Cluster 3 (Operations & Vertical AI) | `recurring_subscription` | ₹3,999 | \$49 |
+| `mango_quality_analytics` | AgriTech Produce Vision & Quality Grading AI | Cluster 3 (Operations & Vertical AI) | `recurring_subscription` | ₹3,999 | \$49 |
+| `bike_rebalance_analytics` | Urban Mobility & Spatio-Temporal Logistics AI | Cluster 3 (Operations & Vertical AI) | `recurring_subscription` | ₹3,999 | \$49 |
+| `warehouse_automation` | StockSense Warehouse & Inventory AI | Cluster 3 (Operations & Vertical AI) | `recurring_subscription` | ₹3,999 | \$49 |
+| `trust_engine` | AFW 2030 Cryptographic Trust Engine | Cluster 4 (Governance & Trust) | `recurring_subscription` | ₹3,999 | \$49 |
+
+### 3.3 Clustered Monthly Subscription Tiers (`MODULAR_SME_TIERS` & Master Bundles — 20% Off Annual)
+
+| Tier Alias | Canonical SKU Key | Included Clusters | Monthly (INR / USD) | Annual Equiv. (-20%) | Lead / Outreach Credits (mo) |
+|---|---|---|---|---|---|
+| `launch` / `starter` | `company_os_starter` | Cluster 1 (Content, SEO & Creative) | ₹2,999 / \$39 | ₹2,399 / \$31 | 50 / 25 |
+| `growth` | `growth_all_in_one` | Cluster 1 + Cluster 2 (Sales & AI Closer) | ₹6,999 / \$89 | ₹5,599 / \$71 | 300 / 150 |
+| `operations` | `operations_suite` | Cluster 3 (Field/Warehouse/CV/Mobility) + Cluster 4 (Trust) | ₹9,999 / \$129 | ₹7,999 / \$103 | 200 / 100 |
+| `business_pro` / `pro` | `company_os_pro` | All 4 Clusters (Full Company OS) | ₹17,999 / \$229 | ₹14,399 / \$183 | 1,200 / 600 |
+| `enterprise` | `company_os_enterprise` | All 4 Clusters + Dedicated Sovereign Scale | ₹44,999 / \$549 | ₹35,999 / \$439 | 5,000 / 2,500 |
+| `all_access` | `all_access` | Unrestricted Master Suite (All Modules) | ₹44,999 / \$549 | — | 10,000 / 5,000 |
+
+Note: Not every SKU is an auto-renewing SaaS plan. Single engagements (`managed_seo_content_pilot`, `ask4_academic_order`, `pixel_ai_pack`) preserve explicit non-renewing `billing_type` contracts in `build_canonical_package_contract()`. Payment webhooks fail closed if package metadata is missing or unrecognized — provisioning never silently falls back to `company_os_starter`.

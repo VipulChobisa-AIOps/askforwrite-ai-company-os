@@ -137,13 +137,13 @@ def validate_external_url(url: str, *, allow_domains: set[str] | None = None) ->
     host = (parsed.hostname or "").strip().lower()
     if not host:
         raise ExecutionBlockedError("Blocked URL with missing hostname", code="SSRF_INVALID_HOST")
-    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "169.254.169.254", "metadata.google.internal"):
+    if host in ("localhost", "127.0.0.1", "::1", "169.254.169.254", "metadata.google.internal"):
         raise ExecutionBlockedError(f"Blocked SSRF internal/metadata host '{host}'", code="SSRF_BLOCKED_HOST")
 
-    # Direct IP literal check
+    # Direct IP literal check (covers private, loopback, unspecified 0.0.0.0/::, link-local, reserved, multicast)
     try:
         ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        if ip.is_private or ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             raise ExecutionBlockedError(f"Blocked non-public IP address '{host}'", code="SSRF_PRIVATE_IP")
     except ValueError:
         # Hostname — perform best-effort DNS check without breaking deterministic offline environments
@@ -154,7 +154,7 @@ def validate_external_url(url: str, *, allow_domains: set[str] | None = None) ->
             for info in infos:
                 addr = info[4][0]
                 ip_obj = ipaddress.ip_address(addr)
-                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved:
+                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_unspecified or ip_obj.is_link_local or ip_obj.is_reserved:
                     raise ExecutionBlockedError(f"Blocked host '{host}' resolving to private IP '{addr}'", code="SSRF_DNS_PRIVATE")
         except socket.gaierror:
             # DNS resolution offline or synthetic test domain: allow domain format check unless private suffix

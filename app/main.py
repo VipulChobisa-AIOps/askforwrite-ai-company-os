@@ -1884,8 +1884,10 @@ def publish_seo_draft_endpoint(
     x_correlation_id: str | None = Header(default=None),
     principal: APIPrincipal = Depends(require_manager),
     db: Session = Depends(get_db),
-) -> dict[str, object]:
-    """Publish an SEO draft to its target WordPress network and cryptographically seal TrustBlock."""
+) -> Any:
+    """Publish an approved SEO draft to WordPress (fail-closed HITL; distinguishes PUBLISHED, SIMULATED, PUBLISH_FAILED)."""
+    from app.services.wordpress_publisher import WordPressPublishError
+
     correlation_id = x_correlation_id or str(uuid.uuid4())
     if len(correlation_id) > 128:
         raise HTTPException(status_code=422, detail="X-Correlation-ID is too long")
@@ -1895,13 +1897,37 @@ def publish_seo_draft_endpoint(
             draft_id=draft_id,
             correlation_id=correlation_id,
             published_by=principal.subject,
+            caller_org_id=principal.org_id,
         )
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except WordPressPublishError as error:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "PUBLISH_FAILED",
+                "live_published": False,
+                "is_simulated": False,
+                "draft_id": error.draft_id or draft_id,
+                "error_code": error.error_code,
+                "http_status": error.http_status,
+                "detail": str(error),
+            },
+        )
     except RuntimeError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        return JSONResponse(
+            status_code=502,
+            content={
+                "status": "PUBLISH_FAILED",
+                "live_published": False,
+                "is_simulated": False,
+                "draft_id": draft_id,
+                "error_code": "wordpress_publish_failed",
+                "detail": str(error),
+            },
+        )
 
 
 @app.get("/v1/orders")

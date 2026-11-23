@@ -360,10 +360,11 @@ class Sprint2WatchdogAndAutoDispatchTests(unittest.TestCase):
         )
 
         self.assertEqual(decision_res["status"], "APPROVED")
-        self.assertEqual(decision_res.get("auto_executed_action"), "seo_draft_published")
+        # Without live WordPress credentials, Issue #12 truthfully labels execution as simulated (never PUBLISHED)
+        self.assertEqual(decision_res.get("auto_executed_action"), "seo_draft_simulated")
 
         self.db.refresh(seo_draft)
-        self.assertEqual(seo_draft.status, "PUBLISHED")
+        self.assertEqual(seo_draft.status, "SIMULATED")
         self.assertIsNotNone(seo_draft.decided_at)
 
     def test_watchdog_http_endpoints(self):

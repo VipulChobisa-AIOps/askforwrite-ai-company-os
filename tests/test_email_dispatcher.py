@@ -30,6 +30,7 @@ def test_mock_email_dispatcher_send(monkeypatch):
 def test_get_email_dispatcher_returns_smtp_when_configured(monkeypatch):
     # Simulate production with SMTP config
     monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("ENABLE_EXTERNAL_SIDE_EFFECTS", raising=False)
     monkeypatch.setenv("OUTREACH_DISPATCH_PROVIDER", "smtp")
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     dispatcher = get_email_dispatcher()
@@ -38,6 +39,7 @@ def test_get_email_dispatcher_returns_smtp_when_configured(monkeypatch):
 def test_smtp_email_dispatcher_send_failure(monkeypatch):
     # Use dummy SMTP config that will fail to connect
     monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("ENABLE_EXTERNAL_SIDE_EFFECTS", raising=False)
     # Force provider to smtp even in dev
     monkeypatch.setenv("OUTREACH_DISPATCH_PROVIDER", "smtp")
     monkeypatch.setenv("SMTP_HOST", "invalid-host")

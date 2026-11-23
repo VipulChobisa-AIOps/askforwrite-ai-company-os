@@ -13,7 +13,7 @@ services:
     dockerfilePath: ./Dockerfile
     plan: starter
     region: singapore
-    healthCheckPath: /health
+    healthCheckPath: /healthz
     envVars:
       - key: APP_ENV
         value: production
@@ -26,9 +26,9 @@ services:
       - key: NEON_DATABASE_URL
         sync: false
       - key: MANAGER_API_KEY
-        value: "x_NwJFYiaMGYDs2k2Ztqyav0FxQd98hn1szgMRSta6AIBJuvpYnJ2c7BY5nuINcI"
+        sync: false
       - key: OWNER_API_KEY
-        value: "JCNgmM5bVjXTKLaBwfAcP8E_uRxGBvp9XaF-xB5c_LhXDL0w5nnk4HOaIy6qeoGC"
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY
@@ -41,7 +41,7 @@ services:
         value: "https://os.askforwrite.com,https://os.askforwrite.in,https://askforwrite.in,https://askforwrite.com,https://askforwrite.info,https://ask4write.com,https://node.askforwrite.in,https://shop.ask4write.com,http://localhost:8000"
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
-      # Sovereign Pay Direct 0%-Fee Coordinates (Vipul ICICI & Self-Custody Wallets)
+      # Sovereign Pay Direct Coordinates (0% platform commission; bank/chain fees may apply)
       - key: AFW_MERCHANT_UPI_VPA
         value: "ask4write@icici"
       - key: AFW_MERCHANT_NAME
@@ -162,7 +162,7 @@ services:
       - key: PAYMENT_MODE
         value: sandbox
       - key: PAYPAL_MODE
-        value: live
+        value: sandbox
       - key: SMTP_MODE
         value: sandbox_sink
       - key: PAYMENT_PROVIDER
@@ -204,9 +204,9 @@ services:
       - key: PAYPAL_CANCEL_URL
         value: "https://askforwrite.in/payment/cancel"
       - key: MANAGER_API_KEY
-        value: "x_NwJFYiaMGYDs2k2Ztqyav0FxQd98hn1szgMRSta6AIBJuvpYnJ2c7BY5nuINcI"
+        sync: false
       - key: OWNER_API_KEY
-        value: "JCNgmM5bVjXTKLaBwfAcP8E_uRxGBvp9XaF-xB5c_LhXDL0w5nnk4HOaIy6qeoGC"
+        sync: false
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: SECRET_KEY

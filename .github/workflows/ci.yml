@@ -46,6 +46,7 @@ jobs:
       APP_ENV: development
       MANAGER_API_KEY: test-manager-api-key-32-chars-long-xxx
       OWNER_API_KEY: test-owner-api-key-32-chars-long-xxx
+      JWT_SECRET_KEY: test-ci-jwt-secret-key-32-chars-long
       DATABASE_URL: sqlite:///./test_ci.db
 
     steps:
@@ -66,6 +67,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install httpx anyio sentry-sdk[fastapi] pytest-cov
+
+      - name: Install Playwright Chromium for E2E suite
+        run: |
+          python -m playwright install --with-deps chromium
 
       - name: Run pytest with coverage
         run: |

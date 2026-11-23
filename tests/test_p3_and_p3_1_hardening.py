@@ -404,14 +404,29 @@ def test_places_no_fake_domain_wordpress_injection_and_smtp_sandbox_sink(isolate
     smtp_res = SmtpEmailDispatcher().send("buyer@example.com", "Test", "Body")
     assert smtp_res["simulated"] is True
 
-    # WordPress publisher works with injected httpx.Client MockTransport
+    # WordPress publisher works with injected httpx.Client MockTransport (with valid linked APPROVED ApprovalRequest)
+    from app.db.models import ApprovalRequest
+
+    appr = ApprovalRequest(
+        id="appr-wp-9001",
+        task_id="task-wp-9001",
+        action="live_publishing",
+        detail={"seo_draft_id": "9001", "network": "askforwrite.in"},
+        idempotency_key="idemp-wp-9001",
+        request_hash="hash-wp-9001",
+        status="APPROVED",
+        requested_by="seo_copilot",
+        decided_by="owner",
+    )
+    db.add(appr)
     draft = SeoDraftRecord(
-        id=9001,
+        id="9001",
         task_id="task-wp-9001",
         target_network="askforwrite.in",
         keywords=["warehouse ai"],
         content="# Warehouse AI Guide\n\nDetailed operational guide.",
         status="APPROVED",
+        approval_id=appr.id,
     )
     db.add(draft)
     db.commit()
@@ -425,7 +440,8 @@ def test_places_no_fake_domain_wordpress_injection_and_smtp_sandbox_sink(isolate
 
     wp_mock = httpx.MockTransport(lambda req: httpx.Response(201, json={"id": 42, "link": "https://askforwrite.in/articles/warehouse-ai-guide"}))
     with httpx.Client(transport=wp_mock) as hc:
-        pub = publish_seo_draft_to_wordpress(db, draft_id=9001, http_client=hc)
+        pub = publish_seo_draft_to_wordpress(db, draft_id="9001", http_client=hc)
+    assert pub["status"] == "PUBLISHED"
     assert pub["mode"] == "WORDPRESS_REST_LIVE"
     assert pub["post_id"] == 42
 

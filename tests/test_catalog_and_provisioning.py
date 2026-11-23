@@ -241,6 +241,7 @@ class TestProvisioningService(unittest.TestCase):
                             "surname": "Doe",
                         },
                     },
+                    "custom_id": "company_os_starter",
                     "amount": {
                         "value": "99.00",
                         "currency_code": "USD",
@@ -297,8 +298,9 @@ class TestProvisioningService(unittest.TestCase):
                     "payment": {
                         "entity": {
                             "email": "already_exists@company.com",
-                            "amount": 799900,
+                            "amount": 299900,
                             "currency": "INR",
+                            "notes": {"notes_package": "company_os_starter"},
                         }
                     }
                 }
@@ -371,8 +373,12 @@ class TestProvisioningService(unittest.TestCase):
                     "payment": {
                         "entity": {
                             "email": "client2@acme.com",
-                            "notes": {"notes_company": "Acme Operations"},
-                            "amount": 799900,
+                            "notes": {
+                                "notes_company": "Acme Operations",
+                                "notes_package": "company_os_starter",
+                            },
+                            "amount": 299900,
+                            "currency": "INR",
                         }
                     }
                 }

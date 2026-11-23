@@ -1,6 +1,11 @@
 # P3.1 Production Verification & Release Readiness Acceptance Checklist
 
-Branch: `feat/p3.1-production-verification-readiness`
+Branch: `main` (reconciled `2026-11-23`; originally authored on `feat/p3.1-production-verification-readiness`)
+
+> **Canonical Status Reconciliation (2026-11-23):**
+> - **PostgreSQL Backup & Restore Drill (Row 4):** The table row below captures the initial pre-CLI Windows host snapshot (`BLOCKED`). A subsequent isolated Neon staging drill (`twilight-resonance-00131838`, `afw_staging` -> `afw_restore_drill`, documented in `docs/SECURITY_HARDENING_AUDIT_REPORT.md`) achieved **`STAGING_VERIFIED`**. Production `neondb` remains untouched (`NOT_TESTED` / `BLOCKED` for production cutover until owner runs production backup + controlled migration including revision `p6e1f2a3b4c5`).
+> - **Exposed Credentials & P0 Security Fixes:** Literal `OWNER_API_KEY` and `MANAGER_API_KEY` entries in `render.yaml` have been removed (`sync: false`) and **must be rotated in Render Dashboard** with access logs reviewed. P0 Issues #12, #14, #15, Issue #13 refund tests, Bandit `B104`/`B310` fixes, and CI Playwright Chromium installation are remediated on `main`.
+> - **Overall Release Readiness:** Remains **`BLOCKED`** pending Render secret rotation, live staging deploy/smoke/RBAC/E2E, production Neon backup/migration, and real-money payment + customer pilot verification.
 
 | Area | Verification Requirement | Automated / Code Deliverable | Observed Status | Live Verification State |
 |---|---|---|---|---|

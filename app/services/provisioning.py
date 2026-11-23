@@ -60,20 +60,57 @@ def auto_provision_tenant_on_payment(
     email = None
     customer_name = "Valued Client"
     company_name = None
-    package_key = "company_os_starter"
+    package_key: str | None = None
     amount = 0.0
-    currency = "INR"
+    currency: str | None = None
 
-    # Sovereign Pay / AFW DirectPay extraction
+    def _resolve_plan_id_to_sku(provider_name: str, candidate_plan_id: str | None, sub_resource_id: str | None = None) -> str | None:
+        """Resolve an explicitly registered provider plan_id via SubscriptionRecord or canonical contract plan_ids."""
+        from app.services.catalog import get_modular_pricing_contract
+
+        clean_pid = (candidate_plan_id or "").strip()
+        if clean_pid:
+            # 1. Check persisted SubscriptionRecord for trusted plan mapping
+            sub = db.query(SubscriptionRecord).filter(
+                (SubscriptionRecord.plan_id == clean_pid)
+                | (SubscriptionRecord.provider_subscription_id == sub_resource_id)
+            ).first()
+            if sub:
+                meta = sub.metadata_json if isinstance(sub.metadata_json, dict) else {}
+                mapped = meta.get("internal_sku") or meta.get("package_key") or sub.plan_id
+                if mapped and get_package(str(mapped)):
+                    return str(mapped)
+            # 2. Reverse-lookup canonical provider_plan_id mapping in modular tiers & catalog contracts
+            from app.services.catalog import MODULAR_SME_TIERS
+
+            for tier_key in MODULAR_SME_TIERS:
+                prov_ids = get_modular_pricing_contract(tier_key).get("provider_plan_id", {})
+                if isinstance(prov_ids, dict) and prov_ids.get(provider_name) == clean_pid:
+                    resolved = get_package(tier_key)
+                    if resolved:
+                        return resolved.key
+            for cat_key in CATALOG:
+                prov_ids = get_modular_pricing_contract(cat_key).get("provider_plan_id", {})
+                if isinstance(prov_ids, dict) and prov_ids.get(provider_name) == clean_pid:
+                    return cat_key
+            # 3. Allow direct canonical SKU match only if explicitly recognized in CATALOG
+            if get_package(clean_pid):
+                return clean_pid
+            return clean_pid  # Return raw unrecognized value so strict validation rejects it fail-closed
+        return None
+
+    # Sovereign Pay / AFW DirectPay extraction (strict — NO silent starter fallback)
     if event.provider.value in ("afw_directpay", "sovereign_pay"):
         email = event.data.get("email") or event.data.get("customer_email")
         company_name = event.data.get("company_name") or event.data.get("company")
-        package_key = event.data.get("package_key") or "company_os_starter"
-        amount = float(event.data.get("amount", 0.0))
-        currency = event.data.get("currency", "INR")
+        raw_pkg = event.data.get("package_key") or event.data.get("internal_sku")
+        package_key = str(raw_pkg).strip() if raw_pkg else None
+        amount = float(event.data.get("amount", 0.0) or 0.0)
+        raw_curr = event.data.get("currency")
+        currency = str(raw_curr).strip() if raw_curr else None
         customer_name = event.data.get("customer_name") or company_name or "Valued Client"
 
-    # Razorpay payload extraction
+    # Razorpay payload extraction (strict — NO silent starter fallback)
     elif event.provider.value == "razorpay":
         payload_container = event.data.get("payload", {})
         payload_data = payload_container.get("payment", {}).get("entity", {})
@@ -81,23 +118,28 @@ def auto_provision_tenant_on_payment(
             payload_data = payload_container.get("subscription", {}).get("entity", {})
         if not payload_data:
             payload_data = event.data.get("payment", {}).get("entity", {}) or event.data.get("subscription", {}).get("entity", {})
-        
+
         email = payload_data.get("email")
-        contact = payload_data.get("contact", "")
         notes = payload_data.get("notes", {}) or {}
         company_name = notes.get("company_name") or notes.get("notes_company") or notes.get("company")
-        package_key = (
+        raw_pkg = (
             notes.get("package_key")
             or notes.get("notes_package")
             or notes.get("package")
             or notes.get("sku_key")
-            or "company_os_starter"
+            or notes.get("internal_sku")
         )
+        if raw_pkg:
+            package_key = str(raw_pkg).strip()
+        else:
+            rzp_plan_id = payload_data.get("plan_id") or payload_container.get("subscription", {}).get("entity", {}).get("plan_id")
+            package_key = _resolve_plan_id_to_sku("razorpay", rzp_plan_id, sub_resource_id=payload_data.get("id"))
         raw_amt = payload_data.get("amount", 0)
         amount = float(raw_amt) / 100.0 if raw_amt else 0.0
-        currency = payload_data.get("currency", "INR")
+        raw_curr = payload_data.get("currency")
+        currency = str(raw_curr).strip() if raw_curr else None
 
-    # PayPal payload extraction
+    # PayPal payload extraction (strict — NO silent starter fallback, NO description/amount guessing)
     elif event.provider.value == "paypal":
         resource = event.data.get("resource", {})
         payer = resource.get("payer", {})
@@ -107,39 +149,19 @@ def auto_provision_tenant_on_payment(
         last_name = name_dict.get("surname", "")
         customer_name = f"{first_name} {last_name}".strip() or "Valued Client"
         amount_dict = resource.get("amount", {})
-        amount = float(amount_dict.get("value", 0.0))
-        currency = amount_dict.get("currency_code", "USD")
+        amount = float(amount_dict.get("value", 0.0) or 0.0)
+        raw_curr = amount_dict.get("currency_code")
+        currency = str(raw_curr).strip() if raw_curr else None
 
-        # Map package from PayPal metadata, plan_id, or description
-        custom_id = resource.get("custom_id") or resource.get("custom") or ""
-        plan_id = resource.get("plan_id") or ""
-        description = resource.get("description") or ""
-
+        # Only accept explicitly trusted SKU metadata (custom_id/custom) or verified provider plan_id mapping
+        custom_id = (resource.get("custom_id") or resource.get("custom") or "").strip()
+        plan_id = (resource.get("plan_id") or "").strip()
         if custom_id:
             package_key = custom_id
         elif plan_id:
-            sub = db.query(SubscriptionRecord).filter(
-                (SubscriptionRecord.plan_id == plan_id)
-                | (SubscriptionRecord.provider_subscription_id == resource.get("id"))
-            ).first()
-            if sub and sub.plan_id:
-                package_key = sub.plan_id
-            else:
-                package_key = plan_id
-        elif description:
-            package_key = "company_os_starter"
-            for k in CATALOG:
-                if k in description.lower() or CATALOG[k].name.lower() in description.lower():
-                    package_key = k
-                    break
-        elif amount > 0:
-            package_key = "company_os_starter"
-            for k, p in CATALOG.items():
-                if abs(p.price_usd - amount) < 1.0:
-                    package_key = k
-                    break
+            package_key = _resolve_plan_id_to_sku("paypal", plan_id, sub_resource_id=resource.get("id"))
         else:
-            package_key = "company_os_starter"
+            package_key = None
 
     if not email or "@" not in email:
         logger.info("Webhook event %s did not contain customer email for auto-provisioning", event.id)
@@ -152,7 +174,19 @@ def auto_provision_tenant_on_payment(
         domain_part = email.split("@")[1].split(".")[0]
         company_name = f"{domain_part.capitalize()} Operations"
 
-    # Strict Package Validation (Reject unknown packages fail-closed)
+    # Strict Fail-Closed Package Validation (Issue #15: reject missing, ambiguous, or unknown package metadata)
+    if not package_key:
+        logger.warning(
+            "Provisioning withheld: missing package metadata for provider '%s' webhook event %s",
+            event.provider.value,
+            event.id,
+        )
+        return {
+            "status": "missing_package_withheld",
+            "package_key": None,
+            "provider": event.provider.value,
+        }
+
     pkg = get_package(package_key)
     if not pkg:
         logger.warning(
@@ -165,21 +199,22 @@ def auto_provision_tenant_on_payment(
             "package_key": package_key,
         }
 
-    # Strict Currency Validation (Only INR and USD supported)
+    # Strict Currency Validation (Fail closed if missing or not INR/USD)
     SUPPORTED_CURRENCIES = {"INR", "USD"}
-    clean_curr = (currency or "INR").upper().strip()
+    clean_curr = (currency or "").upper().strip()
     if clean_curr not in SUPPORTED_CURRENCIES:
         logger.warning(
-            "Provisioning withheld: unsupported currency '%s' for package '%s' in event %s",
+            "Provisioning withheld: missing or unsupported currency '%s' for package '%s' in event %s",
             clean_curr,
             pkg.key,
             event.id,
         )
         return {
             "status": "unsupported_currency_withheld",
-            "currency": clean_curr,
+            "currency": clean_curr or None,
             "package_key": pkg.key,
         }
+    currency = clean_curr
 
     # Verify payment amount against package catalog price (Revenue Lifecycle Validation)
     expected_price = float(pkg.price_inr if clean_curr == "INR" else pkg.price_usd)

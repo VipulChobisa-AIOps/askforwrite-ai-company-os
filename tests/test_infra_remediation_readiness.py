@@ -311,6 +311,15 @@ def test_render_blueprint_staging_single_worker_and_healthz() -> None:
     assert "key: TRUST_ENGINE_RETIRED_PUBLIC_KEYS_PEM" in staging_block
     assert "key: HEALTHCHECK_DB_TIMEOUT_SECONDS" in staging_block
 
+    # P0 secret hygiene: neither render.yaml nor render.staging.yaml may commit literal API keys
+    for yaml_text in (render_yaml, staging_bp):
+        lines = yaml_text.splitlines()
+        for idx, line in enumerate(lines):
+            if "key: OWNER_API_KEY" in line or "key: MANAGER_API_KEY" in line:
+                next_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+                assert "value:" not in next_line, f"Literal secret committed next to {line.strip()}"
+                assert ("sync: false" in next_line) or ("generateValue: true" in next_line)
+
     inv_path = repo_root / "docs" / "route_authorization_inventory.json"
     inv = json.loads(inv_path.read_text(encoding="utf-8"))
     paths = {r["path"] for r in inv["routes"]}

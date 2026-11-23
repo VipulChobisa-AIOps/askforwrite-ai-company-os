@@ -65,7 +65,8 @@ class FieldConveyanceTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         app.dependency_overrides[get_current_principal] = lambda: APIPrincipal(
-            subject=self.user_id,
+            subject=user.email,
+            user_id=self.user_id,
             role="member",
             org_id=self.org_id,
         )
