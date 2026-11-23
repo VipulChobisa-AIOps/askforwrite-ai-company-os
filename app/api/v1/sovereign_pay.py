@@ -803,12 +803,15 @@ def direct_checkout_endpoint(
     safe_slug = re.sub(r"[^\w]", "", clean_company.lower()) or "client"
     client_email = (email or f"contact@{safe_slug}.com").strip().lower()
 
+    web3_enabled = os.getenv("ENABLE_WEB3_STABLECOIN_RAIL", "false").strip().lower() in ("1", "true", "yes")
+    is_prod = os.getenv("APP_ENV", "development").strip().lower() == "production"
+    default_usd_rail = "web3_usdc" if (not is_prod or web3_enabled) else "bank_wire_direct"
     session = create_sovereign_pay_session(
         package_key=pkg.key,
         company_name=clean_company,
         customer_email=client_email,
         currency=currency.upper(),
-        preferred_rail="upi_direct" if currency.upper() == "INR" else "web3_usdc",
+        preferred_rail="upi_direct" if currency.upper() == "INR" else default_usd_rail,
         db=db,
     )
     return HTMLResponse(

@@ -41,6 +41,8 @@ services:
         value: "https://os.askforwrite.com,https://os.askforwrite.in,https://askforwrite.in,https://askforwrite.com,https://askforwrite.info,https://ask4write.com,https://node.askforwrite.in,https://shop.ask4write.com,http://localhost:8000"
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
+      - key: ENABLE_WEB3_STABLECOIN_RAIL
+        value: "false"
       # Sovereign Pay Direct Coordinates (0% platform commission; bank/chain fees may apply)
       - key: AFW_MERCHANT_UPI_VPA
         value: "ask4write@icici"
@@ -167,6 +169,8 @@ services:
         value: sandbox_sink
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
+      - key: ENABLE_WEB3_STABLECOIN_RAIL
+        value: "false"
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_URL_UNPOOLED

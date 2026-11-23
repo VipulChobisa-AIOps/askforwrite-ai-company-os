@@ -16,6 +16,8 @@ services:
         value: v3.5-p0-truthfulness-staging
       - key: ENABLE_EXTERNAL_SIDE_EFFECTS
         value: "false"
+      - key: ENABLE_WEB3_STABLECOIN_RAIL
+        value: "false"
       - key: PAYMENT_MODE
         value: sandbox
       - key: PAYPAL_MODE

@@ -188,14 +188,29 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
             self.assertTrue(is_valid_commercial_domain(r.get("domain", "")))
 
     def test_autonomous_shift_succeeds_in_production_env(self):
-        """Verify run_autonomous_shift and lead discovery succeed when APP_ENV='production'."""
+        """Verify run_autonomous_shift and live evidence-backed lead discovery succeed when APP_ENV='production'."""
+        from unittest.mock import patch
+
         old_env = os.environ.get("APP_ENV")
+        live_hit = [
+            {
+                "company": "Live Verified B2B Co",
+                "website": "https://live-verified-b2b.in",
+                "domain": "live-verified-b2b.in",
+                "industry": "B2B Services",
+                "geography": "India",
+                "signals": ["missing schema json-ld"],
+                "source": "serper_live",
+                "evidence_urls": ["https://live-verified-b2b.in"],
+            }
+        ]
         try:
             os.environ["APP_ENV"] = "production"
-            shift = run_autonomous_shift(
-                db=self.db,
-                shift_type="production_daily_cycle",
-            )
+            with patch("app.agents.smb_search_source._search_serper_live", return_value=live_hit):
+                shift = run_autonomous_shift(
+                    db=self.db,
+                    shift_type="production_daily_cycle",
+                )
             self.assertEqual(shift["status"], "COMPLETED")
             outbound = shift["steps"]["outbound_sdr"]
             self.assertEqual(outbound["status"], "COMPLETED")
@@ -205,6 +220,29 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
                 os.environ["APP_ENV"] = old_env
             else:
                 os.environ.pop("APP_ENV", None)
+
+    def test_web3_stablecoin_rail_disabled_in_production_by_default(self):
+        """Verify Web3 stablecoin settlement fails closed in production until ENABLE_WEB3_STABLECOIN_RAIL=true."""
+        from unittest.mock import patch
+        from app.services.sovereign_pay import verify_sovereign_payment
+
+        session = create_sovereign_pay_session(
+            package_key="managed_seo_content_pilot",
+            company_name="Web3 Gate Corp",
+            customer_email="web3gate@corp.in",
+            currency="USD",
+            preferred_rail="bank_wire_direct",
+            db=self.db,
+        )
+        with patch.dict(os.environ, {"APP_ENV": "production", "ENABLE_WEB3_STABLECOIN_RAIL": "false"}):
+            with self.assertRaises(ValueError) as ctx:
+                verify_sovereign_payment(
+                    session_id=session.session_id,
+                    rail="web3_usdc",
+                    proof_reference="0x" + "a" * 64,
+                    db=self.db,
+                )
+            self.assertIn("CA/FEMA/GST/VDA", str(ctx.exception))
 
     # ── US-6.2: 2026 SEO + GEO + AIO + Social Expert Engine ──────────────────
 

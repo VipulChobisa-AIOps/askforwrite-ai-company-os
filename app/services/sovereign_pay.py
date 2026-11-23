@@ -707,6 +707,12 @@ def verify_sovereign_payment(
         verification_mode = "NPCI_UPI_UTR_VALIDATED"
 
     elif clean_rail == "web3_usdc":
+        web3_enabled = os.getenv("ENABLE_WEB3_STABLECOIN_RAIL", "false").strip().lower() in ("1", "true", "yes")
+        if app_env == "production" and not web3_enabled:
+            raise ValueError(
+                "Web3 stablecoin settlement rail is disabled in production pending CA/FEMA/GST/VDA compliance review. "
+                "Please use UPI DirectPay, Razorpay, or Bank Wire."
+            )
         expected_wallet = (session.usdc_payload or {}).get("evm_deposit_address")
         expected_usd = float((session.usdc_payload or {}).get("amount_usd") or session.amount)
         tx_result = verify_onchain_tx(
