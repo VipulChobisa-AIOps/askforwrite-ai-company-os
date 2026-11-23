@@ -372,6 +372,22 @@ def get_service_landing_page(service_key: str) -> Response:
         for item in faqs
     )
 
+    pilot_ops_section = ""
+    if pkg.key == "managed_seo_content_pilot":
+        pilot_ops_section = """
+    <section class="card">
+      <h2>14-Day Human-Operated Pilot Schedule, Revision Policy &amp; Exclusions</h2>
+      <p><strong>Delivery Model:</strong> Human-operated managed service assisted by internal AI drafting workflows. Every deliverable undergoes human editorial QA before handoff; WordPress live publishing strictly requires explicit Owner HITL approval.</p>
+      <ul>
+        <li><strong>Days 1–2 (Intake &amp; Access):</strong> Customer submits target domain, audience, target geography, priority services, and WordPress staging/export preferences via <code>POST /v1/me/pilot/intake</code> (or Customer Portal).</li>
+        <li><strong>Days 3–5 (Audit &amp; Keyword Cluster):</strong> Delivery of 1 Technical SEO &amp; GEO Gap Audit + 1 Commercial Keyword Cluster &amp; Content Map.</li>
+        <li><strong>Days 6–10 (Editorial Content &amp; Schema):</strong> Delivery of 2 human-reviewed authoritative articles (1,500+ words each) with Schema.org JSON-LD markup.</li>
+        <li><strong>Days 11–14 (HITL Handoff &amp; Acceptance):</strong> Staged as WordPress drafts (or Markdown/HTML export) with Owner HITL approval gate before any live publish, followed by customer acceptance via <code>POST /v1/me/deliveries/{delivery_id}/respond</code>.</li>
+      </ul>
+      <p><strong>Revision &amp; Acceptance Policy:</strong> Includes up to <strong>2 editorial revision rounds</strong> per deliverable within the 14-day pilot window. <strong>Exclusions:</strong> Does not include paid ad spend, backlink purchasing, full site redesigns, or guaranteed Google rankings/traffic lift. See <a href="/legal/refund-policy">Refund &amp; Cancellation Policy</a>, <a href="/legal/tos">Terms</a>, and <a href="/legal/privacy">Privacy Policy</a> before purchase.</p>
+    </section>
+"""
+
     page_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -429,6 +445,7 @@ def get_service_landing_page(service_key: str) -> Response:
       <h2>Concrete Customer Deliverables &amp; Output Format</h2>
       <ul>{deliverables_li}</ul>
     </section>
+    {pilot_ops_section}
     <section>
       <h2>SEO, AEO &amp; Generative Engine Optimization (GEO) Readiness</h2>
       <ul>{seo_geo_li}</ul>

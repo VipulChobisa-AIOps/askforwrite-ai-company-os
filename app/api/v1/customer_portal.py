@@ -2298,3 +2298,240 @@ def tenant_gsc_disconnect(
     org_id = _require_tenant_org(principal)
     return disconnect_gsc_account(db, org_id=org_id, actor=principal.subject)
 
+
+# ── Issue #23: Managed SEO & Content Pilot (₹4,999 / 14-Day) Intake & Tracker ─
+
+
+class PilotIntakeRequest(BaseModel):
+    website_url: str = Field(min_length=4, max_length=500, description="Client website URL or domain")
+    target_audience: str = Field(min_length=3, max_length=500, description="Primary buyer persona / audience")
+    target_geography: str = Field(default="India", min_length=2, max_length=200)
+    priority_services: list[str] = Field(min_length=1, max_length=10, description="Priority commercial services or products")
+    cms_platform: Literal["wordpress", "markdown_export", "webflow", "shopify", "other"] = "wordpress"
+    cms_access_mode: Literal["wordpress_draft", "markdown_export", "hitl_live_publish"] = "wordpress_draft"
+    approval_contact_email: str = Field(min_length=5, max_length=250, description="Stakeholder approving drafts")
+    brand_notes: str | None = Field(default=None, max_length=2000)
+
+
+_PILOT_CANONICAL_DELIVERABLES: tuple[tuple[str, str, int], ...] = (
+    (
+        "1. Technical SEO & GEO Gap Audit",
+        "Comprehensive technical SEO, Schema.org, and Generative Engine Optimization gap audit for target domain.",
+        5,
+    ),
+    (
+        "2. Commercial Keyword Cluster & Content Map",
+        "High-intent commercial keyword cluster and competitor content gap map aligned to priority services.",
+        5,
+    ),
+    (
+        "3. Human-Reviewed Authoritative Article #1 + Schema.org JSON-LD",
+        "1,500+ word human-reviewed article with Schema.org JSON-LD staged for WordPress draft or Markdown/HTML export.",
+        10,
+    ),
+    (
+        "4. Human-Reviewed Authoritative Article #2 + Schema.org JSON-LD",
+        "Second 1,500+ word human-reviewed article with Schema.org JSON-LD staged under Owner HITL publication gate.",
+        12,
+    ),
+)
+
+
+@router.post("/pilot/intake", summary="Submit 14-day Managed SEO Pilot intake & initialize tracked deliverables")
+def submit_managed_seo_pilot_intake(
+    body: PilotIntakeRequest,
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Operationalize the ₹4,999 14-day Managed SEO Pilot: records intake, advances onboarding tasks,
+    and idempotently seeds all 4 tracked deliverables with a 2-round revision policy (Issue #23)."""
+    from app.db.models import BusinessProfileRecord, P3ServiceDeliveryRecord
+    from app.security.auth import check_tenant_entitlement
+    from app.services.p3_customer_success import create_or_get_onboarding_workflow, update_onboarding_task
+    from app.services.p3_delivery_health import create_service_delivery, list_service_deliveries
+
+    org_id = _require_tenant_org(principal)
+    check_tenant_entitlement(principal, "managed_seo_content_pilot", db)
+
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    now = datetime.now(timezone.utc)
+    # 1. Persist structured intake on Organization metadata & BusinessProfileRecord
+    intake_payload = {
+        "website_url": body.website_url.strip(),
+        "target_audience": body.target_audience.strip(),
+        "target_geography": body.target_geography.strip(),
+        "priority_services": [s.strip() for s in body.priority_services if s.strip()],
+        "cms_platform": body.cms_platform,
+        "cms_access_mode": body.cms_access_mode,
+        "approval_contact_email": body.approval_contact_email.strip().lower(),
+        "brand_notes": (body.brand_notes or "").strip(),
+        "submitted_at": now.isoformat(),
+        "submitted_by": principal.subject,
+        "revision_limit": 2,
+        "pilot_window_days": 14,
+    }
+    meta = dict(org.metadata_json or {})
+    meta["pilot_intake"] = intake_payload
+    org.metadata_json = meta
+    flag_modified(org, "metadata_json")
+
+    bp = db.query(BusinessProfileRecord).filter_by(org_id=org_id).first()
+    if bp is None:
+        bp = BusinessProfileRecord(
+            org_id=org_id,
+            business_name=org.name,
+            industry="B2B Services / Agency",
+            location=body.target_geography.strip(),
+            website=body.website_url.strip(),
+            contact_info={"approval_contact_email": intake_payload["approval_contact_email"], "cms_access_mode": body.cms_access_mode},
+            customer_segments=[body.target_audience.strip()],
+            products_and_services=list(intake_payload["priority_services"]),
+            business_objectives=list(intake_payload["priority_services"]),
+            current_software=[body.cms_platform],
+            recommended_plan="managed_seo_content_pilot",
+        )
+        db.add(bp)
+    else:
+        bp.location = body.target_geography.strip()
+        bp.website = body.website_url.strip()
+        bp.contact_info = {"approval_contact_email": intake_payload["approval_contact_email"], "cms_access_mode": body.cms_access_mode}
+        bp.customer_segments = [body.target_audience.strip()]
+        bp.products_and_services = list(intake_payload["priority_services"])
+        bp.business_objectives = list(intake_payload["priority_services"])
+        bp.current_software = [body.cms_platform]
+        bp.updated_at = now
+        flag_modified(bp, "contact_info")
+        flag_modified(bp, "customer_segments")
+        flag_modified(bp, "products_and_services")
+        flag_modified(bp, "business_objectives")
+        flag_modified(bp, "current_software")
+    db.commit()
+
+    # 2. Ensure pilot onboarding workflow exists & complete customer-owned intake tasks
+    create_or_get_onboarding_workflow(db, org_id=org_id, sku_key="managed_seo_content_pilot", actor=principal.subject)
+    update_onboarding_task(
+        db,
+        org_id=org_id,
+        task_key="business_profile",
+        completed=True,
+        evidence_summary=f"Audience: {body.target_audience.strip()} | Geography: {body.target_geography.strip()}",
+        sku_key="managed_seo_content_pilot",
+        actor=principal.subject,
+    )
+    update_onboarding_task(
+        db,
+        org_id=org_id,
+        task_key="website_and_platform",
+        completed=True,
+        evidence_summary=f"Website: {body.website_url.strip()} | CMS: {body.cms_platform} ({body.cms_access_mode})",
+        evidence_ref=body.website_url.strip(),
+        sku_key="managed_seo_content_pilot",
+        actor=principal.subject,
+    )
+    if body.cms_access_mode == "markdown_export":
+        update_onboarding_task(
+            db,
+            org_id=org_id,
+            task_key="credentials_and_connectors",
+            completed=True,
+            evidence_summary="Markdown/HTML export mode selected (no WordPress credentials required).",
+            sku_key="managed_seo_content_pilot",
+            actor=principal.subject,
+        )
+
+    # 3. Idempotently seed the 4 canonical 14-day pilot deliverables with revision_limit=2
+    existing_titles = {
+        row.title
+        for row in db.query(P3ServiceDeliveryRecord)
+        .filter_by(org_id=org_id, sku_key="managed_seo_content_pilot")
+        .all()
+    }
+    created_count = 0
+    for title, req_desc, due_days in _PILOT_CANONICAL_DELIVERABLES:
+        if title not in existing_titles:
+            create_service_delivery(
+                db,
+                org_id=org_id,
+                title=title,
+                original_requirement=req_desc,
+                approved_scope=[
+                    f"Target website: {body.website_url.strip()}",
+                    f"Geography: {body.target_geography.strip()}",
+                    f"CMS handoff: {body.cms_access_mode}",
+                    "Up to 2 editorial revision rounds included within 14-day window",
+                    "Owner HITL approval required before any live WordPress publication",
+                ],
+                sku_key="managed_seo_content_pilot",
+                service_id="managed_seo_content_pilot",
+                input_data={**intake_payload, "max_revisions": 2},
+                due_days=due_days,
+                actor=principal.subject,
+            )
+            created_count += 1
+
+    workflow = create_or_get_onboarding_workflow(db, org_id=org_id, sku_key="managed_seo_content_pilot", actor=principal.subject)
+    deliveries = list_service_deliveries(db, org_id=org_id)
+    return {
+        "status": "INTAKE_RECORDED",
+        "org_id": org_id,
+        "sku_key": "managed_seo_content_pilot",
+        "intake": intake_payload,
+        "deliverables_seeded": created_count,
+        "total_deliverables": len(deliveries),
+        "deliverables": deliveries,
+        "onboarding": workflow,
+        "revision_limit": 2,
+        "policy_links": {
+            "terms": "/legal/tos",
+            "privacy": "/legal/privacy",
+            "refund_policy": "/legal/refund-policy",
+            "support_email": "info@askforwrite.in",
+        },
+    }
+
+
+@router.get("/pilot/status", summary="Get 14-day Managed SEO Pilot delivery checklist, milestones & acceptance status")
+def get_managed_seo_pilot_status(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.p3_customer_success import create_or_get_onboarding_workflow
+    from app.services.p3_delivery_health import list_service_deliveries
+
+    org_id = _require_tenant_org(principal)
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    intake = (org.metadata_json or {}).get("pilot_intake")
+    workflow = create_or_get_onboarding_workflow(db, org_id=org_id, sku_key="managed_seo_content_pilot", actor=principal.subject)
+    deliveries = [d for d in list_service_deliveries(db, org_id=org_id) if d.get("sku_key") == "managed_seo_content_pilot"]
+    accepted_count = sum(1 for d in deliveries if d.get("quality_state") == "ACCEPTED")
+    delivered_count = sum(1 for d in deliveries if d.get("quality_state") in ("DELIVERED", "ACCEPTED"))
+
+    return {
+        "org_id": org_id,
+        "sku_key": "managed_seo_content_pilot",
+        "pilot_window_days": 14,
+        "revision_limit": 2,
+        "intake_completed": bool(intake),
+        "intake": intake,
+        "onboarding_progress_pct": workflow.get("progress_pct", 0.0),
+        "onboarding": workflow,
+        "deliverables_count": len(deliveries),
+        "delivered_count": delivered_count,
+        "accepted_count": accepted_count,
+        "pilot_accepted_complete": len(deliveries) >= 4 and accepted_count == len(deliveries),
+        "deliverables": deliveries,
+        "wordpress_hitl_required": True,
+        "policy_links": {
+            "terms": "/legal/tos",
+            "privacy": "/legal/privacy",
+            "refund_policy": "/legal/refund-policy",
+            "support_email": "info@askforwrite.in",
+        },
+    }
+

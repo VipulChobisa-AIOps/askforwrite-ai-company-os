@@ -116,9 +116,12 @@ def draft_outreach(
     if any(kw in company_lower for kw in COMPETITOR_COMPANY_KEYWORDS):
         raise ValueError(f"Outreach to competitor firm '{lead.company}' is strictly prohibited.")
 
-    from app.services.suppression import is_suppressed
-    if (target_email and is_suppressed(target_email)) or (target_domain and is_suppressed(target_domain)):
-        raise ValueError(f"Outreach to suppressed or opted-out recipient '{target_email or target_domain}' is strictly prohibited.")
+    from app.services.suppression import is_db_suppressed, is_suppressed
+    sup_hit, sup_reason = is_db_suppressed(db, target_email, lead_id=lead.id)
+    if sup_hit or (target_domain and is_suppressed(target_domain)):
+        raise ValueError(
+            f"Outreach to suppressed or opted-out recipient '{target_email or target_domain}' is strictly prohibited ({sup_reason or 'suppressed'})."
+        )
 
     # Check organizational credit limit
     org: OrganizationRecord | None = None
@@ -178,9 +181,18 @@ def draft_outreach(
         db.add(task)
         db.flush()
 
-    # Evaluate contact verification status & approval policy (Findings 1 & 2)
+    # Evaluate contact verification status & approval policy (Issue #21: block synthetic contacts in production)
+    is_synthetic_contact = bool(
+        target_email and lead.domain and target_email.lower().strip() == f"contact@{lead.domain.lower().strip()}"
+    )
+    if app_env in ("production", "prod") and is_synthetic_contact:
+        raise ValueError(
+            f"Outreach to guessed/synthetic contact address '{target_email}' is blocked in production. "
+            "Verify a sourced public business contact channel first."
+        )
+
     is_verified_contact = True
-    if target_email and lead.domain and target_email.lower().strip() == f"contact@{lead.domain.lower().strip()}":
+    if is_synthetic_contact:
         is_verified_contact = False
     elif target_email and target_email.lower().startswith(("info@", "support@", "admin@", "sales@", "hello@")):
         is_verified_contact = False
@@ -315,6 +327,20 @@ def dispatch_outreach(
     if approval.status != "APPROVED":
         raise ValueError(
             f"Outreach cannot be dispatched without Owner approval (current approval status: {approval.status})"
+        )
+
+    # Issue #21: Re-check DB & memory suppression + do_not_contact at dispatch time in case prospect opted out post-approval
+    from app.services.suppression import is_db_suppressed, is_suppressed
+
+    recipient_clean = (outreach.recipient_email or "").strip().lower()
+    recipient_domain = recipient_clean.split("@")[-1] if "@" in recipient_clean else ""
+    lead_check = db.get(LeadRecordRow, outreach.lead_id) if outreach.lead_id else None
+    if lead_check and (lead_check.do_not_contact or lead_check.status == "DO_NOT_CONTACT"):
+        raise ValueError("Outreach blocked at dispatch: lead is marked do_not_contact")
+    sup_hit, sup_reason = is_db_suppressed(db, recipient_clean, lead_id=outreach.lead_id)
+    if sup_hit or (recipient_domain and is_suppressed(recipient_domain)):
+        raise ValueError(
+            f"Outreach blocked at dispatch: recipient '{recipient_clean or recipient_domain}' is suppressed/opted out ({sup_reason or 'suppressed'})"
         )
 
     # Verify and deduct organization outreach quota

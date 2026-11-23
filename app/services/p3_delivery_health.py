@@ -206,8 +206,19 @@ def transition_delivery_quality_state(
     if clean_target == "ACCEPTED":
         delivery.accepted_at = now
 
-    if clean_target == "REVISION_REQUESTED" and note:
-        delivery.revision_notes = note.strip()
+    if clean_target == "REVISION_REQUESTED":
+        max_rev = int((delivery.input_data_json or {}).get("max_revisions") or 0)
+        prior_revs = sum(
+            1
+            for ev in (delivery.execution_history_json or [])
+            if isinstance(ev, dict) and str(ev.get("event") or "").endswith("_TO_REVISION_REQUESTED")
+        )
+        if max_rev > 0 and prior_revs >= max_rev:
+            raise ValueError(
+                f"Revision limit reached ({prior_revs}/{max_rev} included revision rounds used for this deliverable)."
+            )
+        if note:
+            delivery.revision_notes = note.strip()
 
     hist = list(delivery.execution_history_json or [])
     hist.append(

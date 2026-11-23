@@ -13,7 +13,7 @@ To establish automated dependency vulnerability scanning as a strict CI/CD relea
    - Artifact: Full JSON report uploaded as `pip-audit-report.json` on every CI run.
 
 ## Runtime Vulnerability Remediations Applied (2026-11-23)
-- Upgraded `pyproject.toml` minimum safe floors (`cryptography>=46.0.6`, `certifi>=2026.10.19`, `pyasn1>=0.6.5`) rather than waiving fixable runtime CVEs (`CVE-2026-26007`, `PYSEC-2026-4320`, `CVE-2026-119194..119197`).
+- Upgraded `pyproject.toml` minimum safe floors (`cryptography>=46.0.6`, `certifi>=2026.10.19`, `pyasn1>=0.6.5`, `langgraph>=1.0.10,<2`, `pillow>=13.0.0,<14`) rather than waiving fixable runtime CVEs across cryptography, certifi, pyasn1, langgraph/checkpoint/sdk, and pillow.
 
 ## Active Time-Bounded Waivers (`docs/SECURITY_WAIVERS.json`)
 

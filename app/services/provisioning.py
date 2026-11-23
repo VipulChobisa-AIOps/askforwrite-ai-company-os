@@ -512,8 +512,8 @@ def auto_provision_tenant_on_payment(
                     confidence=float(cand.get("confidence", 0.92)),
                     public_contact_channel=cand.get("public_contact_channel"),
                     recommended_next_step="outreach_review",
-                    do_not_contact=False,
-                    status="DISCOVERED",
+                    do_not_contact=bool(cand.get("do_not_contact", False)),
+                    status="DO_NOT_CONTACT" if cand.get("do_not_contact") else "DISCOVERED",
                 )
                 db.add(lead_row)
                 seeded_leads_count += 1
@@ -522,8 +522,8 @@ def auto_provision_tenant_on_payment(
     except Exception as exc:
         logger.warning("Lead seeding fallback during tenant provisioning: %s", exc)
 
-    # 5b. Ensure P3 Customer Success Account exists atomically in ONBOARDING state
-    from app.services.p3_customer_success import ensure_customer_account
+    # 5b. Ensure P3 Customer Success Account & Pilot Onboarding Workflow exist atomically in ONBOARDING state
+    from app.services.p3_customer_success import create_or_get_onboarding_workflow, ensure_customer_account
 
     ensure_customer_account(
         db,
@@ -534,6 +534,14 @@ def auto_provision_tenant_on_payment(
         sku_key=pkg.key,
         commit=False,
     )
+    if pkg.key == "managed_seo_content_pilot":
+        db.flush()
+        create_or_get_onboarding_workflow(
+            db,
+            org_id=org_id,
+            sku_key=pkg.key,
+            actor="provisioning_engine",
+        )
 
     # 6. Audit Log
     db.add(

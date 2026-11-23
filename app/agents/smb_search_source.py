@@ -847,11 +847,15 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
         except Exception as exc:
             logger.debug(f"Live web audit fallback for {domain}: {exc}")
 
-    # Fallback default email if none extracted
+    # Fallback default email only outside production (Issue #21: never synthesize emails in production)
+    is_production = os.getenv("APP_ENV", "").strip().lower() in ("production", "prod")
     is_contact_verified = bool(extracted_emails)
     if not extracted_emails and domain:
-        extracted_emails = [f"contact@{domain}"]
-        contact_verification_status = "UNVERIFIED_SYNTHETIC"
+        if is_production:
+            contact_verification_status = "UNVERIFIED_NO_PUBLIC_CONTACT"
+        else:
+            extracted_emails = [f"contact@{domain}"]
+            contact_verification_status = "UNVERIFIED_SYNTHETIC"
     else:
         contact_verification_status = "VERIFIED_EXTRACTED" if is_contact_verified else "UNVERIFIED"
 
@@ -911,11 +915,13 @@ def discover_smb_leads(
     """
     import sys
     from app.agents.discovery import COMPETITOR_DOMAINS
+    from app.services.suppression import is_suppressed
 
     clean_vert = vertical.strip().lower()
     catalog_key = VERTICAL_TO_CATALOG_KEY.get(clean_vert, "growth_all_in_one")
     pkg = get_package(catalog_key) or CATALOG["growth_all_in_one"]
     in_test_harness = "pytest" in sys.modules or "unittest" in sys.modules
+    is_production = os.getenv("APP_ENV", "").strip().lower() in ("production", "prod")
 
     # 1. Live search adapters
     search_query = f"{clean_vert.replace('_', ' ')} SMB businesses in {region}"
@@ -925,22 +931,36 @@ def discover_smb_leads(
     if not live_results and not in_test_harness:
         live_results = _search_duckduckgo_live(search_query, limit=limit)
 
-    # 2. Get curated regional directory candidates (100% real Indian commercial domains)
-    curated_candidates = CURATED_SMB_DIRECTORY.get(
-        clean_vert,
-        CURATED_SMB_DIRECTORY.get(catalog_key, CURATED_SMB_DIRECTORY["growth_all_in_one"]),
-    )
+    for item in live_results:
+        item.setdefault("source_type", "live_search")
+        item["is_curated_fixture"] = False
 
-    filtered_curated = []
-    if region and region.lower() != "india":
-        reg_lower = region.lower()
-        for cand in curated_candidates:
-            if reg_lower in cand.get("geography", "").lower():
-                filtered_curated.append(cand)
-    if not filtered_curated:
-        filtered_curated = list(curated_candidates)
-
-    combined_pool = live_results + filtered_curated
+    # 2. Issue #21: Production discovery NEVER falls back to curated test/directory fixtures
+    combined_pool: list[dict[str, Any]] = list(live_results)
+    if not is_production:
+        curated_candidates = CURATED_SMB_DIRECTORY.get(
+            clean_vert,
+            CURATED_SMB_DIRECTORY.get(catalog_key, CURATED_SMB_DIRECTORY["growth_all_in_one"]),
+        )
+        filtered_curated: list[dict[str, Any]] = []
+        if region and region.lower() != "india":
+            reg_lower = region.lower()
+            for cand in curated_candidates:
+                if reg_lower in cand.get("geography", "").lower():
+                    filtered_curated.append(dict(cand))
+        if not filtered_curated:
+            filtered_curated = [dict(c) for c in curated_candidates]
+        for c in filtered_curated:
+            c["source_type"] = "curated_directory_fixture"
+            c["is_curated_fixture"] = True
+        combined_pool.extend(filtered_curated)
+    elif not combined_pool:
+        logger.warning(
+            "Production SMB discovery returned 0 live leads for vertical='%s' region='%s' (curated fallback disabled).",
+            clean_vert,
+            region,
+        )
+        return []
 
     # Strictly filter out any invalid/mock domains and competitor domains
     valid_candidates: list[dict[str, Any]] = []
@@ -959,15 +979,18 @@ def discover_smb_leads(
             if len(valid_candidates) >= limit:
                 break
 
-    # 3. Enrich each candidate with pain point diagnosis, SKU recommendation, ROI, and SEO/GEO audit
+    # 3. Enrich each candidate with evidence URLs, timestamps, suppression-aware DNC, and SEO/GEO audit
     diag = PAIN_POINT_DIAGNOSIS.get(clean_vert, PAIN_POINT_DIAGNOSIS.get(catalog_key, PAIN_POINT_DIAGNOSIS["growth_all_in_one"]))
     roi_data = calculate_estimated_roi(catalog_key)
     audit_timeout = 0.0 if in_test_harness else 1.5
+    observed_at = datetime.now(UTC).isoformat()
 
     enriched_leads: list[dict[str, Any]] = []
     for cand in valid_candidates:
         domain = cand.get("domain", "")
         website = cand.get("website", f"https://{domain}")
+        if not website.startswith(("http://", "https://")):
+            website = f"https://{domain}"
         audit = audit_live_website_seo_geo(website, timeout=audit_timeout)
 
         contact_channel = cand.get("public_contact_channel")
@@ -976,21 +999,55 @@ def discover_smb_leads(
 
         if not contact_channel and audit.get("extracted_emails"):
             contact_channel = audit["extracted_emails"][0]
-            is_verified = audit.get("is_contact_verified", False)
+            is_verified = bool(audit.get("is_contact_verified", False))
             verification_status = audit.get("contact_verification_status", "UNVERIFIED")
 
         if not contact_channel:
-            contact_channel = f"contact@{domain}"
-            is_verified = False
-            verification_status = "UNVERIFIED_SYNTHETIC"
+            if is_production:
+                # Issue #21: Never synthesize guessed email addresses in production
+                contact_channel = None
+                is_verified = False
+                verification_status = "UNVERIFIED_NO_PUBLIC_CONTACT"
+            else:
+                contact_channel = f"contact@{domain}"
+                is_verified = False
+                verification_status = "UNVERIFIED_SYNTHETIC"
         elif not verification_status:
-            # If candidate provided its own non-synthetic email
             if contact_channel == f"contact@{domain}":
                 is_verified = False
                 verification_status = "UNVERIFIED_SYNTHETIC"
             else:
                 is_verified = True
-                verification_status = "VERIFIED_CURATED"
+                verification_status = "VERIFIED_CURATED" if cand.get("is_curated_fixture") else "VERIFIED_EXTRACTED"
+
+        # Issue #21: Derive do_not_contact dynamically from suppression/opt-out registry & source flag (never hardcode False)
+        suppressed_hit = (
+            bool(cand.get("do_not_contact", False))
+            or is_suppressed(domain)
+            or is_suppressed(website)
+            or (bool(contact_channel) and is_suppressed(str(contact_channel)))
+        )
+        if suppressed_hit:
+            contact_permission = "SUPPRESSED"
+        elif is_verified and contact_channel and not cand.get("is_curated_fixture"):
+            contact_permission = "VERIFIED_PUBLIC_BUSINESS_CHANNEL"
+        elif is_verified and contact_channel:
+            contact_permission = "CURATED_FIXTURE_UNVERIFIED_LIVE"
+        else:
+            contact_permission = "UNKNOWN"
+
+        outreach_eligible = (not suppressed_hit) and is_verified and bool(contact_channel) and (
+            not is_production or not cand.get("is_curated_fixture")
+        )
+
+        signals_list = list(cand.get("signals", []))
+        evidence_urls = [u for u in dict.fromkeys([website, *(cand.get("evidence_urls") or [])]) if isinstance(u, str) and u.startswith(("http://", "https://"))]
+        source_type = str(cand.get("source_type") or ("curated_directory_fixture" if cand.get("is_curated_fixture") else "live_search"))
+        confidence_rationale = (
+            f"source_type={source_type}; audit_status={audit.get('audit_status')}; "
+            f"signals={len(signals_list)}; contact_verification={verification_status}; "
+            f"suppressed={suppressed_hit}"
+        )
 
         lead_dict: dict[str, Any] = {
             "company": cand.get("company", "Candidate SMB"),
@@ -998,10 +1055,17 @@ def discover_smb_leads(
             "domain": domain,
             "industry": cand.get("industry", "SMB Business"),
             "geography": cand.get("geography", region),
-            "observed_signals": list(cand.get("signals", [])),
+            "observed_signals": signals_list,
+            "evidence_urls": evidence_urls,
+            "observed_at": observed_at,
+            "source_type": source_type,
+            "is_curated_fixture": bool(cand.get("is_curated_fixture", False)),
+            "confidence_rationale": confidence_rationale,
             "public_contact_channel": contact_channel,
             "is_contact_verified": is_verified,
             "contact_verification_status": verification_status,
+            "contact_permission": contact_permission,
+            "outreach_eligible": outreach_eligible,
             "target_buyer_persona": pkg.target_buyer_persona,
             "identified_pain_point": pkg.target_pain_point,
             "recommended_package": pkg.key,
@@ -1014,8 +1078,8 @@ def discover_smb_leads(
             "confidence": float(cand.get("confidence", 0.90)),
             "sources": [cand.get("source", "curated_smb_regional_directory")],
             "seo_geo_audit": audit,
-            "do_not_contact": False,
-            "status": "DISCOVERED",
+            "do_not_contact": suppressed_hit,
+            "status": "DO_NOT_CONTACT" if suppressed_hit else "DISCOVERED",
         }
         enriched_leads.append(lead_dict)
 
