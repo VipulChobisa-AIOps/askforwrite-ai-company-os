@@ -668,7 +668,7 @@ def verify_sovereign_payment(
     For UPI & Bank Wire: Transitions session to AWAITING_OWNER_CONFIRMATION, creates durable ApprovalRequest,
     and alerts founder via email with 1-click confirmation guidance to prevent fraudulent self-confirmations.
     """
-    session = get_sovereign_pay_session(session_id)
+    session = get_sovereign_pay_session(session_id, db=db)
     if not session:
         raise ValueError(f"Sovereign payment session '{session_id}' not found")
 
@@ -772,7 +772,7 @@ def verify_sovereign_payment(
         else:
             approval = ApprovalRequest(
                 id=str(uuid.uuid4()),
-                task_id=f"sovereign_pay_{session.session_id}",
+                task_id=session.session_id[:36],
                 lead_id=None,
                 proposal_id=None,
                 action="sovereign_payment_verification",
@@ -969,7 +969,7 @@ def confirm_sovereign_payment_by_owner(
     5. Dispatches customer welcome onboarding email.
     6. Updates session status to COMPLETED.
     """
-    session = get_sovereign_pay_session(session_id)
+    session = get_sovereign_pay_session(session_id, db=db)
     if not session:
         raise ValueError(f"Sovereign payment session '{session_id}' not found")
 
@@ -1126,6 +1126,13 @@ def create_live_penny_test_session(
     valid_rails = ("razorpay", "paypal", "upi_direct", "web3_usdc", "bank_wire_direct")
     if clean_rail not in valid_rails:
         raise ValueError(f"Unsupported rail '{rail}'. Must be one of: {', '.join(valid_rails)}")
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    web3_enabled = os.getenv("ENABLE_WEB3_STABLECOIN_RAIL", "false").strip().lower() in ("1", "true", "yes")
+    if clean_rail == "web3_usdc" and app_env == "production" and not web3_enabled:
+        raise ValueError(
+            "Web3 stablecoin settlement rail is disabled in production pending CA/FEMA/GST/VDA compliance review. "
+            "Please use UPI DirectPay, Razorpay, PayPal, or Bank Wire."
+        )
 
     currency = "INR" if clean_rail in ("razorpay", "upi_direct", "bank_wire_direct") else "USD"
     amount = 1.0

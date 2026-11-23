@@ -517,8 +517,9 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertEqual(session_after_verify.verification_proof, utr_12_digits)
 
         # Durable ApprovalRequest created in database
-        approval = self.db.query(ApprovalRequest).filter_by(task_id=f"sovereign_pay_{session.session_id}").first()
+        approval = self.db.query(ApprovalRequest).filter_by(task_id=session.session_id[:36]).first()
         self.assertIsNotNone(approval)
+        self.assertLessEqual(len(approval.task_id), 36)
         self.assertEqual(approval.status, "PENDING")
         self.assertEqual(approval.action, "sovereign_payment_verification")
         self.assertEqual(approval.detail["rail"], "upi_direct")
@@ -638,8 +639,9 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
         self.assertEqual(verify_data["status"], "AWAITING_CONFIRMATION")
 
         # Step 2: Retrieve pending ApprovalRequest from database
-        approval = self.db.query(ApprovalRequest).filter_by(task_id=f"sovereign_pay_{session.session_id}").first()
+        approval = self.db.query(ApprovalRequest).filter_by(task_id=session.session_id[:36]).first()
         self.assertIsNotNone(approval)
+        self.assertLessEqual(len(approval.task_id), 36)
         self.assertEqual(approval.status, "PENDING")
         self.assertEqual(approval.action, "sovereign_payment_verification")
         self.assertEqual(approval.detail["session_id"], session.session_id)
