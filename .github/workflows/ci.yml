@@ -245,15 +245,7 @@ jobs:
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
             LAST_STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" https://os.askforwrite.com/health || true)
             if [ "$LAST_STATUS" = "200" ]; then
-              PARSED=$(python3 - <<'PY'
-import json
-try:
-    d = json.load(open('/tmp/health.json'))
-    print(d.get('status',''), d.get('database',''), d.get('commit_sha_full',''))
-except Exception:
-    print('parse_error', 'unknown', 'unknown')
-PY
-)
+              PARSED=$(python3 -c "import json; d=json.load(open('/tmp/health.json')); print(d.get('status',''), d.get('database',''), d.get('commit_sha_full',''))" 2>/dev/null || echo "parse_error unknown unknown")
               HEALTH_STATE=$(echo "$PARSED" | awk '{print $1}')
               LAST_DB=$(echo "$PARSED" | awk '{print $2}')
               LAST_SHA=$(echo "$PARSED" | awk '{print $3}')
