@@ -258,12 +258,14 @@ class MasterAuditHardeningTests(unittest.TestCase):
         self.assertEqual(r2.status_code, 400)
         self.assertIn("Duplicate payment proof", r2.json()["detail"])
 
-        # Production gating for unconfirmed Web3 tx hash
+        # Production gating for Web3 stablecoin rail (default fail-closed, then unconfirmed RPC gating when explicitly enabled)
         old_env = os.environ.get("APP_ENV")
         old_rpc = os.environ.get("WEB3_RPC_URL")
+        old_web3_gate = os.environ.get("ENABLE_WEB3_STABLECOIN_RAIL")
         try:
             os.environ["APP_ENV"] = "production"
             os.environ["WEB3_RPC_URL"] = ""
+            os.environ["ENABLE_WEB3_STABLECOIN_RAIL"] = "false"
             sess_prod = create_sovereign_pay_session(
                 package_key="trust_engine",
                 company_name="Prod Web3 Gate Co",
@@ -273,6 +275,14 @@ class MasterAuditHardeningTests(unittest.TestCase):
                 db=self.db,
             )
             tx_hash = "0x" + uuid.uuid4().hex + uuid.uuid4().hex
+            r_prod_blocked = self.client.post(
+                f"/v1/pay/{sess_prod.session_id}/verify",
+                json={"rail": "web3_usdc", "proof_reference": tx_hash},
+            )
+            self.assertEqual(r_prod_blocked.status_code, 400)
+            self.assertIn("disabled in production", r_prod_blocked.json()["detail"].lower())
+
+            os.environ["ENABLE_WEB3_STABLECOIN_RAIL"] = "true"
             r_prod = self.client.post(
                 f"/v1/pay/{sess_prod.session_id}/verify",
                 json={"rail": "web3_usdc", "proof_reference": tx_hash},
@@ -288,6 +298,10 @@ class MasterAuditHardeningTests(unittest.TestCase):
                 os.environ["WEB3_RPC_URL"] = old_rpc
             else:
                 os.environ.pop("WEB3_RPC_URL", None)
+            if old_web3_gate is not None:
+                os.environ["ENABLE_WEB3_STABLECOIN_RAIL"] = old_web3_gate
+            else:
+                os.environ.pop("ENABLE_WEB3_STABLECOIN_RAIL", None)
 
     def test_04_provisioning_no_plaintext_password_and_upgrades_existing_signup(self):
         """Verify auto_provision_tenant_on_payment never stores plaintext password and upgrades existing signup users."""
