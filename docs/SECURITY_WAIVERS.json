@@ -1,0 +1,17 @@
+{
+  "policy_version": "1.0",
+  "owner": "VipulChobisa-AIOps",
+  "enforcement": "fail_on_unwaived_or_expired",
+  "waivers": [
+    {
+      "package": "pytest",
+      "vuln_ids": ["PYSEC-2026-1845"],
+      "severity": "LOW",
+      "scope": "dev_test_only",
+      "owner": "VipulChobisa-AIOps",
+      "rationale": "Developer test runner framework only; excluded from production Docker runtime image.",
+      "compensating_control": "Dockerfile installs only runtime dependencies without [dev] extras; CI security job scans production runtime set.",
+      "expires_on": "2026-12-31"
+    }
+  ]
+}

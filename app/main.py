@@ -242,7 +242,7 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
     if exc.status_code == 404 and not request.url.path.startswith("/v1/") and is_browser_or_crawler(request):
         return HTMLResponse(content=render_404_html(request.url.path), status_code=404)
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
 
 
 @app.get("/dashboard", include_in_schema=False)

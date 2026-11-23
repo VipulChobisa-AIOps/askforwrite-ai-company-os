@@ -265,11 +265,14 @@ def login_user(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginRes
     org_name = org.name
     org_tier = org.tier
 
+    user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
     token = create_access_token(
         user_id=user.id,
         email=user.email,
         role=user.role,
         org_id=user.org_id,
+        password_hash=user.password_hash,
+        token_version=int(user_meta.get("token_version") or 0),
     )
 
     return LoginResponse(
@@ -394,11 +397,14 @@ def register_user(payload: RegisterRequest, db: Session = Depends(get_db)) -> Lo
     db.commit()
     db.refresh(user)
 
+    user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
     token = create_access_token(
         user_id=user.id,
         email=user.email,
         role=user.role,
         org_id=user.org_id,
+        password_hash=user.password_hash,
+        token_version=int(user_meta.get("token_version") or 0),
     )
 
     return LoginResponse(
@@ -482,11 +488,14 @@ def accept_invitation(payload: AcceptInvitationRequest, db: Session = Depends(ge
     db.commit()
     db.refresh(user)
 
+    user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
     token = create_access_token(
         user_id=user.id,
         email=user.email,
         role=user.role,
         org_id=user.org_id,
+        password_hash=user.password_hash,
+        token_version=int(user_meta.get("token_version") or 0),
     )
     return LoginResponse(
         access_token=token,

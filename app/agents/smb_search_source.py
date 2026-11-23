@@ -791,12 +791,30 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
         audit_status = "BLOCKED_SSRF"
     elif timeout > 0:
         try:
+            import httpcore
             from app.agents.sources import SSRFSafeTransport
+
+            def _enforce_safe_redirect(response: httpx.Response) -> None:
+                if response.is_redirect:
+                    loc = response.headers.get("location")
+                    if loc:
+                        next_url = str(response.url.join(loc))
+                        if not is_safe_public_url(next_url):
+                            raise ValueError(f"BLOCKED_SSRF: redirect target blocked ({next_url})")
+
             headers = {"User-Agent": "Mozilla/5.0 (compatible; AskforWriteSEOGeoAuditor/2.0; +https://askforwrite.com)"}
-            with httpx.Client(transport=SSRFSafeTransport(), timeout=timeout, follow_redirects=True) as client:
+            with httpx.Client(
+                transport=SSRFSafeTransport(),
+                timeout=timeout,
+                follow_redirects=True,
+                max_redirects=3,
+                event_hooks={"response": [_enforce_safe_redirect]},
+            ) as client:
                 resp = client.get(target_url, headers=headers)
-                if resp.status_code < 400:
-                    html = resp.text
+                if not is_safe_public_url(str(resp.url)):
+                    audit_status = "BLOCKED_SSRF"
+                elif resp.status_code < 400:
+                    html = resp.text[:250_000]
                     audit_status = "LIVE_VERIFIED"
                     if "application/ld+json" in html.lower():
                         has_json_ld = True
@@ -820,6 +838,12 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
                             if e_clean not in cleaned and is_valid_commercial_domain(e_clean.split("@")[-1]):
                                 cleaned.append(e_clean)
                     extracted_emails = cleaned[:5]
+        except (ValueError, httpcore.ConnectError, httpx.ConnectError) as exc:
+            err_msg = str(exc).lower()
+            if any(k in err_msg for k in ("blocked_ssrf", "ssrf", "private", "prohibited", "loopback", "reserved", "link-local")):
+                audit_status = "BLOCKED_SSRF"
+            else:
+                logger.debug(f"Live web audit fallback for {domain}: {exc}")
         except Exception as exc:
             logger.debug(f"Live web audit fallback for {domain}: {exc}")
 
@@ -869,7 +893,8 @@ def audit_live_website_seo_geo(website_url: str, timeout: float = 2.5) -> dict[s
         "audit_status": audit_status,
         "generated_at": datetime.now(UTC).isoformat(),
     }
-    _AUDIT_CACHE[target_url] = dict(result)
+    if audit_status != "BLOCKED_SSRF":
+        _AUDIT_CACHE[target_url] = dict(result)
     return result
 
 

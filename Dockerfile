@@ -9,7 +9,8 @@ RUN apt-get update && \
 
 # Install runtime Python dependencies only (exclude dev/Playwright packages)
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir . && \
+RUN pip install --no-cache-dir --upgrade pip setuptools && \
+    pip install --no-cache-dir . && \
     pip install --no-cache-dir gunicorn
 
 # Copy application code

@@ -94,9 +94,68 @@ jobs:
           path: coverage.xml
           retention-days: 14
 
+  # ── Job 2b: PostgreSQL 16 Release Verification & Migration Drill (Issue #18) ──
+  postgres-verification:
+    name: PostgreSQL 16 Migration & Integration Gate
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: afw
+          POSTGRES_PASSWORD: afw_ci_password
+          POSTGRES_DB: afw_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U afw -d afw_ci_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      APP_ENV: staging
+      DATABASE_URL: postgresql+psycopg://afw:afw_ci_password@127.0.0.1:5432/afw_ci_test
+      DATABASE_URL_UNPOOLED: postgresql+psycopg://afw:afw_ci_password@127.0.0.1:5432/afw_ci_test
+      MANAGER_API_KEY: test-pg-manager-api-key-32-chars-xxx
+      OWNER_API_KEY: test-pg-owner-api-key-32-chars-xxxxx
+      JWT_SECRET_KEY: test-pg-jwt-secret-key-32-chars-xxxx
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system & Python dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libpq-dev
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run Alembic upgrade, head assertion, downgrade & re-upgrade on empty PostgreSQL 16
+        run: |
+          alembic upgrade head
+          HEAD=$(alembic current | awk '{print $1}' | tail -n 1)
+          echo "PostgreSQL current revision: $HEAD"
+          if [ "$HEAD" != "p6e1f2a3b4c5" ]; then
+            echo "::error::Expected Alembic head p6e1f2a3b4c5, got $HEAD"
+            exit 1
+          fi
+          alembic downgrade -1
+          alembic upgrade head
+
+      - name: Run PostgreSQL integration & concurrency tests
+        run: |
+          python -m pytest tests/test_issue18_postgres_release_verification.py -v --tb=short
+
   # ── Job 3: Security Scan ──────────────────────────────────────────────────
   security:
-    name: Security Scan (Bandit + Safety)
+    name: Security Scan (Bandit + Release-Blocking pip-audit Gate)
     runs-on: ubuntu-latest
     needs: lint
     steps:
@@ -107,8 +166,11 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install security tools
-        run: pip install bandit safety pip-audit
+      - name: Install production runtime dependencies & security scanners
+        run: |
+          python -m pip install --upgrade pip setuptools
+          pip install .
+          pip install bandit pip-audit
 
       - name: Bandit SAST scan (high + medium severity - release blocking)
         run: |
@@ -116,14 +178,22 @@ jobs:
             --skip B101,B311 \
             -f txt
 
-      - name: Dependency vulnerability scan (Issue #19 Release Gate with documented waivers)
+      - name: Dependency vulnerability release gate (Issue #19 — fails on unwaived/expired vulns)
         run: |
-          pip-audit --desc || echo "::warning::Audit flagged non-runtime dev packages. Documented in docs/SECURITY_WAIVERS.md"
+          python scripts/check_dependency_vulns.py --report-path pip-audit-report.json
+
+      - name: Upload dependency audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          retention-days: 14
 
   # ── Job 4: Docker Build Verification ─────────────────────────────────────
   docker-build:
     name: Verify Docker Container Build
-    needs: test
+    needs: [test, postgres-verification]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -140,10 +210,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Job 5: Deploy & Production Verification (main branch only) ───────────
+  # ── Job 5: Deploy & Production Verification (main branch only — Issue #17) ──
   deploy-production:
-    name: Production Deployment & Verification
-    needs: [test, docker-build, security]
+    name: Production Deployment & Commit Verification
+    needs: [test, postgres-verification, docker-build, security]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
@@ -152,68 +222,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trigger Railway Deploy (if configured)
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        if: env.RAILWAY_TOKEN != ''
-        run: |
-          npm install -g @railway/cli
-          railway up --service os_gateway --detach
-
-      - name: Trigger Render Deploy Hook (if configured)
+      - name: Trigger Render Production Deploy Hook (if configured; else Render GitHub auto-deploy)
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-        if: env.RENDER_DEPLOY_HOOK_URL != ''
         run: |
-          echo "Triggering Render 1-click deploy hook..."
-          curl -s -S -X POST "$RENDER_DEPLOY_HOOK_URL"
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Triggering Render deploy hook..."
+            curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          else
+            echo "RENDER_DEPLOY_HOOK_URL secret not set; relying on Render GitHub auto-deploy and enforcing strict live commit_sha_full match."
+          fi
 
-      - name: Mandatory Production Smoke Test & Live Verification
+      - name: Strict Production Commit SHA & Database Health Verification (Issue #17)
         run: |
-          echo "Running mandatory production verification on https://os.askforwrite.com..."
+          echo "Verifying live deployment on https://os.askforwrite.com matches target commit ${GITHUB_SHA}..."
           ATTEMPTS=0
-          MAX_ATTEMPTS=12
-          SUCCESS=0
+          MAX_ATTEMPTS=36
+          VERIFIED=0
+          LAST_STATUS="000"
+          LAST_SHA="unknown"
+          LAST_DB="unknown"
           while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://os.askforwrite.com/health || true)
-            if [ "$STATUS" = "200" ]; then
-              HEALTH_JSON=$(curl -s https://os.askforwrite.com/health || true)
-              echo "✅ Health check returned HTTP 200: $HEALTH_JSON"
-              SUCCESS=1
-              break
+            LAST_STATUS=$(curl -s -o /tmp/health.json -w "%{http_code}" https://os.askforwrite.com/health || true)
+            if [ "$LAST_STATUS" = "200" ]; then
+              PARSED=$(python3 - <<'PY'
+import json
+try:
+    d = json.load(open('/tmp/health.json'))
+    print(d.get('status',''), d.get('database',''), d.get('commit_sha_full',''))
+except Exception:
+    print('parse_error', 'unknown', 'unknown')
+PY
+)
+              HEALTH_STATE=$(echo "$PARSED" | awk '{print $1}')
+              LAST_DB=$(echo "$PARSED" | awk '{print $2}')
+              LAST_SHA=$(echo "$PARSED" | awk '{print $3}')
+              echo "Attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS: HTTP 200 status=$HEALTH_STATE database=$LAST_DB commit_sha_full=$LAST_SHA"
+              if [ "$HEALTH_STATE" = "healthy" ] && [ "$LAST_DB" = "connected" ] && [ "$LAST_SHA" = "${GITHUB_SHA}" ]; then
+                VERIFIED=1
+                break
+              fi
+            else
+              echo "Attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS: HTTP $LAST_STATUS waiting for rollout..."
             fi
-            echo "Waiting for deployment / health check (attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS, status: $STATUS)..."
             sleep 10
             ATTEMPTS=$((ATTEMPTS+1))
           done
 
-          if [ $SUCCESS -ne 1 ]; then
-            echo "::error::Mandatory production smoke test failed: https://os.askforwrite.com/health is unreachable or returned HTTP $STATUS"
+          if [ $VERIFIED -ne 1 ]; then
+            echo "::error::Production verification FAILED. Expected commit=${GITHUB_SHA} + status=healthy + database=connected, observed HTTP=${LAST_STATUS} database=${LAST_DB} commit=${LAST_SHA}"
             exit 1
           fi
-
-          # Extract and compare deployed commit SHA with pushed commit SHA
-          DEPLOYED_SHA=$(echo "$HEALTH_JSON" | grep -o '"commit_sha_full":"[^"]*"' | cut -d'"' -f4 || echo "")
-          if [ -n "$DEPLOYED_SHA" ] && [ "$DEPLOYED_SHA" != "unknown" ]; then
-            SHORT_EXPECTED="${GITHUB_SHA:0:8}"
-            SHORT_DEPLOYED="${DEPLOYED_SHA:0:8}"
-            echo "Expected Commit: $SHORT_EXPECTED | Live Deployment Commit: $SHORT_DEPLOYED"
-            if [ "$SHORT_DEPLOYED" != "$SHORT_EXPECTED" ]; then
-              echo "::warning::Live deployment is running revision $SHORT_DEPLOYED instead of target revision $SHORT_EXPECTED."
-            else
-              echo "✅ Verified: Live deployment revision strictly matches pushed commit $SHORT_EXPECTED."
-            fi
-          fi
-
-          # Verify database connectivity
-          DB_STATUS=$(curl -s https://os.askforwrite.com/v1/neon/status || true)
-          echo "✅ Neon database cluster verified: $DB_STATUS"
+          echo "✅ Verified live production running exact commit ${GITHUB_SHA} with database=connected."
 
       - name: Post deploy summary
         run: |
-          echo "## 🚀 Production Deployment & Verification" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Production Deployment & Strict Commit Verification" >> $GITHUB_STEP_SUMMARY
+          echo "- **Verified Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status:** ✅ Live & Verified" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database:** connected" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ✅ Live & Commit-Verified" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** https://os.askforwrite.com" >> $GITHUB_STEP_SUMMARY

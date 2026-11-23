@@ -123,6 +123,8 @@ def create_access_token(
     org_id: str,
     tier: str | None = None,
     expires_delta: timedelta | None = None,
+    password_hash: str | None = None,
+    token_version: int | None = None,
 ) -> str:
     """Create a tamper-proof HMAC-SHA256 signed access token for Admin and Customer login."""
     secret = _get_signing_secret()
@@ -137,6 +139,10 @@ def create_access_token(
     }
     if tier:
         payload["tier"] = tier
+    if password_hash:
+        payload["pfp"] = hashlib.sha256(password_hash.encode("utf-8")).hexdigest()[:16]
+    if token_version is not None:
+        payload["tv"] = int(token_version)
     encoded_payload = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True).encode("utf-8")).decode("utf-8")
     signature = hmac.new(secret.encode("utf-8"), encoded_payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{encoded_payload}.{signature}"
@@ -208,6 +214,22 @@ def get_current_principal(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Token organization scope mismatch",
                     )
+                token_pfp = payload.get("pfp")
+                if token_pfp and user.password_hash:
+                    current_pfp = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()[:16]
+                    if not hmac.compare_digest(str(token_pfp), current_pfp):
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Token invalidated due to credential rotation",
+                        )
+                user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
+                min_tv = int(user_meta.get("token_version") or 0)
+                token_tv = int(payload.get("tv") or 0)
+                if min_tv > 0 and token_tv < min_tv:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token session has been revoked",
+                    )
                 role = str(user.role or "customer").strip().lower()
             if org_id:
                 org = db.get(OrganizationRecord, org_id)
@@ -228,20 +250,11 @@ def get_current_principal(
             tier=payload.get("tier"),
         )
 
-    # 2. X-API-Key Resolution (Automated Agents & System Operators)
+    # 2. X-API-Key Resolution (Automated Agents & System Operators — strictly env-driven, zero hardcoded keys)
     configured_keys = [
         ("OWNER_API_KEY", "owner", "owner", os.environ.get("OWNER_API_KEY", "").strip()),
         ("MANAGER_API_KEY", "manager", "manager", os.environ.get("MANAGER_API_KEY", "").strip()),
     ]
-    # Sovereign production keys configured in sovereign .env
-    sovereign_authorities = [
-        ("SOVEREIGN_OWNER_KEY", "owner", "owner", "JCNgmM5bVjXTKLaBwfAcP8E_uRxGBvp9XaF-xB5c_LhXDL0w5nnk4HOaIy6qeoGC"),
-        ("SOVEREIGN_MANAGER_KEY", "manager", "manager", "x_NwJFYiaMGYDs2k2Ztqyav0FxQd98hn1szgMRSta6AIBJuvpYnJ2c7BY5nuINcI"),
-        ("STAGING_OWNER_KEY", "owner", "owner", "staging-owner-verify-key-2026-isolated-32chars-minimum"),
-    ]
-    for env_name, sub, role, val in sovereign_authorities:
-        if val and not any(k[3] == val for k in configured_keys if k[3]):
-            configured_keys.append((env_name, sub, role, val))
 
     available_keys = configured_keys
     if not any(value for _, _, _, value in available_keys):

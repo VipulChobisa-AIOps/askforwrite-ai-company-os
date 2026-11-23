@@ -497,6 +497,11 @@ def update_org_user_role(
     old_role = user.role
     user.role = target_role
     user.updated_at = datetime.now(UTC)
+    u_meta = dict(user.metadata_json or {})
+    u_meta["token_version"] = int(u_meta.get("token_version") or 0) + 1
+    u_meta["role_changed_at"] = datetime.now(UTC).isoformat()
+    user.metadata_json = u_meta
+    flag_modified(user, "metadata_json")
     if approved_req is not None:
         approved_req.detail = {
             **dict(approved_req.detail or {}),

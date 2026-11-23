@@ -380,8 +380,10 @@ class RazorpayProvider(PaymentProviderInterface):
             elif data.get("created_at"):
                 extra_key = f"_{data['created_at']}"
 
+        header_event_id = (headers.get("x-razorpay-event-id") or "").strip()
         event_id = (
-            data.get("event_id")
+            header_event_id
+            or data.get("event_id")
             or data.get("id")
             or (f"evt_{event_type}_{resource_id}{extra_key}" if resource_id else None)
             or hashlib.sha256(payload).hexdigest()

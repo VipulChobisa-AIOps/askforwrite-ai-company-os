@@ -145,8 +145,9 @@ async def payment_webhook_endpoint(
         logger.info("Duplicate webhook event %s — skipping", event.id)
         return {"status": "duplicate", "event_id": event.id}
 
-    # Step 5: Update subscription status if this is a subscription event
+    # Step 5: Update subscription status if this is a subscription event (guard terminal state out-of-order replays)
     new_status = _SUBSCRIPTION_STATUS_EVENTS.get(event.event_type)
+    subscription_transition_skipped = False
     if new_status and event.resource_id:
         sub_record = db.query(SubscriptionRecord).filter_by(
             provider=event.provider.value,
@@ -155,12 +156,22 @@ async def payment_webhook_endpoint(
 
         if sub_record:
             old_status = sub_record.status
-            sub_record.status = new_status
-            sub_record.updated_at = datetime.now(UTC)
-            logger.info(
-                "Subscription %s status: %s -> %s",
-                sub_record.id, old_status, new_status,
-            )
+            if old_status in ("cancelled", "completed") and new_status in ("active", "authenticated", "pending", "created"):
+                subscription_transition_skipped = True
+                logger.warning(
+                    "Ignoring out-of-order subscription event %s (%s -> %s) for terminal subscription %s",
+                    event.id,
+                    old_status,
+                    new_status,
+                    sub_record.id,
+                )
+            else:
+                sub_record.status = new_status
+                sub_record.updated_at = datetime.now(UTC)
+                logger.info(
+                    "Subscription %s status: %s -> %s",
+                    sub_record.id, old_status, new_status,
+                )
         else:
             logger.warning(
                 "Webhook references unknown subscription %s (provider=%s)",
@@ -168,8 +179,14 @@ async def payment_webhook_endpoint(
                 event.provider.value,
             )
 
-    # Step 6: Audit log
+    # Step 6: Audit log (retain both subscription and payment resource IDs for recurring traceability)
     correlation_id = str(uuid.uuid4())
+    _raw_payload_for_audit = event.data.get("payload", {}) if isinstance(event.data, dict) else {}
+    _linked_payment_id = (
+        (_raw_payload_for_audit.get("payment") or {}).get("entity", {}).get("id")
+        if isinstance(_raw_payload_for_audit, dict)
+        else None
+    )
     audit = AuditLog(
         task_id=correlation_id,
         correlation_id=correlation_id,
@@ -178,10 +195,16 @@ async def payment_webhook_endpoint(
         action=event.event_type,
         input_payload={
             "provider": event.provider.value,
+            "provider_event_id": event.id,
             "event_type": event.raw_event_type,
             "resource_id": event.resource_id,
+            "payment_id": _linked_payment_id,
         },
-        output_payload={"status": "processed", "new_status": new_status},
+        output_payload={
+            "status": "processed",
+            "new_status": new_status,
+            "transition_skipped": subscription_transition_skipped,
+        },
         status="COMPLETED",
     )
     db.add(audit)
@@ -291,87 +314,138 @@ async def payment_webhook_endpoint(
             or "capture.completed" in raw_ev
         ) and not is_payout_settlement
 
+        if inv is None and "refund" in raw_ev:
+            logger.warning(
+                "Refund event %s could not be matched to any invoice (query_ids=%s). Quarantined without revoking access.",
+                event.id,
+                query_ids,
+            )
+            settlement_classification = "REFUND_UNMATCHED_INVOICE"
+
         if inv:
             meta = dict(inv.metadata_json or {})
             if "refund" in raw_ev:
                 refund_entity = payload_data.get("refund", {}).get("entity", {}) if payload_data else {}
-                if event.provider.value == "paypal":
-                    pp_amt = res_obj.get("amount", {}) if isinstance(res_obj, dict) else {}
-                    pp_val = pp_amt.get("value") if isinstance(pp_amt, dict) else None
-                    rfnd_amt = float(round(float(pp_val) * 100)) if pp_val is not None else 0.0
-                else:
-                    raw_rfnd_amt = refund_entity.get("amount") or (event.data or {}).get("amount")
-                    rfnd_amt = float(raw_rfnd_amt) if raw_rfnd_amt is not None else 0.0
-                inv_amt = float(inv.amount or 0.0)
+                refund_state = str(
+                    refund_entity.get("status")
+                    or (res_obj.get("status") if isinstance(res_obj, dict) else "")
+                    or ""
+                ).strip().lower()
+                refund_currency = str(
+                    refund_entity.get("currency")
+                    or ((res_obj.get("amount") or {}).get("currency_code") if isinstance(res_obj, dict) else "")
+                    or ""
+                ).strip().upper()
 
-                # Guard against malformed or zero/missing refund amounts stripping tenant access
-                if rfnd_amt <= 0.0:
+                # Fail closed on non-completed / failed refund lifecycle states (Issue #13)
+                if "failed" in raw_ev or refund_state in ("failed", "cancelled", "canceled", "pending", "denied"):
                     logger.warning(
-                        "Refund event %s received without verified positive amount (%s). Preserving tenant access.",
+                        "Refund event %s is in non-completed state '%s' (%s). Preserving tenant access.",
                         event.id,
-                        rfnd_amt,
+                        refund_state or raw_ev,
+                        inv.id,
                     )
-                    meta["settlement_status"] = "REFUND_PENDING_VERIFICATION"
+                    meta["settlement_status"] = "REFUND_NOT_COMPLETED"
                     meta["refund_event_id"] = event.id
-                    meta["refund_warning"] = "Missing or non-positive refund amount in webhook payload"
-                    settlement_classification = "REFUND_PENDING_VERIFICATION"
+                    settlement_classification = "REFUND_NOT_COMPLETED"
+                elif refund_currency and inv.currency and refund_currency != inv.currency.strip().upper():
+                    logger.warning(
+                        "Refund event %s currency '%s' mismatches invoice '%s' currency '%s'. Quarantined.",
+                        event.id,
+                        refund_currency,
+                        inv.id,
+                        inv.currency,
+                    )
+                    meta["settlement_status"] = "REFUND_CURRENCY_MISMATCH_QUARANTINED"
+                    meta["refund_event_id"] = event.id
+                    settlement_classification = "REFUND_CURRENCY_MISMATCH_QUARANTINED"
                 else:
-                    # Cumulative refund tracking with replay protection
-                    prev_refunded = float(meta.get("refunded_amount", 0.0))
-                    processed_events = list(meta.get("processed_refund_event_ids", []))
-                    if event.id not in processed_events:
-                        cumulative_refunded = prev_refunded + rfnd_amt
-                        processed_events.append(event.id)
-                        meta["processed_refund_event_ids"] = processed_events
-                    else:
-                        cumulative_refunded = prev_refunded
+                    rfnd_amt = 0.0
+                    try:
+                        if event.provider.value == "paypal":
+                            pp_amt = res_obj.get("amount", {}) if isinstance(res_obj, dict) else {}
+                            pp_val = pp_amt.get("value") if isinstance(pp_amt, dict) else None
+                            if pp_val is not None:
+                                rfnd_amt = float(round(float(pp_val) * 100))
+                        else:
+                            raw_rfnd_amt = refund_entity.get("amount")
+                            if raw_rfnd_amt is None and isinstance(event.data, dict):
+                                raw_rfnd_amt = event.data.get("amount")
+                            if raw_rfnd_amt is not None:
+                                rfnd_amt = float(raw_rfnd_amt)
+                    except (TypeError, ValueError):
+                        rfnd_amt = 0.0
 
-                    meta["refunded_amount"] = cumulative_refunded
+                    inv_amt = float(inv.amount or 0.0)
 
-                    # Only treat as full refund if cumulative refunded amount meets or exceeds invoice total (>= 99%)
-                    is_full_refund = (inv_amt > 0 and cumulative_refunded >= (inv_amt * 0.99))
-
-                    if is_full_refund:
-                        inv.status = "refunded"
-                        meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev else "REFUND_INITIATED"
-                        meta["refund_event_id"] = event.id
-                        settlement_classification = meta["settlement_status"]
-                        # Downgrade organization and revoke paid entitlements on full cumulative refund
-                        if inv.org_id:
-                            org = db.get(OrganizationRecord, inv.org_id)
-                            if org:
-                                org.tier = "free"
-                                org_meta = dict(org.metadata_json or {})
-                                org_meta["package_key"] = "free"
-                                org_meta["entitled_capabilities"] = []
-                                org_meta["revoked_at"] = datetime.now(UTC).isoformat()
-                                org_meta["revocation_reason"] = (
-                                    f"Payment fully refunded ({event.event_type}, cumulative {cumulative_refunded}/{inv_amt})"
-                                )
-                                org.metadata_json = org_meta
-                                org.lead_credits_limit = 50
-                                org.lead_credits_used = 0
-                                org.outreach_credits_limit = 20
-                                org.outreach_credits_used = 0
-                                flag_modified(org, "metadata_json")
-                                logger.warning(
-                                    "Organization %s downgraded to free tier and entitlements revoked due to cumulative refund (%s/%s) of invoice %s",
-                                    org.id,
-                                    cumulative_refunded,
-                                    inv_amt,
-                                    inv.id,
-                                )
-                    else:
-                        inv.status = "partially_refunded"
-                        meta["settlement_status"] = "PARTIALLY_REFUNDED"
-                        meta["refund_event_id"] = event.id
-                        settlement_classification = "PARTIALLY_REFUNDED"
-                        logger.info(
-                            "Invoice %s marked partially refunded (cumulative %s/%s); tenant tier maintained",
-                            inv.id,
-                            cumulative_refunded,
-                            inv_amt,
+                    # Guard against malformed, missing, zero, or negative refund amounts stripping tenant access
+                    if rfnd_amt <= 0.0:
+                        logger.warning(
+                            "Refund event %s received without verified positive amount (%s). Preserving tenant access.",
+                            event.id,
+                            rfnd_amt,
                         )
+                        meta["settlement_status"] = "REFUND_PENDING_VERIFICATION"
+                        meta["refund_event_id"] = event.id
+                        meta["refund_warning"] = "Missing, malformed, or non-positive refund amount in webhook payload"
+                        settlement_classification = "REFUND_PENDING_VERIFICATION"
+                    else:
+                        # Cumulative refund tracking with replay protection (canonical minor units)
+                        prev_refunded = float(meta.get("refunded_amount", 0.0))
+                        processed_events = list(meta.get("processed_refund_event_ids", []))
+                        if event.id not in processed_events:
+                            cumulative_refunded = prev_refunded + rfnd_amt
+                            processed_events.append(event.id)
+                            meta["processed_refund_event_ids"] = processed_events
+                        else:
+                            cumulative_refunded = prev_refunded
+
+                        meta["refunded_amount"] = cumulative_refunded
+
+                        # Only treat as full refund if cumulative refunded amount meets or exceeds invoice total (>= 99%)
+                        is_full_refund = (inv_amt > 0 and round(cumulative_refunded) >= round(inv_amt * 0.99))
+
+                        if is_full_refund:
+                            inv.status = "refunded"
+                            meta["settlement_status"] = "REFUND_COMPLETED" if "processed" in raw_ev or "completed" in raw_ev or "refunded" in raw_ev else "REFUND_INITIATED"
+                            meta["refund_event_id"] = event.id
+                            settlement_classification = meta["settlement_status"]
+                            # Downgrade organization and revoke paid entitlements on full cumulative refund
+                            if inv.org_id:
+                                org = db.get(OrganizationRecord, inv.org_id)
+                                if org:
+                                    org.tier = "free"
+                                    org_meta = dict(org.metadata_json or {})
+                                    org_meta["package_key"] = "free"
+                                    org_meta["entitled_capabilities"] = []
+                                    org_meta["revoked_at"] = datetime.now(UTC).isoformat()
+                                    org_meta["revocation_reason"] = (
+                                        f"Payment fully refunded ({event.event_type}, cumulative {cumulative_refunded}/{inv_amt})"
+                                    )
+                                    org.metadata_json = org_meta
+                                    org.lead_credits_limit = 50
+                                    org.lead_credits_used = 0
+                                    org.outreach_credits_limit = 20
+                                    org.outreach_credits_used = 0
+                                    flag_modified(org, "metadata_json")
+                                    logger.warning(
+                                        "Organization %s downgraded to free tier and entitlements revoked due to cumulative refund (%s/%s) of invoice %s",
+                                        org.id,
+                                        cumulative_refunded,
+                                        inv_amt,
+                                        inv.id,
+                                    )
+                        else:
+                            inv.status = "partially_refunded"
+                            meta["settlement_status"] = "PARTIALLY_REFUNDED"
+                            meta["refund_event_id"] = event.id
+                            settlement_classification = "PARTIALLY_REFUNDED"
+                            logger.info(
+                                "Invoice %s marked partially refunded (cumulative %s/%s); tenant tier maintained",
+                                inv.id,
+                                cumulative_refunded,
+                                inv_amt,
+                            )
             elif "dispute" in raw_ev:
                 inv.status = "disputed"
                 meta["settlement_status"] = "DISPUTED"
@@ -437,12 +511,12 @@ async def payment_webhook_endpoint(
 
     # Step 6c: Subscription renewal cycle credit replenishment, P3 lifecycle sync, or cancellation revoking
     p3_subscription_sync = None
-    if any(k in raw_ev for k in ("invoice.paid", "subscription.charged", "subscription.renewed")):
+    if not subscription_transition_skipped and any(k in raw_ev for k in ("invoice.paid", "subscription.charged", "subscription.renewed")):
         from sqlalchemy.orm.attributes import flag_modified
         sub_id = event.resource_id
         if sub_id:
             sub = db.query(SubscriptionRecord).filter_by(provider_subscription_id=sub_id).first()
-            if sub and sub.org_id:
+            if sub and sub.org_id and sub.status not in ("cancelled", "completed"):
                 sub_org = db.get(OrganizationRecord, sub.org_id)
                 if sub_org:
                     sub_org.lead_credits_used = 0
@@ -469,7 +543,7 @@ async def payment_webhook_endpoint(
         sub_id = event.resource_id
         if sub_id:
             sub = db.query(SubscriptionRecord).filter_by(provider_subscription_id=sub_id).first()
-            if sub and sub.org_id:
+            if sub and sub.org_id and sub.status not in ("cancelled", "completed"):
                 from app.services.p3_revenue_growth import handle_payment_failure_and_grace_period
 
                 p3_subscription_sync = handle_payment_failure_and_grace_period(

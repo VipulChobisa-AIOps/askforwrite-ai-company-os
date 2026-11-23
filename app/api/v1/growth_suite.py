@@ -8,13 +8,62 @@ Exposes endpoints for:
 
 from __future__ import annotations
 
+import logging
+import os
 import re
+import threading
+import time
 import uuid
+from collections import deque
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
+_RATE_LOCK = threading.Lock()
+_IP_BUCKETS: dict[str, deque[float]] = {}
+_SESSION_BUCKETS: dict[str, deque[float]] = {}
+
+
+def _reset_growth_rate_limits() -> None:
+    """Clear public growth API rate-limit windows (used by automated tests)."""
+    with _RATE_LOCK:
+        _IP_BUCKETS.clear()
+        _SESSION_BUCKETS.clear()
+
+
+def _client_ip(request: Request) -> str:
+    xff = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if xff:
+        return xff[:64]
+    return (request.client.host if request.client else "unknown")[:64]
+
+
+def _enforce_sliding_quota(
+    buckets: dict[str, deque[float]],
+    key: str,
+    *,
+    limit: int,
+    window_seconds: float,
+    scope_label: str,
+) -> None:
+    now = time.monotonic()
+    with _RATE_LOCK:
+        dq = buckets.setdefault(key, deque())
+        while dq and (now - dq[0]) >= window_seconds:
+            dq.popleft()
+        if len(dq) >= limit:
+            retry_after = max(1, int(window_seconds - (now - dq[0])))
+            logger.warning("Public growth API quota exceeded (scope=%s, limit=%d/%ds)", scope_label, limit, int(window_seconds))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded for {scope_label}. Please retry in {retry_after}s.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        dq.append(now)
 
 from app.agents.smb_search_source import audit_live_website_seo_geo
 from app.db.database import get_db
@@ -51,26 +100,34 @@ class UnifiedGrowthCampaignRequest(BaseModel):
 
 
 class InboundCloserChatRequest(BaseModel):
-    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()), min_length=1, max_length=128)
     prospect_name: str = Field(min_length=1, max_length=150)
     prospect_contact: str = Field(min_length=3, max_length=150, description="Email or WhatsApp phone number")
     message: str = Field(min_length=1, max_length=2000, description="Inbound customer message")
-    history: list[dict[str, str]] = Field(default_factory=list)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     currency: str = Field(default="INR", pattern="^(INR|USD)$")
     channel: str = Field(default="whatsapp", max_length=50)
+
+    @field_validator("history")
+    @classmethod
+    def _validate_history_budget(cls, v: list[dict[str, str]]) -> list[dict[str, str]]:
+        total_chars = sum(len(str(k)) + len(str(val)) for item in v for k, val in item.items())
+        if total_chars > 12_000:
+            raise ValueError("Conversation history exceeds maximum payload budget (12,000 characters).")
+        return v
 
 
 class DomainAuditRequest(BaseModel):
     website_url: str = Field(min_length=3, max_length=500, description="Website URL or domain name to audit")
     company_name: str | None = Field(default=None, max_length=200, description="Optional company or brand name")
     target_audience: str | None = Field(default=None, max_length=300, description="Optional target customer persona")
-    keywords: list[str] | None = Field(default=None, description="Optional target SEO / GEO keywords")
-    target_keywords: list[str] | None = Field(default=None, description="Optional target SEO / GEO keywords")
+    keywords: list[str] | None = Field(default=None, max_length=15, description="Optional target SEO / GEO keywords")
+    target_keywords: list[str] | None = Field(default=None, max_length=15, description="Optional target SEO / GEO keywords")
 
 
 @router.get("/status")
 def get_growth_suite_status() -> dict[str, Any]:
-    """Retrieve capabilities and live operational state of the Autonomous Growth Suite."""
+    """Retrieve capabilities and live operational boundaries of the Growth Suite."""
     pkg = get_package("growth_all_in_one")
     return {
         "status": "OPERATIONAL",
@@ -79,10 +136,16 @@ def get_growth_suite_status() -> dict[str, Any]:
         "price_inr": pkg.price_inr if pkg else 6999,
         "price_usd": pkg.price_usd if pkg else 89,
         "pillars": {
-            "creative_studio": "Pixel AI Multi-Aspect Asset Generator (afwpixelai)",
-            "seo_blog_copilot": "4-Site WordPress Publishing with Schema.org JSON-LD",
-            "omnichannel_marketing": "Meta, Google, and LinkedIn Ad Copy Engine",
-            "inbound_sales_closer": "24/7 Autonomous WhatsApp & Web Chat Closer with Instant Checkout",
+            "creative_studio": "Pixel AI Prompt & Aspect-Ratio Spec Generator (external diffusion API required for image rendering)",
+            "seo_blog_copilot": "WordPress Draft & Schema.org JSON-LD Pipeline (Owner HITL approval & WordPress credentials required for live publish)",
+            "omnichannel_marketing": "Meta, Google, and LinkedIn Ad Copy & Campaign Script Engine (external delivery bridge required for live dispatch)",
+            "inbound_sales_closer": "Conversational Objection-Handling & Checkout Link Engine (webhook bridge required for live WhatsApp/web chat delivery)",
+        },
+        "capability_boundaries": {
+            "creative_studio": "DRAFT_AND_PROMPT_SPECS_ONLY",
+            "seo_blog_copilot": "HITL_APPROVAL_AND_WP_CREDENTIALS_REQUIRED",
+            "omnichannel_marketing": "COPY_SCRIPTS_EXTERNAL_BRIDGE_REQUIRED",
+            "inbound_sales_closer": "CONVERSATIONAL_LOGIC_WEBHOOK_BRIDGE_REQUIRED",
         },
         "closer_active": True,
     }
@@ -154,13 +217,18 @@ def generate_unified_campaign_endpoint(
 @router.post("/inbound-closer/chat")
 def inbound_closer_chat_endpoint(
     payload: InboundCloserChatRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """24/7 Conversational AI Inbound Sales Closer.
+    """Conversational AI Inbound Sales Closer (rate-limited per IP and per session).
 
-    Receives prospect inquiries (from WhatsApp webhook or Web Chat), diagnoses customer needs,
-    handles objections, and delivers instant Razorpay/PayPal checkout links.
+    Receives prospect inquiries (from a configured WhatsApp webhook or Web Chat bridge),
+    diagnoses customer needs, handles objections, and returns Razorpay/PayPal/DirectPay checkout links.
     """
+    ip_limit = int(os.environ.get("PUBLIC_GROWTH_CHAT_IP_RPM", "30"))
+    sess_limit = int(os.environ.get("PUBLIC_GROWTH_CHAT_SESSION_RPM", "15"))
+    _enforce_sliding_quota(_IP_BUCKETS, f"chat:{_client_ip(request)}", limit=ip_limit, window_seconds=60.0, scope_label="public_chat_ip")
+    _enforce_sliding_quota(_SESSION_BUCKETS, f"chat:{payload.session_id}", limit=sess_limit, window_seconds=60.0, scope_label="public_chat_session")
     return handle_inbound_sales_chat(
         db=db,
         session_id=payload.session_id,
@@ -176,8 +244,12 @@ def inbound_closer_chat_endpoint(
 @router.post("/audit-domain")
 def audit_domain_endpoint(
     payload: DomainAuditRequest,
+    request: Request,
 ) -> dict[str, Any]:
-    """Inspect live website SEO/GEO gaps & deliver tailored 2026 growth prescription with instant checkout."""
+    """Inspect live website SEO/GEO gaps & deliver draft growth prescription (rate-limited & SSRF-protected)."""
+    ip_limit = int(os.environ.get("PUBLIC_GROWTH_AUDIT_IP_RPM", "10"))
+    _enforce_sliding_quota(_IP_BUCKETS, f"audit:{_client_ip(request)}", limit=ip_limit, window_seconds=60.0, scope_label="public_audit_ip")
+
     raw_url = payload.website_url.strip()
     if not (raw_url.startswith("http://") or raw_url.startswith("https://")):
         audit_url = f"https://{raw_url}"
@@ -245,10 +317,15 @@ def audit_domain_endpoint(
             "seo_geo_blog": blog_prescription,
             "omnichannel_social": social_prescription,
             "recommended_actions": [
-                "Deploy Schema.org @graph entity payload to index in Google AI Overviews",
-                "Host /llms.txt manifest for SearchGPT and Perplexity citation ingestion",
-                "Activate 24/7 WhatsApp Closer to respond to prospects within 3 seconds",
-                "Run 30s viral Instagram Reels & 5-slide LinkedIn carousel campaigns",
+                "Review and deploy Schema.org @graph entity payload to improve structured search eligibility",
+                "Host /llms.txt manifest to document public pages for AI crawlers",
+                "Connect an external WhatsApp or web chat webhook bridge to activate conversational lead capture",
+                "Review and schedule generated social campaign copy scripts through your publishing workflow",
             ],
+            "capability_boundaries": {
+                "audit_mode": audit_result.get("audit_status", "ESTIMATED_OFFLINE"),
+                "blog_output": "DRAFT_REQUIRES_OWNER_HITL_APPROVAL",
+                "social_output": "COPY_SCRIPTS_EXTERNAL_BRIDGE_REQUIRED",
+            },
         },
     }

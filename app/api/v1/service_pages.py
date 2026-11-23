@@ -167,10 +167,10 @@ def list_service_landing_pages() -> HTMLResponse:
                     },
                     {
                         "@type": "Question",
-                        "name": "How do organizations activate a service with zero payment gateway commission?",
+                        "name": "How do AFW DirectPay and gateway fees work?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "Checkout links use AFW DirectPay supporting Instant UPI QR (GPay, PhonePe, Paytm, BHIM), Polygon/Base/Solana USDC stablecoins, and Direct Bank Wire with automated ECDSA NIST P-256 TrustBlock receipts.",
+                            "text": "AFW DirectPay charges 0% AskforWrite platform commission on direct UPI QR and Bank Wire rails (subject to owner UTR settlement confirmation before activation). Third-party gateway fees on Razorpay/PayPal and bank wire/SWIFT charges still apply per rail; Web3 rails stay gated pending regulatory compliance.",
                         },
                     },
                 ],
@@ -242,7 +242,7 @@ def list_service_landing_pages() -> HTMLResponse:
     </section>
 
     <h2 class="section-title">2. Clustered Monthly &amp; Annual Subscription Plans</h2>
-    <p class="section-sub">Start with a single cluster, bundle Growth or Operations, or unlock all 4 clusters with stackable add-on modules and 0%-commission AFW DirectPay checkout.</p>
+    <p class="section-sub">Start with a single cluster, bundle Growth or Operations, or unlock all 4 clusters with stackable add-on modules. AFW DirectPay charges 0% AskforWrite platform commission (bank, gateway, or network fees may apply per rail). WordPress live publishing requires Owner HITL approval and credentials; Pixel AI outputs structured prompt recipes; WhatsApp/social dispatch requires configured external bridges.</p>
     <section class="tiers-grid">
       {"".join(tier_cards_html)}
     </section>
@@ -275,7 +275,12 @@ def get_service_landing_page(service_key: str) -> Response:
     canonical_url = f"{BASE_URL}/services/{pkg.key}"
     checkout_url = f"/v1/pay/checkout?package={pkg.key}"
     short_title = build_short_title(pkg.name, suffix=" | AskforWrite", max_len=60)
-    meta_desc = clamp_meta(f"{pkg.description} Priced at ₹{pkg.price_inr:,} INR (${pkg.price_usd} USD) with instant activation and ECDSA audit proof.", 155)
+    billing_label = (
+        "14-Day Managed Pilot (One-Time, Non-Renewing)"
+        if pkg.category == "managed_pilot"
+        else ("One-Time Purchase (Non-Renewing)" if pkg.category == "b2c_one_off" else "Monthly Recurring Subscription")
+    )
+    meta_desc = clamp_meta(f"{pkg.description} Priced at ₹{pkg.price_inr:,} INR (${pkg.price_usd} USD) — {billing_label} with HITL governance.", 155)
 
     related_links = []
     for other in get_all_packages():
@@ -295,7 +300,7 @@ def get_service_landing_page(service_key: str) -> Response:
         },
         {
             "q": f"How much does {pkg.name} cost and how is it activated?",
-            "a": f"{pkg.name} is priced at ₹{pkg.price_inr:,} INR (${pkg.price_usd} USD). Upon verified payment via Razorpay, PayPal, or AFW DirectPay (UPI/USDC/Bank Wire), your tenant organization, admin account, and service entitlements are provisioned automatically.",
+            "a": f"{pkg.name} is priced at ₹{pkg.price_inr:,} INR (${pkg.price_usd} USD) ({billing_label}). Upon verified payment via Razorpay, PayPal, or owner-confirmed AFW DirectPay (UPI UTR / Bank Wire), your tenant organization and explicit SKU entitlements are provisioned. Manual UPI/wire transfers activate after Owner HITL settlement verification.",
         },
     ]
 
@@ -402,10 +407,10 @@ def get_service_landing_page(service_key: str) -> Response:
     <h1>{html.escape(pkg.name)}</h1>
     <p>{html.escape(pkg.description)}</p>
     <div class="card">
-      <strong>Commercial Pricing:</strong> ₹{pkg.price_inr:,} INR / ${pkg.price_usd} USD
+      <strong>Commercial Pricing:</strong> ₹{pkg.price_inr:,} INR / ${pkg.price_usd} USD ({html.escape(billing_label)})
       &nbsp;|&nbsp; <strong>Included Quotas:</strong> {pkg.lead_credits_monthly} Service/Lead Credits &amp; {pkg.outreach_credits_monthly} Outreach Credits
       <div style="margin-top:16px;">
-        <a class="cta-btn" href="{checkout_url}">Purchase &amp; Activate Instant Access →</a>
+        <a class="cta-btn" href="{checkout_url}">Proceed to Verified Checkout →</a>
         <a class="cta-secondary" href="/dashboard/#portal">Sign In to Customer Portal</a>
       </div>
     </div>
@@ -429,8 +434,8 @@ def get_service_landing_page(service_key: str) -> Response:
       <ul>{seo_geo_li}</ul>
     </section>
     <section>
-      <h2>Governance, Dependencies &amp; Operational Safeguards</h2>
-      <p>All executions are tenant-isolated, rate-limited by organizational credit quotas, and sealed into the AskforWrite ECDSA NIST P-256 cryptographic Merkle ledger. External outreach and manual bank/UPI settlements require explicit Owner Human-in-the-Loop (HITL) approval.</p>
+      <h2>Governance, Capability Boundaries &amp; Exclusions</h2>
+      <p>All executions are tenant-isolated, credit-governed, and logged to the AskforWrite ECDSA NIST P-256 Merkle ledger. Operational boundaries: (1) <strong>WordPress publishing</strong> requires an Owner <code>APPROVED</code> HITL request and live WordPress credentials (otherwise runs are explicitly labelled <code>SIMULATED</code>); (2) <strong>Pixel AI Creative Studio</strong> produces structured prompt recipes and aspect-ratio specs (direct image rendering requires an external diffusion API key); (3) <strong>WhatsApp &amp; social dispatch</strong> generates scripts and requires a configured external delivery bridge; (4) <strong>No ranking, AI citation, conversion, or ROI guarantees</strong> are made—all performance figures are illustrative estimates. Review our <a href="/legal/tos">Terms</a>, <a href="/legal/refund-policy">Refund &amp; Cancellation Policy</a>, and <a href="/legal/privacy">Privacy Policy</a> before purchase, or email <a href="mailto:info@askforwrite.in">info@askforwrite.in</a>.</p>
     </section>
     <section>
       <h2>Frequently Asked Questions (FAQ)</h2>

@@ -1,26 +1,30 @@
 # Security Vulnerability & Dependency Scan Policy
 
 ## Objective
-To establish automated dependency vulnerability scanning as a strict CI/CD release gate and define a documented, time-bounded waiver protocol for low-risk, non-runtime dependencies (Issue #19).
+To establish automated dependency vulnerability scanning as a strict CI/CD release gate and define a machine-enforced, time-bounded waiver protocol (Issue #19).
 
 ## Scanning Tooling & Release Gate
-1. **Static Application Security Testing (SAST)**:
+1. **Static Application Security Testing (SAST):**
    - Tool: `bandit`
-   - Gate: Release-blocking on High and Medium severity application vulnerabilities (`bandit -r app/ -ll -ii`).
-2. **Software Composition Analysis (SCA)**:
-   - Tool: `pip-audit` / `safety`
-   - Gate: Fails on any High/Critical vulnerability detected in production runtime dependencies (`pyproject.toml` runtime dependencies).
+   - Gate: Release-blocking on High and Medium severity application vulnerabilities (`bandit -r app/ -ll -ii --exclude app/dashboard --skip B101,B311`).
+2. **Software Composition Analysis (SCA):**
+   - Tool: `pip-audit` enforced by `scripts/check_dependency_vulns.py` against `docs/SECURITY_WAIVERS.json`.
+   - Gate: CI upgrades build tooling (`pip`, `setuptools`), installs the production runtime dependency set from `pyproject.toml`, and **fails the build (`exit 1`)** on any unwaived vulnerability or any expired waiver.
+   - Artifact: Full JSON report uploaded as `pip-audit-report.json` on every CI run.
 
-## Documented Waivers & Triage
+## Runtime Vulnerability Remediations Applied (2026-11-23)
+- Upgraded `pyproject.toml` minimum safe floors (`cryptography>=46.0.6`, `certifi>=2026.10.19`, `pyasn1>=0.6.5`) rather than waiving fixable runtime CVEs (`CVE-2026-26007`, `PYSEC-2026-4320`, `CVE-2026-119194..119197`).
 
-| Package | Version | Advisory / CVE | Severity | Scope | Rationale / Mitigation | Expiry Date |
+## Active Time-Bounded Waivers (`docs/SECURITY_WAIVERS.json`)
+
+| Package | Advisory / CVE | Severity | Scope | Owner | Rationale / Compensating Control | Expiry Date |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `pip` / `setuptools` | CI runner default | GHSA-xmj3-9gf7-h52w | Medium | CI Environment Only | Build-time and test harness dependency inside ephemeral GitHub Actions container. Not included in production Docker image (`python:3.12-slim` runs with non-root production user). | 2026-12-31 |
-| `pytest` | 8.4.2 | PYSEC-2026-1845 | Low | Test Suite Only | Developer test execution framework; excluded from production deployment and container build. | 2026-12-31 |
+| `pytest` | `PYSEC-2026-1845` | Low | Dev/Test Only | `VipulChobisa-AIOps` | Developer test execution framework excluded from production container build; CI security job scans production runtime dependencies separately. | `2026-12-31` |
+
+Expired waivers automatically fail `scripts/check_dependency_vulns.py`.
 
 ## Production Docker Image Security
 The production container `Dockerfile` enforces:
 - Non-root user `appuser:appgroup`
 - Stripped build dependencies (`--no-cache-dir`)
-- Explicit virtual environment boundary without development test harnesses.
-
+- Explicit runtime-only install without development test harnesses.
