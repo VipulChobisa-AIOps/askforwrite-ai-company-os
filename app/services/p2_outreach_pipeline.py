@@ -275,6 +275,7 @@ def prepare_p2_outreach(
             "is_contact_verified": contact_verified,
             "approval_policy": "VERIFIED_CONTACT_HITL" if contact_verified else "UNVERIFIED_CONTACT_STRICT_HITL",
             "source_url": dossier.source_url,
+            "allow_follow_up": bool(allow_follow_up),
         },
         idempotency_key=f"appr-p2-outreach-{idem_key}",
         requested_by=actor,

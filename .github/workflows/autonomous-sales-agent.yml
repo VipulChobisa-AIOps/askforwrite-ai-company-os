@@ -1,0 +1,55 @@
+name: Autonomous Sales & Marketing HITL Shift
+
+on:
+  schedule:
+    # Twice daily: 10:00 AM IST (04:30 UTC) and 5:00 PM IST (11:30 UTC)
+    - cron: "30 4,11 * * *"
+  workflow_dispatch:
+    inputs:
+      shift_type:
+        description: "Shift profile (sales_marketing_cycle or full_daily_cycle)"
+        required: false
+        default: "sales_marketing_cycle"
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-sales-marketing-shift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wake production gateway & run HITL sales/marketing shift
+        env:
+          API_KEY: ${{ secrets.AFW_MANAGER_API_KEY || secrets.AFW_OWNER_API_KEY }}
+          SHIFT_TYPE: ${{ github.event.inputs.shift_type || 'sales_marketing_cycle' }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "::notice::Set GitHub Actions secret AFW_MANAGER_API_KEY (or AFW_OWNER_API_KEY) to activate scheduled autonomous sales shifts."
+            exit 0
+          fi
+          echo "1. Waking https://os.askforwrite.com/healthz ..."
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 https://os.askforwrite.com/healthz || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "Gateway awake (HTTP 200)."
+              break
+            fi
+            echo "Attempt $i returned HTTP $CODE; retrying in 10s..."
+            sleep 10
+          done
+
+          echo "2. Triggering autonomous shift ($SHIFT_TYPE) — all external actions pause for Owner HITL approval..."
+          RESP=$(curl -sS --max-time 120 -w "\n%{http_code}" -X POST \
+            "https://os.askforwrite.com/v1/scheduler/run-shift" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $API_KEY" \
+            -d "{\"shift_type\": \"$SHIFT_TYPE\"}")
+          HTTP_CODE=$(echo "$RESP" | tail -n1)
+          BODY=$(echo "$RESP" | sed '$d')
+          echo "HTTP_CODE=$HTTP_CODE"
+          echo "$BODY" | head -c 1200
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Autonomous shift failed with HTTP $HTTP_CODE"
+            exit 1
+          fi

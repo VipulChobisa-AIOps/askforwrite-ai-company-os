@@ -18,6 +18,10 @@ services:
         value: "false"
       - key: ENABLE_WEB3_STABLECOIN_RAIL
         value: "false"
+      - key: ENABLE_AUTONOMOUS_SALES_LOOP
+        value: "false"
+      - key: ENABLE_AUTONOMOUS_SALES_AUTO_DISPATCH
+        value: "false"
       - key: PAYMENT_MODE
         value: sandbox
       - key: PAYPAL_MODE

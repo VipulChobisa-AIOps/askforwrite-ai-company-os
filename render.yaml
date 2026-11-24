@@ -43,6 +43,23 @@ services:
         value: sovereign_direct
       - key: ENABLE_WEB3_STABLECOIN_RAIL
         value: "false"
+      # Autonomous Sales & Marketing Agent (strictly HITL approval gated; Owner only clicks Approve)
+      - key: ENABLE_AUTONOMOUS_SALES_LOOP
+        value: "true"
+      - key: AUTONOMOUS_SHIFT_INTERVAL_MINUTES
+        value: "360"
+      - key: ENABLE_AUTONOMOUS_SALES_AUTO_DISPATCH
+        value: "true"
+      - key: OUTREACH_DISPATCH_PROVIDER
+        value: "auto"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: IMAP_HOST
+        value: "imap.hostinger.com"
+      - key: IMAP_PORT
+        value: "993"
       # Sovereign Pay Direct Coordinates (0% platform commission; bank/chain fees may apply)
       - key: AFW_MERCHANT_UPI_VPA
         value: "ask4write@icici"
@@ -170,6 +187,10 @@ services:
       - key: PAYMENT_PROVIDER
         value: sovereign_direct
       - key: ENABLE_WEB3_STABLECOIN_RAIL
+        value: "false"
+      - key: ENABLE_AUTONOMOUS_SALES_LOOP
+        value: "false"
+      - key: ENABLE_AUTONOMOUS_SALES_AUTO_DISPATCH
         value: "false"
       - key: DATABASE_URL
         sync: false

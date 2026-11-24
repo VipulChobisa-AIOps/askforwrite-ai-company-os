@@ -149,8 +149,45 @@ async def lifespan(app: FastAPI):
                 conn.execute(text("SELECT 1"))
         except Exception as exc:
             logger.warning("Startup DB pool warmup failed (non-fatal): %s", type(exc).__name__)
+
+    # Optional in-process Autonomous Sales & Marketing background scheduler (strictly HITL-gated)
+    bg_task = None
+    loop_enabled = (
+        os.environ.get("ENABLE_AUTONOMOUS_SALES_LOOP", "").strip().lower() in ("1", "true", "yes")
+        and APP_ENV == "production"
+        and os.environ.get("ENABLE_EXTERNAL_SIDE_EFFECTS", "").strip().lower() not in ("0", "false", "no")
+    )
+    if loop_enabled:
+        import asyncio
+        from app.services.shift_scheduler import run_autonomous_shift
+
+        interval_mins = max(30, int(os.environ.get("AUTONOMOUS_SHIFT_INTERVAL_MINUTES", "360")))
+
+        async def _autonomous_sales_loop() -> None:
+            await asyncio.sleep(90)  # allow startup probes to settle cleanly
+            while True:
+                def _run_once() -> None:
+                    sdb = SessionLocal()
+                    try:
+                        run_autonomous_shift(db=sdb, shift_type="sales_marketing_cycle")
+                    except Exception as loop_exc:
+                        logger.warning("Autonomous sales shift cycle failed: %s", loop_exc)
+                    finally:
+                        sdb.close()
+
+                await asyncio.to_thread(_run_once)
+                await asyncio.sleep(interval_mins * 60)
+
+        bg_task = asyncio.create_task(_autonomous_sales_loop())
+        logger.info("Autonomous sales & marketing HITL scheduler active (interval=%sm)", interval_mins)
+
     yield
-    # Shutdown logic (if needed in the future) goes here
+    if bg_task is not None:
+        bg_task.cancel()
+        try:
+            await bg_task
+        except Exception:
+            pass
 
 
 app = FastAPI(

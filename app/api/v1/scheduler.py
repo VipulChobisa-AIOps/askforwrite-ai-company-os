@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.security.auth import APIPrincipal, require_platform_manager
+from app.services.inbox_sync import sync_inbox_replies_and_bounces
 from app.services.shift_scheduler import (
     get_ceo_daily_briefing,
     get_scheduler_status,
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/v1/scheduler", tags=["Autonomous Shift Scheduler"])
 class ShiftRunRequest(BaseModel):
     shift_type: str = Field(
         default="full_daily_cycle",
-        description="Shift operational profile: full_daily_cycle, outbound_sdr_only, seo_publishing_only, watchdog_audit_only",
+        description="Shift operational profile: full_daily_cycle, sales_marketing_cycle, outbound_sdr_only, seo_publishing_only, watchdog_audit_only",
     )
 
 
@@ -91,4 +92,26 @@ def get_scheduler_status_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Scheduler status retrieval failed: {exc}",
+        ) from exc
+
+
+@router.post("/sync-inbox", status_code=status.HTTP_200_OK)
+def sync_inbox_endpoint(
+    limit: int = Query(default=30, ge=1, le=100),
+    x_correlation_id: str | None = Header(default=None),
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Scan configured IMAP mailbox for bounces, opt-outs, and prospect replies (staging HITL scope drafts)."""
+    try:
+        return sync_inbox_replies_and_bounces(
+            db=db,
+            limit=limit,
+            correlation_id=x_correlation_id or str(uuid.uuid4()),
+        )
+    except Exception as exc:
+        logger.error(f"Error syncing IMAP inbox: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Inbox sync failed: {exc}",
         ) from exc

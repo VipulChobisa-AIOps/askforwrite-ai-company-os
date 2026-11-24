@@ -2,11 +2,15 @@
 
 import hashlib
 import json
+import logging
+import os
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.agents.policy import approval_required
 from app.db.models import (
@@ -103,7 +107,10 @@ def request_approval(
             raise ApprovalNotFound("Lead not found for this task")
         if lead.do_not_contact or lead.status == "DO_NOT_CONTACT":
             raise ValueError("do-not-contact leads cannot be approved for outreach")
-        if lead.status not in {"DISCOVERED", "RESEARCHED", "QUALIFIED"}:
+        allowed_outreach_statuses = {"DISCOVERED", "RESEARCHED", "QUALIFIED"}
+        if detail and detail.get("allow_follow_up"):
+            allowed_outreach_statuses |= {"CONTACTED", "REPLIED"}
+        if lead.status not in allowed_outreach_statuses:
             raise ValueError(f"lead status {lead.status} cannot be approved for outreach")
     elif lead_id is not None and db.get(LeadRecordRow, lead_id) is None:
         raise ApprovalNotFound("Lead not found")
@@ -248,33 +255,67 @@ def decide_approval(
             or (db.query(OutreachRecord).filter_by(task_id=approval.task_id).first() if approval.task_id else None)
         )
         if outreach and outreach.status in ("PENDING_APPROVAL", "APPROVED"):
-            is_p2 = bool((outreach.metadata_json or {}).get("p2_commercial"))
+            meta = outreach.metadata_json or {}
+            is_p2 = bool(meta.get("p2_commercial"))
+            auto_dispatch_p2 = (
+                os.getenv("ENABLE_AUTONOMOUS_SALES_AUTO_DISPATCH", "").strip().lower() in ("1", "true", "yes")
+                or bool(meta.get("auto_dispatch_on_approval"))
+            )
             if is_p2:
-                # P2 outreach leaves actual dispatch as an explicit step (never fakes DISPATCHED)
                 outreach.status = "APPROVED"
                 db.add(outreach)
+                db.flush()
                 from app.db.models import P2ProspectDossierRecord
 
-                dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=outreach.lead_id).first()
-                if dossier:
-                    dossier.next_action = f"Dispatch approved outreach '{outreach.id}'"
-                    db.add(dossier)
-                external_action_performed = False
-                auto_executed_action = "p2_outreach_approved_ready_to_send"
+                if auto_dispatch_p2:
+                    from app.services.p2_outreach_pipeline import dispatch_p2_outreach
+
+                    try:
+                        disp_res = dispatch_p2_outreach(
+                            db,
+                            outreach_id=outreach.id,
+                            dispatched_by=decided_by,
+                            correlation_id=effective_corr_id,
+                        )
+                        if disp_res.get("external_sent"):
+                            external_action_performed = True
+                            auto_executed_action = "p2_outreach_dispatched"
+                        else:
+                            external_action_performed = False
+                            auto_executed_action = "p2_outreach_simulated"
+                    except Exception as disp_exc:
+                        logger.warning("P2 outreach auto-dispatch failed closed for %s: %s", outreach.id, disp_exc)
+                        external_action_performed = False
+                        auto_executed_action = "p2_outreach_dispatch_failed"
+                else:
+                    dossier = db.query(P2ProspectDossierRecord).filter_by(lead_id=outreach.lead_id).first()
+                    if dossier:
+                        dossier.next_action = f"Dispatch approved outreach '{outreach.id}'"
+                        db.add(dossier)
+                    external_action_performed = False
+                    auto_executed_action = "p2_outreach_approved_ready_to_send"
             else:
                 from app.services.outreach import dispatch_outreach
                 try:
-                    dispatch_outreach(
+                    disp_res = dispatch_outreach(
                         db=db,
                         outreach_id=outreach.id,
                         correlation_id=effective_corr_id,
                         dispatched_by=decided_by,
                     )
-                except Exception:
-                    outreach.status = "DISPATCHED"
+                    if disp_res.get("status") in ("DISPATCHED", "SENT", "SIMULATED_SENT"):
+                        external_action_performed = disp_res.get("status") in ("DISPATCHED", "SENT")
+                        auto_executed_action = "outreach_dispatched"
+                    else:
+                        external_action_performed = False
+                        auto_executed_action = "outreach_dispatch_failed"
+                except Exception as disp_exc:
+                    logger.warning("Outreach auto-dispatch failed closed for %s: %s", outreach.id, disp_exc)
+                    outreach.status = "FAILED"
+                    outreach.error_message = str(disp_exc)[:500]
                     db.add(outreach)
-                external_action_performed = True
-                auto_executed_action = "outreach_dispatched"
+                    external_action_performed = False
+                    auto_executed_action = "outreach_dispatch_failed"
 
         # 2. Linked SEO draft publishing via WordPress Bridge (fail-closed — never mask failures as PUBLISHED)
         seo_draft = (

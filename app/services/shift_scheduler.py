@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.agents.smb_search_source import discover_smb_leads
 from app.db.models import (
@@ -29,12 +30,15 @@ from app.db.models import (
     OrderRecord,
     OrganizationRecord,
     OutreachRecord,
+    P2ProspectDossierRecord,
     ShiftRecord,
     TaskRecord,
 )
 from app.security.trust_chain import seal_task_to_block
+from app.services.inbox_sync import sync_inbox_replies_and_bounces
 from app.services.orders import fulfill_pending_orders
 from app.services.outreach import draft_outreach
+from app.services.suppression import is_db_suppressed
 from app.services.previews import generate_trojan_horse_preview
 from app.services.seo import execute_seo_draft
 from app.services.watchdog import (
@@ -62,6 +66,14 @@ def run_autonomous_shift(
     logger.info(f"Starting autonomous shift '{shift_id}' (type={shift_type})...")
 
     step_results: dict[str, Any] = {}
+
+    # ── 0. Autonomous Inbox Sync Agent: Sync Bounces, Opt-Outs & Positive Replies ──
+    try:
+        inbox_res = sync_inbox_replies_and_bounces(db=db, limit=30, correlation_id=corr_id)
+        step_results["inbox_sync"] = inbox_res
+    except Exception as exc:
+        logger.error(f"Inbox Sync step failed: {exc}", exc_info=True)
+        step_results["inbox_sync"] = {"status": "ERROR", "error": str(exc)}
 
     # ── 1. Outbound SDR Agent: Discover SMB leads & Generate Trojan-Horse Previews ──
     try:
@@ -240,21 +252,105 @@ def run_autonomous_shift(
         logger.error(f"Owned Media SEO step failed: {exc}", exc_info=True)
         step_results["owned_media_seo"] = {"status": "ERROR", "error": str(exc)}
 
-    # ── 3. Order Fulfillment Worker: Auto-fulfill pending B2C / ASK4 orders ────────
+    # ── 2b. Autonomous Follow-Up Closer: Stage 1 HITL follow-up for due CONTACTED leads ──
     try:
-        fulfillment_res = fulfill_pending_orders(
-            db=db,
-            limit=25,
-            fulfilled_by=f"shift-worker-{shift_id}",
+        from app.services.p2_outreach_pipeline import prepare_p2_outreach
+
+        now_ts = datetime.now(UTC)
+        due_dossiers = (
+            db.query(P2ProspectDossierRecord)
+            .filter(
+                P2ProspectDossierRecord.pipeline_status == "CONTACTED",
+                P2ProspectDossierRecord.follow_up_at.isnot(None),
+                P2ProspectDossierRecord.follow_up_at <= now_ts,
+            )
+            .limit(5)
+            .all()
         )
-        step_results["order_fulfillment"] = {
+        followups_staged = []
+        for dossier in due_dossiers:
+            lead = db.get(LeadRecordRow, dossier.lead_id)
+            if not lead or lead.do_not_contact:
+                continue
+            lead_outreaches = (
+                db.query(OutreachRecord)
+                .filter(OutreachRecord.lead_id == lead.id)
+                .order_by(OutreachRecord.created_at.desc())
+                .all()
+            )
+            # Only follow up on cleanly SENT outreach; never chase BOUNCED or send >1 follow-up
+            sent_rows = [r for r in lead_outreaches if r.status == "SENT"]
+            if len(sent_rows) != 1 or any(r.status in ("BOUNCED", "PENDING_APPROVAL", "APPROVED") for r in lead_outreaches):
+                continue
+            recipient = sent_rows[0].recipient_email
+            suppressed, _ = is_db_suppressed(db, recipient, lead_id=lead.id)
+            if suppressed:
+                continue
+            fu_res = prepare_p2_outreach(
+                db,
+                lead_id=lead.id,
+                recipient_email=recipient,
+                recipient_name=f"{lead.company} Team",
+                channel="email",
+                subject_override=f"Quick follow-up: 3 WordPress SEO/GEO wins for {lead.company}",
+                body_override=(
+                    f"Hi {lead.company} team,\n\n"
+                    f"Quick follow-up on the 3 WordPress SEO/GEO findings I shared earlier for {lead.website or lead.company}. "
+                    f"Happy to send over the 1-page written scope for our fixed Rs 4,999 14-day Managed SEO & Content Pilot "
+                    f"(https://os.askforwrite.com/services/managed_seo_content_pilot) whenever useful.\n\n"
+                    f"Best regards,\nVipul Chobisa | AskforWrite AI Solutions (info@askforwrite.in)\n"
+                    f"(Reply 'unsubscribe' anytime and I will not follow up again.)"
+                ),
+                custom_notes="Autonomous 4-day single follow-up staged for Owner HITL approval.",
+                allow_follow_up=True,
+                idempotency_key=f"auto-followup-1-{lead.id}",
+                actor="autonomous_followup_closer",
+                correlation_id=corr_id,
+            )
+            fu_rec = db.get(OutreachRecord, fu_res.get("outreach_id"))
+            if fu_rec:
+                fmeta = dict(fu_rec.metadata_json or {})
+                fmeta["auto_dispatch_on_approval"] = True
+                fu_rec.metadata_json = fmeta
+                flag_modified(fu_rec, "metadata_json")
+                db.add(fu_rec)
+            dossier.follow_up_at = now_ts + timedelta(days=30)
+            dossier.next_action = f"Follow-up draft '{fu_res.get('outreach_id')}' staged in Owner Approvals"
+            db.add(dossier)
+            followups_staged.append({
+                "lead_id": lead.id,
+                "company": lead.company,
+                "outreach_id": fu_res.get("outreach_id"),
+                "approval_id": fu_res.get("approval_id"),
+            })
+        step_results["follow_up_closer"] = {
             "status": "COMPLETED",
-            "fulfilled_count": fulfillment_res.get("fulfilled_count", 0),
-            "orders": fulfillment_res.get("orders", []),
+            "due_checked": len(due_dossiers),
+            "followups_staged_count": len(followups_staged),
+            "followups": followups_staged,
         }
     except Exception as exc:
-        logger.error(f"Order Fulfillment step failed: {exc}", exc_info=True)
-        step_results["order_fulfillment"] = {"status": "ERROR", "error": str(exc)}
+        logger.error(f"Follow-up Closer step failed: {exc}", exc_info=True)
+        step_results["follow_up_closer"] = {"status": "ERROR", "error": str(exc)}
+
+    # ── 3. Order Fulfillment Worker: Auto-fulfill pending B2C / ASK4 orders ────────
+    if shift_type == "sales_marketing_cycle":
+        step_results["order_fulfillment"] = {"status": "SKIPPED", "fulfilled_count": 0, "orders": []}
+    else:
+        try:
+            fulfillment_res = fulfill_pending_orders(
+                db=db,
+                limit=25,
+                fulfilled_by=f"shift-worker-{shift_id}",
+            )
+            step_results["order_fulfillment"] = {
+                "status": "COMPLETED",
+                "fulfilled_count": fulfillment_res.get("fulfilled_count", 0),
+                "orders": fulfillment_res.get("orders", []),
+            }
+        except Exception as exc:
+            logger.error(f"Order Fulfillment step failed: {exc}", exc_info=True)
+            step_results["order_fulfillment"] = {"status": "ERROR", "error": str(exc)}
 
     # ── 4. L1 Watchdog Audit Agent: Scan system health, SLA compliance & spoofing ──
     try:
