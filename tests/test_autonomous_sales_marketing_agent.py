@@ -270,3 +270,54 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
         staged_ids = [f["lead_id"] for f in steps["follow_up_closer"]["followups"]]
         self.assertIn(lead_due.id, staged_ids)
         self.assertNotIn(lead_bounced.id, staged_ids)
+
+    def test_inbox_sync_ignores_stale_or_mailchannels_bounce_after_resend_redelivery(self) -> None:
+        """Historical MailChannels NDRs in INBOX must not re-bounce freshly Resend-delivered outreach."""
+        uid = uuid.uuid4().hex[:6]
+        target_email = f"retry-{uid}@agency-resend.in"
+        _, rec = self._create_lead_and_outreach(target_email, status="SENT")
+        rec.sent_at = datetime.now(UTC)
+        rec.error_message = None
+        rec.metadata_json = {
+            "p2_commercial": True,
+            "dispatch_receipt": {"provider": "resend", "status": "delivered", "message_id": "re_live_123"},
+            "external_sent": True,
+        }
+        self.db.add(rec)
+        self.db.commit()
+
+        old_date = (datetime.now(UTC) - timedelta(days=2)).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        messages = [
+            {
+                "uid": f"old-mc-{uid}",
+                "from": "Mail Delivery System <mailer-daemon@bounce.mailchannels.net>",
+                "subject": "Returned mail",
+                "date": old_date,
+                "body": f"addressed to {target_email}.\nResponse: 550 5.7.1 [SS] Blocked.",
+            }
+        ]
+        res = process_inbox_messages(self.db, messages)
+        self.assertEqual(res["bounces_marked_count"], 0)
+        self.db.refresh(rec)
+        self.assertEqual(rec.status, "SENT")
+
+    def test_start_production_redacts_sensitive_optional_vars(self) -> None:
+        """Startup diagnostics must redact secrets, PEM keys, and database URLs."""
+        from scripts.start_production import _format_optional_var_value
+
+        self.assertEqual(
+            _format_optional_var_value("DATABASE_URL_UNPOOLED", "postgresql://user:supersecret@host/db"),
+            "configured (redacted)",
+        )
+        self.assertEqual(
+            _format_optional_var_value("TRUST_ENGINE_PRIVATE_KEY_PEM", "-----BEGIN PRIVATE KEY-----"),
+            "configured (redacted)",
+        )
+        self.assertEqual(
+            _format_optional_var_value("RESEND_API_KEY", "re_fake_secret_123"),
+            "configured (redacted)",
+        )
+        self.assertEqual(
+            _format_optional_var_value("RESEND_FROM_EMAIL", "AskforWrite AI Solutions <info@os.askforwrite.com>"),
+            "AskforWrite AI Solutions <info@os.askforwrite.com>",
+        )

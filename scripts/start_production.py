@@ -44,6 +44,10 @@ OPTIONAL_VARS = [
     "PAYPAL_WEBHOOK_ID",
     "PAYPAL_WEBHOOK_SECRET",
     "OUTREACH_DISPATCH_PROVIDER",
+    "RESEND_API_KEY",
+    "RESEND_FROM_EMAIL",
+    "OUTREACH_REPLY_TO_EMAIL",
+    "BREVO_API_KEY",
     "SMTP_HOST",
     "SMTP_PORT",
     "OUTREACH_FROM_EMAIL",
@@ -55,6 +59,26 @@ OPTIONAL_VARS = [
     "SENTRY_TRACES_SAMPLE_RATE",
     "LOG_LEVEL",
 ]
+
+_SENSITIVE_VAR_TOKENS = (
+    "KEY",
+    "SECRET",
+    "TOKEN",
+    "PASSWORD",
+    "DATABASE_URL",
+    "DSN",
+    "PEM",
+)
+
+
+def _format_optional_var_value(var: str, value: str) -> str:
+    """Return a safe log representation that never leaks credentials or connection URLs."""
+    if not value:
+        return "(not set)"
+    upper = var.upper()
+    if any(tok in upper for tok in _SENSITIVE_VAR_TOKENS):
+        return "configured (redacted)"
+    return value
 
 
 def validate_environment() -> list[str]:
@@ -130,7 +154,7 @@ def validate_environment() -> list[str]:
     for var in OPTIONAL_VARS:
         value = os.environ.get(var, "")
         status = "[OK]" if value else "[INFO]"
-        print(f"  {status} {var} = {value or '(not set)'}")
+        print(f"  {status} {var} = {_format_optional_var_value(var, value)}")
 
     return errors
 

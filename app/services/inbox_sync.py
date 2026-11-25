@@ -21,6 +21,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 from email.header import decode_header
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -53,6 +54,19 @@ def _decode_mime_header(value: str | None) -> str:
         else:
             parts.append(str(chunk))
     return "".join(parts)
+
+
+def _parse_email_datetime(raw_date: str | None) -> datetime | None:
+    """Parse an RFC 2822 email Date header into timezone-aware UTC datetime, or None."""
+    if not raw_date or not raw_date.strip():
+        return None
+    try:
+        dt = parsedate_to_datetime(raw_date.strip())
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    except Exception:
+        return None
 
 
 def _extract_plain_text(msg: email.message.Message) -> str:
@@ -110,6 +124,8 @@ def process_inbox_messages(
         )
 
         if is_bounce:
+            msg_dt = _parse_email_datetime(msg.get("date"))
+            is_mailchannels_bounce = "mailchannels" in sender_lower or "mailchannels" in body_lower
             mentioned_emails = {m.lower() for m in _EMAIL_RE.findall(body)}
             matched_reason = "SMTP delivery bounce"
             for line in body.splitlines():
@@ -121,6 +137,16 @@ def process_inbox_messages(
                     continue
                 for rec in by_email[em]:
                     if rec.status == "BOUNCED":
+                        continue
+                    # Ignore historical bounces that predate a newer re-dispatch of this record
+                    if msg_dt is not None and rec.sent_at is not None:
+                        rec_sent_utc = rec.sent_at.replace(tzinfo=UTC) if rec.sent_at.tzinfo is None else rec.sent_at.astimezone(UTC)
+                        if msg_dt < rec_sent_utc:
+                            continue
+                    # Ignore legacy Hostinger/MailChannels SMTP NDRs when latest delivery succeeded via HTTPS API (Resend/Brevo)
+                    rec_receipt = (rec.metadata_json or {}).get("dispatch_receipt") or {}
+                    rec_provider = str(rec_receipt.get("provider") or "").strip().lower()
+                    if is_mailchannels_bounce and rec_provider in ("resend", "brevo"):
                         continue
                     rec.status = "BOUNCED"
                     rec.error_message = matched_reason

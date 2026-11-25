@@ -440,6 +440,7 @@ def dispatch_p2_outreach(
     else:
         outreach.status = "SENT"
         outreach.sent_at = now
+        outreach.error_message = None
         if lead:
             lead.status = "CONTACTED"
             lead.last_checked = now
@@ -454,11 +455,18 @@ def dispatch_p2_outreach(
 
     db.add(outreach)
 
+    provider_name = str((receipt or {}).get("provider") or "").strip().lower()
+    connector_id = (
+        "resend_https"
+        if "resend" in provider_name
+        else ("brevo_https" if "brevo" in provider_name else "hostinger_smtp")
+    )
+
     record_execution_evidence(
         db,
         tenant_id=outreach.org_id or "__platform__",
         agent_id="outreach_preparation_agent",
-        connector_id="hostinger_smtp",
+        connector_id=connector_id,
         execution_mode="SIMULATION" if is_simulated else "PRODUCTION",
         input_payload={"outreach_id": outreach_id, "recipient_email": outreach.recipient_email},
         output_payload={"status": outreach.status, "external_sent": not is_simulated, "receipt": receipt},
