@@ -26,6 +26,7 @@ def execute_seo_draft(
     correlation_id: str,
     agent_id: str,
     org_id: str | None = None,
+    require_live_llm: bool = False,
 ) -> dict:
     request_hash = hashlib.sha256(json.dumps({"network": target_network, "keywords": keywords}, sort_keys=True).encode()).hexdigest()
 
@@ -39,17 +40,8 @@ def execute_seo_draft(
             raise SeoConflict("Idempotency key reused with different request payload")
         return existing.response_payload
 
-    task_id = str(uuid.uuid4())
-    task = TaskRecord(
-        id=task_id,
-        correlation_id=correlation_id,
-        objective=f"SEO Draft for {target_network}",
-        status="COMPLETED",
-    )
-    db.add(task)
-
-    # Draft content using LLM with rich, structured SEO/GEO deterministic fallback
-    from app.agents.llm_client import generate
+    # Draft content using LLM with structured SEO/GEO prompt (fail-closed in prod shifts if live LLM unavailable)
+    from app.agents.llm_client import generate, get_last_llm_usage, reset_last_llm_usage
 
     kw_list = [k.strip() for k in keywords if k and k.strip()] or [target_network, "Enterprise AI Automation"]
     primary_kw = kw_list[0]
@@ -85,9 +77,33 @@ def execute_seo_draft(
         f"A: This topical authority cluster targets {', '.join(kw_list)} with structured semantic headings.\n\n"
         f"```json\n{schema_ld}\n```"
     )
-    prompt = f"Write an authoritative SEO article draft for network '{target_network}' targeting keywords: {', '.join(kw_list)}."
-    content_draft = generate(prompt, fallback_text=fallback)
-    
+    prompt = (
+        f"Write an authoritative, original, practical 1,200+ word SEO and GEO (Generative Engine Optimization) "
+        f"article for '{target_network}' targeting primary keyword '{primary_kw}' and secondary keywords: "
+        f"{secondary_kws}. Format cleanly with a single H1 title (# Title), concise executive summary, "
+        f"4-5 actionable H2 sections with concrete architecture/implementation guidance and bullet checklists, "
+        f"a 3-question FAQ section, and a valid Schema.org Article JSON-LD block. Avoid generic fluff or "
+        f"unverified ranking/ROI guarantees."
+    )
+    reset_last_llm_usage()
+    content_draft = generate(prompt, max_output_tokens=3072, fallback_text=fallback)
+    llm_usage = get_last_llm_usage() or {}
+    used_fallback = bool(llm_usage.get("used_fallback", content_draft == fallback))
+
+    if require_live_llm and used_fallback:
+        raise ValueError(
+            f"Live LLM generation unavailable for '{target_network}'; skipped staging fallback boilerplate draft."
+        )
+
+    task_id = str(uuid.uuid4())
+    task = TaskRecord(
+        id=task_id,
+        correlation_id=correlation_id,
+        objective=f"SEO Draft for {target_network}",
+        status="COMPLETED",
+    )
+    db.add(task)
+
     draft = SeoDraftRecord(
         org_id=org_id,
         task_id=task_id,
@@ -99,8 +115,13 @@ def execute_seo_draft(
     db.add(draft)
     db.flush()  # flush to get draft.id
 
-    # Request Owner Approval for LIVE_PUBLISHED
-    approval_detail: dict = {"seo_draft_id": draft.id, "network": target_network}
+    # Request Owner Approval for LIVE_PUBLISHED (atomic with draft update)
+    approval_detail: dict = {
+        "seo_draft_id": draft.id,
+        "network": target_network,
+        "used_fallback": used_fallback,
+        "word_count": len(content_draft.split()),
+    }
     if org_id:
         approval_detail["org_id"] = org_id
     approval = request_approval(
@@ -111,7 +132,8 @@ def execute_seo_draft(
         detail=approval_detail,
         idempotency_key=f"approval_seo_{draft.id}",
         requested_by=agent_id,
-        correlation_id=correlation_id
+        correlation_id=correlation_id,
+        commit=False,
     )
 
     draft.approval_id = approval["approval_id"]

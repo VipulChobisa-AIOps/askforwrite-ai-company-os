@@ -351,5 +351,69 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
             )
 
         self.assertEqual(count_after_second, count_after_first)
-        statuses = [d.get("status") for d in res2["step_results"]["owned_media_seo"]["staged_drafts"]]
-        self.assertTrue(statuses and all(s == "SKIPPED_PENDING_APPROVAL_EXISTS" for s in statuses))
+        by_net = {d["target_network"]: d.get("status") for d in res2["step_results"]["owned_media_seo"]["staged_drafts"]}
+        self.assertEqual(by_net["askforwrite.com"], "SKIPPED_PENDING_APPROVAL_EXISTS")
+        self.assertEqual(by_net["ask4write.com"], "SKIPPED_PENDING_APPROVAL_EXISTS")
+        self.assertEqual(by_net["askforwrite.info"], "SKIPPED_PENDING_APPROVAL_EXISTS")
+        self.assertEqual(by_net["askforwrite.in"], "SKIPPED_NO_WP_REST_ENDPOINT")
+        self.assertEqual(by_net["shop.ask4write.com"], "SKIPPED_NO_WP_REST_ENDPOINT")
+        self.assertEqual(by_net["node.askforwrite.in"], "SKIPPED_NO_WP_REST_ENDPOINT")
+
+    def test_wordpress_html_renderer_and_multisite_target_resolution(self) -> None:
+        """WordPress publisher converts Markdown+JSON-LD to clean HTML and resolves per-site credentials."""
+        from app.services.wordpress_publisher import (
+            get_live_wordpress_networks,
+            render_wordpress_html,
+            resolve_wordpress_target,
+        )
+
+        self.assertEqual(
+            set(get_live_wordpress_networks().keys()),
+            {"askforwrite.com", "ask4write.com", "askforwrite.info"},
+        )
+
+        md = (
+            "# Duplicate H1 Title\n\n"
+            "**Executive Summary:** Clean *semantic* `HTML` with [AskforWrite](https://askforwrite.com).\n\n"
+            "## Key Architecture\n"
+            "- **Item One**: Value\n"
+            "- Item Two\n\n"
+            "```json\n"
+            '{"@context": "https://schema.org", "@type": "Article", "headline": "Test"}\n'
+            "```\n"
+        )
+        rendered = render_wordpress_html(md)
+        self.assertNotIn("<h1>", rendered)
+        self.assertNotIn("Duplicate H1 Title", rendered)
+        self.assertIn("<h2>Key Architecture</h2>", rendered)
+        self.assertIn("<strong>Executive Summary:</strong>", rendered)
+        self.assertIn("<em>semantic</em>", rendered)
+        self.assertIn('href="https://askforwrite.com"', rendered)
+        self.assertIn("<ul>\n<li><strong>Item One</strong>: Value</li>", rendered)
+        self.assertIn('<script type="application/ld+json">', rendered)
+        self.assertNotIn("```json", rendered)
+
+        # Already-HTML input passes through untouched
+        pre_html = "<h2>Already HTML</h2><p>Clean body.</p>"
+        self.assertEqual(render_wordpress_html(pre_html), pre_html)
+
+        # Per-site credential resolution takes precedence over global WP_SITE_URL
+        with patch.dict(
+            os.environ,
+            {
+                "WP_SITE_URL": "https://askforwrite.in",
+                "WP_USERNAME": "global_user",
+                "WP_APP_PASSWORD": "global_pass",
+                "WP_USERNAME_ASKFORWRITE_COM": "wp_com_user",
+                "WP_APP_PASSWORD_ASKFORWRITE_COM": "xxxx yyyy zzzz wwww",
+            },
+            clear=False,
+        ):
+            url_com, user_com, pass_com = resolve_wordpress_target("askforwrite.com")
+            self.assertEqual(url_com, "https://askforwrite.com")
+            self.assertEqual(user_com, "wp_com_user")
+            self.assertEqual(pass_com, "xxxx yyyy zzzz wwww")
+
+            url_info, user_info, _ = resolve_wordpress_target("askforwrite.info")
+            self.assertEqual(url_info, "https://askforwrite.in")
+            self.assertEqual(user_info, "global_user")

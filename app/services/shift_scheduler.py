@@ -13,6 +13,7 @@ Seals all shift runs cryptographically into the ECDSA P-256 Merkle TrustBlock le
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -220,7 +221,18 @@ def run_autonomous_shift(
 
         staged_seo_drafts = []
         utc_day_tag = start_time.strftime("%Y%m%d")
-        for net_domain in networks.keys():
+        require_live_llm_seo = (
+            os.getenv("APP_ENV", "development").strip().lower() == "production"
+            and os.getenv("ALLOW_FALLBACK_SEO_DRAFTS", "").strip().lower() not in ("1", "true", "yes")
+        )
+        for net_domain, net_meta in networks.items():
+            if not net_meta.get("wp_rest_enabled", False):
+                staged_seo_drafts.append({
+                    "target_network": net_domain,
+                    "status": "SKIPPED_NO_WP_REST_ENDPOINT",
+                })
+                continue
+
             existing_pending_seo = (
                 db.query(SeoDraftRecord)
                 .join(ApprovalRequest, ApprovalRequest.id == SeoDraftRecord.approval_id)
@@ -249,6 +261,7 @@ def run_autonomous_shift(
                     idempotency_key=seo_idemp_key,
                     correlation_id=corr_id,
                     agent_id="owned_media_seo_shift_worker",
+                    require_live_llm=require_live_llm_seo,
                 )
                 staged_seo_drafts.append({
                     "target_network": net_domain,

@@ -15,6 +15,8 @@ Enforces fail-closed Human-in-the-Loop (HITL) publication integrity (Issue #12):
 from __future__ import annotations
 
 import hashlib
+import html
+import json
 import logging
 import os
 import re
@@ -36,42 +38,48 @@ ALLOWED_PUBLISH_APPROVAL_ACTIONS = frozenset(
     {"live_publishing", "wordpress_publish", "seo_publish", "seo_live_publishing"}
 )
 
-SUPPORTED_NETWORKS: dict[str, dict[str, str]] = {
+SUPPORTED_NETWORKS: dict[str, dict[str, Any]] = {
     "askforwrite.in": {
         "name": "AskforWrite Main Authority Platform",
         "base_url": "https://askforwrite.in",
         "category": "ai-technology",
         "description": "Enterprise autonomous agents and AI Company OS publications.",
+        "wp_rest_enabled": False,
     },
     "askforwrite.com": {
         "name": "AskforWrite Global Enterprise Hub",
         "base_url": "https://askforwrite.com",
         "category": "enterprise-ai",
         "description": "Global enterprise solutions, multi-tenant AI operations, and cloud gateway.",
+        "wp_rest_enabled": True,
     },
     "ask4write.com": {
         "name": "Ask4Write Brand & Commerce Hub",
         "base_url": "https://ask4write.com",
         "category": "ai-solutions",
         "description": "Commercial AI products, automation packs, and brand portal.",
+        "wp_rest_enabled": True,
     },
     "askforwrite.info": {
         "name": "AskforWrite Knowledge Base & Tech Docs",
         "base_url": "https://askforwrite.info",
         "category": "tech-documentation",
         "description": "Knowledge base, API reference, research insights, and technical documentation.",
+        "wp_rest_enabled": True,
     },
     "shop.ask4write.com": {
         "name": "AskforWrite Digital Storefront",
         "base_url": "https://shop.ask4write.com",
         "category": "ecommerce",
         "description": "Digital products, AI toolkits, instant templates, and service storefront.",
+        "wp_rest_enabled": False,
     },
     "node.askforwrite.in": {
         "name": "AskforWrite Node Infrastructure",
         "base_url": "https://node.askforwrite.in",
         "category": "infrastructure",
         "description": "Distributed node infrastructure, real-time endpoints, and edge services.",
+        "wp_rest_enabled": False,
     },
 }
 
@@ -94,9 +102,176 @@ class WordPressPublishError(RuntimeError):
         self.http_status = http_status
 
 
-def get_supported_networks() -> dict[str, dict[str, str]]:
+def get_supported_networks() -> dict[str, dict[str, Any]]:
     """Return catalog of supported WordPress publishing networks."""
     return SUPPORTED_NETWORKS
+
+
+def get_live_wordpress_networks() -> dict[str, dict[str, Any]]:
+    """Return only verified live WordPress REST networks (wp_rest_enabled=True)."""
+    return {k: v for k, v in SUPPORTED_NETWORKS.items() if v.get("wp_rest_enabled")}
+
+
+def _network_env_slug(network: str) -> str:
+    cleaned = (network or "").strip().lower()
+    if "://" in cleaned:
+        cleaned = cleaned.split("://", 1)[-1].split("/", 1)[0]
+    return re.sub(r"[^A-Z0-9]+", "_", cleaned.upper()).strip("_")
+
+
+def resolve_wordpress_target(network: str) -> tuple[str, str, str]:
+    """Resolve (site_url, username, app_password) for a target network.
+
+    Checks per-site variables first (WP_SITE_URL_<SLUG>, WP_USERNAME_<SLUG>, WP_APP_PASSWORD_<SLUG>,
+    e.g. WP_USERNAME_ASKFORWRITE_COM) and falls back cleanly to global WP_SITE_URL / WP_USERNAME / WP_APP_PASSWORD.
+    """
+    norm_net = (network or "").strip().lower()
+    if "://" in norm_net:
+        norm_net = norm_net.split("://", 1)[-1].split("/", 1)[0]
+    slug = _network_env_slug(norm_net)
+
+    site_url_specific = os.getenv(f"WP_SITE_URL_{slug}", "").strip() if slug else ""
+    user_specific = os.getenv(f"WP_USERNAME_{slug}", "").strip() if slug else ""
+    pass_specific = os.getenv(f"WP_APP_PASSWORD_{slug}", "").strip() if slug else ""
+
+    if user_specific and pass_specific:
+        default_base = str((SUPPORTED_NETWORKS.get(norm_net) or {}).get("base_url") or "")
+        site_url = site_url_specific or default_base or os.getenv("WP_SITE_URL", "").strip() or os.getenv("WP_BASE_URL", "").strip()
+        return site_url, user_specific, pass_specific
+
+    wp_site_url = (site_url_specific or os.getenv("WP_SITE_URL") or os.getenv("WP_BASE_URL") or "").strip()
+    wp_username = (user_specific or os.getenv("WP_USERNAME") or "").strip()
+    wp_app_password = (pass_specific or os.getenv("WP_APP_PASSWORD") or "").strip()
+    return wp_site_url, wp_username, wp_app_password
+
+
+def _inline_markdown_to_html(text: str) -> str:
+    """Convert inline Markdown (**bold**, *italic*, `code`, [label](url)) into safe HTML."""
+    escaped = html.escape(text, quote=False)
+    escaped = re.sub(
+        r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
+        lambda m: f'<a href="{html.escape(m.group(2), quote=True)}" rel="noopener noreferrer">{m.group(1)}</a>',
+        escaped,
+    )
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", escaped)
+    return escaped
+
+
+def render_wordpress_html(content: str) -> str:
+    """Convert Markdown SEO drafts into clean, Gutenberg-ready WordPress HTML.
+
+    - Strips duplicate leading H1 heading (WordPress renders post title as H1).
+    - Converts ##/### headings, bullet/numbered lists, paragraphs, and inline emphasis to semantic HTML.
+    - Converts fenced ```json Schema.org JSON-LD blocks into valid <script type="application/ld+json"> tags.
+    - Passes through pre-rendered HTML documents unchanged.
+    """
+    raw = (content or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("<") and any(tag in raw.lower() for tag in ("<p", "<h2", "<h3", "<article", "<section", "<div")):
+        return raw
+
+    json_ld_scripts: list[str] = []
+
+    def _extract_json_block(match: re.Match[str]) -> str:
+        body = match.group(1).strip()
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict) and "@context" in parsed and "@type" in parsed:
+                safe_json = json.dumps(parsed, ensure_ascii=False).replace("</", "<\\/")
+                json_ld_scripts.append(f'<script type="application/ld+json">{safe_json}</script>')
+                return ""
+        except Exception:
+            pass
+        return f"<pre><code>{html.escape(body)}</code></pre>"
+
+    stripped = re.sub(r"```(?:json|ld\+json)\s*\n(.*?)```", _extract_json_block, raw, flags=re.DOTALL | re.IGNORECASE)
+
+    out_parts: list[str] = []
+    in_ul = False
+    in_ol = False
+    para_buf: list[str] = []
+    h1_skipped = False
+
+    def _flush_para() -> None:
+        if para_buf:
+            joined = " ".join(para_buf).strip()
+            if joined:
+                out_parts.append(f"<p>{_inline_markdown_to_html(joined)}</p>")
+            para_buf.clear()
+
+    def _close_lists() -> None:
+        nonlocal in_ul, in_ol
+        if in_ul:
+            out_parts.append("</ul>")
+            in_ul = False
+        if in_ol:
+            out_parts.append("</ol>")
+            in_ol = False
+
+    for raw_line in stripped.splitlines():
+        line = raw_line.strip()
+        if not line:
+            _flush_para()
+            _close_lists()
+            continue
+        if line.startswith("<pre><code>"):
+            _flush_para()
+            _close_lists()
+            out_parts.append(line)
+            continue
+        if line.startswith("# ") and not h1_skipped:
+            # WordPress already renders the post title as the page H1
+            h1_skipped = True
+            _flush_para()
+            _close_lists()
+            continue
+        if line.startswith("### "):
+            _flush_para()
+            _close_lists()
+            out_parts.append(f"<h3>{_inline_markdown_to_html(line[4:].strip())}</h3>")
+            continue
+        if line.startswith("## "):
+            _flush_para()
+            _close_lists()
+            out_parts.append(f"<h2>{_inline_markdown_to_html(line[3:].strip())}</h2>")
+            continue
+        if line.startswith("# "):
+            _flush_para()
+            _close_lists()
+            out_parts.append(f"<h2>{_inline_markdown_to_html(line[2:].strip())}</h2>")
+            continue
+        ul_m = re.match(r"^[-*]\s+(.+)$", line)
+        if ul_m:
+            _flush_para()
+            if in_ol:
+                out_parts.append("</ol>")
+                in_ol = False
+            if not in_ul:
+                out_parts.append("<ul>")
+                in_ul = True
+            out_parts.append(f"<li>{_inline_markdown_to_html(ul_m.group(1).strip())}</li>")
+            continue
+        ol_m = re.match(r"^\d+\.\s+(.+)$", line)
+        if ol_m:
+            _flush_para()
+            if in_ul:
+                out_parts.append("</ul>")
+                in_ul = False
+            if not in_ol:
+                out_parts.append("<ol>")
+                in_ol = True
+            out_parts.append(f"<li>{_inline_markdown_to_html(ol_m.group(1).strip())}</li>")
+            continue
+        _close_lists()
+        para_buf.append(line)
+
+    _flush_para()
+    _close_lists()
+    out_parts.extend(json_ld_scripts)
+    return "\n".join(out_parts)
 
 
 def _normalize_org(value: Any) -> str | None:
@@ -408,10 +583,8 @@ def publish_seo_draft_to_wordpress(
             "block_hash": meta.get("block_hash"),
         }
 
-    # 3. Determine execution mode: live credentials + side-effect guard
-    wp_site_url = (os.getenv("WP_SITE_URL") or os.getenv("WP_BASE_URL") or "").strip()
-    wp_username = (os.getenv("WP_USERNAME") or "").strip()
-    wp_app_password = (os.getenv("WP_APP_PASSWORD") or "").strip()
+    # 3. Determine execution mode: per-site or global live credentials + side-effect guard
+    wp_site_url, wp_username, wp_app_password = resolve_wordpress_target(network)
 
     from app.services.execution_guard import (
         is_external_side_effect_blocked,
@@ -598,13 +771,17 @@ def publish_seo_draft_to_wordpress(
             http_status = 200
 
     if not reconciled:
+        wp_publish_status = os.getenv("WP_PUBLISH_STATUS", "publish").strip().lower()
+        if wp_publish_status not in ("publish", "draft", "pending"):
+            wp_publish_status = "publish"
+        rendered_content = render_wordpress_html(draft.content or "")
         post_kwargs: dict[str, Any] = {
             "auth": auth,
             "headers": {"Idempotency-Key": wp_idemp_key},
             "json": {
                 "title": title,
-                "content": draft.content,
-                "status": "publish",
+                "content": rendered_content,
+                "status": wp_publish_status,
                 "slug": slug,
             },
             "timeout": 10.0,
