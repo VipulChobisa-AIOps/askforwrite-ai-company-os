@@ -131,7 +131,15 @@ class ResendEmailDispatcher:
 
     def __init__(self, api_key: str | None = None, default_sender: str | None = None) -> None:
         self.api_key = (api_key or os.getenv("RESEND_API_KEY", "")).strip()
-        self.default_sender = default_sender or os.getenv("OUTREACH_FROM_EMAIL", "info@askforwrite.in")
+        self.default_sender = (
+            default_sender
+            or os.getenv("RESEND_FROM_EMAIL", "").strip()
+            or os.getenv("OUTREACH_FROM_EMAIL", "info@os.askforwrite.com").strip()
+        )
+        self.reply_to = (
+            os.getenv("OUTREACH_REPLY_TO_EMAIL", "").strip()
+            or os.getenv("OUTREACH_FROM_EMAIL", "info@askforwrite.in").strip()
+        )
 
     def send(
         self,
@@ -140,7 +148,10 @@ class ResendEmailDispatcher:
         body_text: str,
         from_email: str | None = None,
     ) -> dict[str, object]:
-        sender = from_email or self.default_sender
+        # Prefer explicit RESEND_FROM_EMAIL when configured so verified Resend domain matches From:
+        resend_from = os.getenv("RESEND_FROM_EMAIL", "").strip()
+        sender = resend_from or from_email or self.default_sender
+        reply_to = self.reply_to or sender
         if _is_simulation_environment():
             return _record_simulated("resend_https", recipient_email, subject, sender, body_text)
         if not self.api_key:
@@ -151,8 +162,8 @@ class ResendEmailDispatcher:
             "to": [recipient_email],
             "subject": subject,
             "text": body_text,
-            "reply_to": sender,
-            "headers": {"List-Unsubscribe": f"<mailto:{sender}?subject=unsubscribe>"},
+            "reply_to": reply_to,
+            "headers": {"List-Unsubscribe": f"<mailto:{reply_to}?subject=unsubscribe>"},
         }
         req = urllib.request.Request(
             self.API_URL,

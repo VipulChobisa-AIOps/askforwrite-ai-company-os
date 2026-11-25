@@ -54,6 +54,10 @@ services:
         value: "auto"
       - key: RESEND_API_KEY
         sync: false
+      - key: RESEND_FROM_EMAIL
+        value: "AskforWrite AI Solutions <info@os.askforwrite.com>"
+      - key: OUTREACH_REPLY_TO_EMAIL
+        value: "info@askforwrite.in"
       - key: BREVO_API_KEY
         sync: false
       - key: IMAP_HOST

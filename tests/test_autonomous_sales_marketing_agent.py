@@ -45,6 +45,8 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
             "ENABLE_EXTERNAL_SIDE_EFFECTS": "true",
             "OUTREACH_DISPATCH_PROVIDER": "auto",
             "RESEND_API_KEY": "re_test_123",
+            "RESEND_FROM_EMAIL": "AskforWrite AI Solutions <info@os.askforwrite.com>",
+            "OUTREACH_REPLY_TO_EMAIL": "info@askforwrite.in",
             "BREVO_API_KEY": "",
             "SMTP_HOST": "smtp.hostinger.com",
             "SMTP_MODE": "smtp",
@@ -53,14 +55,22 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
             disp = get_email_dispatcher()
             self.assertIsInstance(disp, ResendEmailDispatcher)
 
-            mock_resp = MagicMock()
-            mock_resp.read.return_value = json.dumps({"id": "re_msg_999"}).encode("utf-8")
-            mock_resp.__enter__.return_value = mock_resp
-            with patch("urllib.request.urlopen", return_value=mock_resp):
-                receipt = disp.send("buyer@acme.in", "Test Subject", "Hello buyer")
+            captured_req = {}
+
+            def _fake_urlopen(req, timeout=15.0):
+                captured_req["body"] = json.loads(req.data.decode("utf-8"))
+                m = MagicMock()
+                m.read.return_value = json.dumps({"id": "re_msg_999"}).encode("utf-8")
+                m.__enter__.return_value = m
+                return m
+
+            with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
+                receipt = disp.send("buyer@acme.in", "Test Subject", "Hello buyer", from_email="info@askforwrite.in")
             self.assertEqual(receipt["provider"], "resend")
             self.assertEqual(receipt["status"], "delivered")
             self.assertEqual(receipt["message_id"], "re_msg_999")
+            self.assertEqual(captured_req["body"]["from"], "AskforWrite AI Solutions <info@os.askforwrite.com>")
+            self.assertEqual(captured_req["body"]["reply_to"], "info@askforwrite.in")
 
         env_brevo = {**env_patch, "RESEND_API_KEY": "", "BREVO_API_KEY": "xkeysib-test-123"}
         with patch.dict(os.environ, env_brevo, clear=False):
