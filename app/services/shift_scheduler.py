@@ -31,6 +31,7 @@ from app.db.models import (
     OrganizationRecord,
     OutreachRecord,
     P2ProspectDossierRecord,
+    SeoDraftRecord,
     ShiftRecord,
     TaskRecord,
 )
@@ -218,9 +219,28 @@ def run_autonomous_shift(
         }
 
         staged_seo_drafts = []
+        utc_day_tag = start_time.strftime("%Y%m%d")
         for net_domain in networks.keys():
+            existing_pending_seo = (
+                db.query(SeoDraftRecord)
+                .join(ApprovalRequest, ApprovalRequest.id == SeoDraftRecord.approval_id)
+                .filter(
+                    SeoDraftRecord.target_network == net_domain,
+                    ApprovalRequest.status == "PENDING",
+                )
+                .first()
+            )
+            if existing_pending_seo:
+                staged_seo_drafts.append({
+                    "target_network": net_domain,
+                    "draft_id": existing_pending_seo.id,
+                    "approval_id": existing_pending_seo.approval_id,
+                    "status": "SKIPPED_PENDING_APPROVAL_EXISTS",
+                })
+                continue
+
             kws = seo_keyword_map.get(net_domain, ["AI Automation", "Company OS"])
-            seo_idemp_key = f"shift-seo-{shift_id}-{net_domain}"
+            seo_idemp_key = f"shift-seo-{utc_day_tag}-{net_domain}"
             try:
                 res = execute_seo_draft(
                     db=db,

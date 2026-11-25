@@ -333,3 +333,23 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
             _format_optional_var_value("RESEND_FROM_EMAIL", "AskforWrite AI Solutions <info@os.askforwrite.com>"),
             "AskforWrite AI Solutions <info@os.askforwrite.com>",
         )
+
+    def test_autonomous_shift_deduplicates_pending_seo_approvals(self) -> None:
+        """Repeated autonomous shifts must never flood Owner Approvals with duplicate pending SEO drafts."""
+        with patch("app.services.shift_scheduler.discover_smb_leads", return_value=[]):
+            run_autonomous_shift(db=self.db, shift_type="sales_marketing_cycle")
+            count_after_first = (
+                self.db.query(ApprovalRequest)
+                .filter_by(action="live_publishing", status="PENDING")
+                .count()
+            )
+            res2 = run_autonomous_shift(db=self.db, shift_type="sales_marketing_cycle")
+            count_after_second = (
+                self.db.query(ApprovalRequest)
+                .filter_by(action="live_publishing", status="PENDING")
+                .count()
+            )
+
+        self.assertEqual(count_after_second, count_after_first)
+        statuses = [d.get("status") for d in res2["step_results"]["owned_media_seo"]["staged_drafts"]]
+        self.assertTrue(statuses and all(s == "SKIPPED_PENDING_APPROVAL_EXISTS" for s in statuses))

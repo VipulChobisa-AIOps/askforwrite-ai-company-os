@@ -164,11 +164,33 @@ async def lifespan(app: FastAPI):
         interval_mins = max(30, int(os.environ.get("AUTONOMOUS_SHIFT_INTERVAL_MINUTES", "360")))
 
         async def _autonomous_sales_loop() -> None:
+            from app.db.models import ShiftRecord
+
             await asyncio.sleep(90)  # allow startup probes to settle cleanly
             while True:
                 def _run_once() -> None:
                     sdb = SessionLocal()
                     try:
+                        latest = (
+                            sdb.query(ShiftRecord)
+                            .filter(ShiftRecord.shift_type.in_(("sales_marketing_cycle", "full_daily_cycle")))
+                            .order_by(ShiftRecord.started_at.desc())
+                            .first()
+                        )
+                        if latest and latest.started_at:
+                            started_utc = (
+                                latest.started_at.replace(tzinfo=timezone.utc)
+                                if latest.started_at.tzinfo is None
+                                else latest.started_at.astimezone(timezone.utc)
+                            )
+                            elapsed_mins = (datetime.now(timezone.utc) - started_utc).total_seconds() / 60.0
+                            if elapsed_mins < max(15, interval_mins - 5):
+                                logger.info(
+                                    "Skipping redundant autonomous sales shift (last shift %.1fm ago < %dm cooldown)",
+                                    elapsed_mins,
+                                    max(15, interval_mins - 5),
+                                )
+                                return
                         run_autonomous_shift(db=sdb, shift_type="sales_marketing_cycle")
                     except Exception as loop_exc:
                         logger.warning("Autonomous sales shift cycle failed: %s", loop_exc)
