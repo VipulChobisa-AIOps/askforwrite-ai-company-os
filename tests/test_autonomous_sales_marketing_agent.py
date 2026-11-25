@@ -275,7 +275,11 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
         """Historical MailChannels NDRs in INBOX must not re-bounce freshly Resend-delivered outreach."""
         uid = uuid.uuid4().hex[:6]
         target_email = f"retry-{uid}@agency-resend.in"
-        _, rec = self._create_lead_and_outreach(target_email, status="SENT")
+        lead, rec = self._create_lead_and_outreach(target_email, status="SENT")
+        dossier = self.db.query(P2ProspectDossierRecord).filter_by(lead_id=lead.id).first()
+        if dossier:
+            dossier.follow_up_at = None
+            self.db.add(dossier)
         rec.sent_at = datetime.now(UTC)
         rec.error_message = None
         rec.metadata_json = {
@@ -303,7 +307,15 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
 
     def test_start_production_redacts_sensitive_optional_vars(self) -> None:
         """Startup diagnostics must redact secrets, PEM keys, and database URLs."""
-        from scripts.start_production import _format_optional_var_value
+        import importlib.util
+        from pathlib import Path
+
+        script_path = Path(__file__).resolve().parents[1] / "scripts" / "start_production.py"
+        spec = importlib.util.spec_from_file_location("start_production_under_test", script_path)
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _format_optional_var_value = mod._format_optional_var_value
 
         self.assertEqual(
             _format_optional_var_value("DATABASE_URL_UNPOOLED", "postgresql://user:supersecret@host/db"),

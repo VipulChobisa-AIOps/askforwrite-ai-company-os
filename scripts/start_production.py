@@ -8,7 +8,8 @@ import subprocess
 import sys
 from dotenv import load_dotenv
 
-load_dotenv()
+if "pytest" not in sys.modules and "unittest" not in sys.modules:
+    load_dotenv()
 
 REQUIRED_VARS = [
     "DATABASE_URL",

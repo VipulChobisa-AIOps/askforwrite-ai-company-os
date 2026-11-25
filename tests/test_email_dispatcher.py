@@ -11,6 +11,9 @@ def test_get_email_dispatcher_returns_mock_in_development(monkeypatch):
     # Ensure dev environment
     monkeypatch.setenv("APP_ENV", "development")
     monkeypatch.delenv("OUTREACH_DISPATCH_PROVIDER", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("BREVO_API_KEY", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
     dispatcher = get_email_dispatcher()
     assert isinstance(dispatcher, MockEmailDispatcher)
 
