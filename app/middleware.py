@@ -81,6 +81,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com data:; "
             "img-src 'self' data: https: blob:; "
+            "media-src 'self' https: data: blob:; "
             "connect-src 'self' https:;"
         )
 
@@ -94,7 +95,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Smart Cache-Control & X-Robots-Tag for SEO/AIO & Core Web Vitals
         path = request.url.path
         if "cache-control" not in {k.lower() for k in headers.keys()}:
-            if path in ("/favicon.ico", "/og-image.png") or path.startswith(("/dashboard/dashboard.", "/dashboard/icon-", "/static/")):
+            if path.startswith(("/dashboard/media/", "/static/media/")):
+                headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+            elif path in ("/favicon.ico", "/og-image.png") or path.startswith(("/dashboard/dashboard.", "/dashboard/icon-", "/static/")):
                 headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
             elif path in ("/", "/services", "/solutions", "/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt", "/.well-known/security.txt") or path.startswith(("/services/", "/solutions/", "/legal/")):
                 headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"

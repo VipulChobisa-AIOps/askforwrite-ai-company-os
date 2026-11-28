@@ -1,0 +1,24 @@
+name: Production Uptime & Crawler Warmup Keep-Alive
+
+on:
+  schedule:
+    # Keep Render Production warm every 10 minutes to prevent cold-start 502/503 (5xx) crawler timeouts
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    name: Ping os.askforwrite.com & os.askforwrite.in /healthz
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Warm production gateways (zero-DB /healthz probe)
+        run: |
+          set -e
+          for URL in "https://os.askforwrite.com/healthz" "https://os.askforwrite.in/healthz"; do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 45 --retry 2 --retry-delay 5 "$URL" || echo "000")
+            echo "$URL -> HTTP $CODE"
+            if [ "$CODE" != "200" ]; then
+              echo "::warning::Keep-alive probe for $URL returned HTTP $CODE"
+            fi
+          done

@@ -138,3 +138,64 @@ def test_checkout_noindex_and_branded_html_404() -> None:
     nf_api = client.get("/v1/nonexistent-endpoint")
     assert nf_api.status_code == 404
     assert "application/json" in nf_api.headers["content-type"]
+
+
+def test_gsc_head_methods_redirects_and_robots_checkout_allow() -> None:
+    # 1. HEAD requests succeed (200) on all key crawler / uptime endpoints
+    for path in ("/healthz", "/", "/robots.txt", "/sitemap.xml", "/services", "/solutions"):
+        r = client.head(path, headers={"User-Agent": "Googlebot/2.1", "Accept": "text/html"})
+        assert r.status_code == 200, f"HEAD {path} returned {r.status_code}"
+
+    # 2. Convenience aliases redirect cleanly with 301
+    r_pricing = client.get("/pricing", follow_redirects=False)
+    assert r_pricing.status_code == 301
+    assert r_pricing.headers["location"] == "/services#pricing"
+
+    r_demo = client.get("/demo", follow_redirects=False)
+    assert r_demo.status_code == 301
+    assert r_demo.headers["location"] == "/#demo"
+
+    # 3. robots.txt allows /v1/pay/checkout (noindex) & media assets BEFORE Disallow: /v1/pay/
+    rob = client.get("/robots.txt").text
+    assert "Allow: /dashboard/media/" in rob
+    assert "Allow: /static/" in rob
+    assert "Allow: /v1/pay/checkout" in rob
+    assert rob.index("Allow: /v1/pay/checkout") < rob.index("Disallow: /v1/pay/")
+
+
+def test_interactive_product_showcase_real_media_and_zero_nofollow_leaks() -> None:
+    from app.services.media_showcase import DEMO_VIDEOS, SYSTEM_SCREENSHOTS
+
+    # 1. Public pages render real screenshots, video theater, nofollow checkout links, and clean Offer.url
+    for path in ("/", "/services", "/services/managed_seo_content_pilot", "/solutions", "/solutions/warehouse-automation"):
+        r = client.get(path, headers={"Accept": "text/html", "User-Agent": "Googlebot/2.1"})
+        assert r.status_code == 200
+        assert "/dashboard/media/screenshots/" in r.text, f"{path} missing real system screenshot"
+
+        # Every <a ... href="/v1/pay/checkout..."> must have rel="nofollow"
+        for tag in re.findall(r'<a\b[^>]*href="[^"]*/v1/pay/checkout[^"]*"[^>]*>', r.text):
+            assert "nofollow" in tag, f"Followable checkout link leaked on {path}: {tag}"
+
+        # JSON-LD must never point Offer.url to /v1/pay/checkout
+        ld_m = re.search(r'<script type="application/ld\+json">(.*?)</script>', r.text, re.S)
+        assert ld_m
+        assert "/v1/pay/checkout" not in ld_m.group(1), f"JSON-LD on {path} still references /v1/pay/checkout"
+
+    # 2. Homepage includes playable video theater & VideoObject schema
+    home = client.get("/", headers={"Accept": "text/html", "User-Agent": "Googlebot/2.1"}).text
+    assert "<video" in home
+    assert "/dashboard/media/videos/customer-workspace-demo.webm" in home
+    assert '"@type": "VideoObject"' in home
+
+    # 3. Every catalog screenshot, video (webm), and poster is served cleanly with HTTP 200 & cache headers
+    for shot in SYSTEM_SCREENSHOTS:
+        res = client.get(shot["src"])
+        assert res.status_code == 200 and res.content[:4] == b"\x89PNG", f"Broken screenshot {shot['src']}"
+        assert "max-age=" in res.headers.get("cache-control", "")
+
+    for vid in DEMO_VIDEOS:
+        poster = client.get(vid["poster"])
+        assert poster.status_code == 200 and poster.content[:4] == b"\x89PNG", f"Broken poster {vid['poster']}"
+        webm = client.get(vid["webm"])
+        assert webm.status_code == 200 and len(webm.content) > 10_000, f"Broken webm {vid['webm']}"
+        assert "max-age=" in webm.headers.get("cache-control", "")

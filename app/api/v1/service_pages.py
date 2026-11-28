@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.services.catalog import MODULAR_SME_TIERS, PRICING_CLUSTERS, get_all_packages, get_package
+from app.services.media_showcase import get_screenshot_for_sku, render_inline_product_preview_section
 from app.services.seo_meta import (
     BASE_URL,
     CANONICAL_ORG_SCHEMA,
@@ -29,7 +30,7 @@ from app.services.seo_meta import (
 router = APIRouter(tags=["seo-service-pages"])
 
 
-@router.get("/services", response_class=HTMLResponse, include_in_schema=False)
+@router.api_route("/services", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
 def list_service_landing_pages() -> HTMLResponse:
     """Render an indexable HTML5 directory of all verified AskforWrite AI Company OS services."""
     packages = get_all_packages()
@@ -67,7 +68,7 @@ def list_service_landing_pages() -> HTMLResponse:
               <div class="tier-price">₹{int(bp.get('inr', 0)):,}<span>/mo · ${int(bp.get('usd', 0))} USD</span></div>
               <div class="tier-annual">Annual (-{int(ap.get('discount_pct', 20))}%): ₹{int(ap.get('inr', 0)):,}/mo (${int(ap.get('usd', 0))}/mo)</div>
               <p class="meta"><strong>Capacity:</strong> {int(tier.get('agent_limit', 2))} Agents · {int(tier.get('seat_limit', 2))} Seats · {int(credits.get('lead_credits', 50)):,} Leads · {int(credits.get('ai_execution_credits', 150)):,} AI Runs</p>
-              <a class="tier-cta" href="/v1/pay/checkout?package={html.escape(checkout_sku)}">Subscribe via DirectPay →</a>
+              <a class="tier-cta" rel="nofollow" href="/v1/pay/checkout?package={html.escape(checkout_sku)}">Subscribe via DirectPay →</a>
             </article>
             """
         )
@@ -97,9 +98,13 @@ def list_service_landing_pages() -> HTMLResponse:
                 "description": pkg.description,
             }
         )
+        shot = get_screenshot_for_sku(pkg.key)
         cards_html.append(
             f"""
             <article class="service-card">
+              <div style="margin:-20px -20px 14px;border-bottom:1px solid #1e293b;overflow:hidden;border-radius:12px 12px 0 0;background:#020617;">
+                <img src="{html.escape(shot['src'])}" alt="{html.escape(pkg.name)}" loading="lazy" style="width:100%;height:150px;object-fit:cover;object-position:top;display:block;" />
+              </div>
               <span class="badge">{html.escape(pkg.category.replace('_', ' ').upper())}</span>
               <h2><a href="/services/{html.escape(pkg.key)}">{html.escape(pkg.name)}</a></h2>
               <p class="desc">{html.escape(pkg.description)}</p>
@@ -107,7 +112,7 @@ def list_service_landing_pages() -> HTMLResponse:
               <p class="meta"><strong>Problem Solved:</strong> {html.escape(pkg.target_pain_point)}</p>
               <div class="price-row">
                 <span class="price">₹{pkg.price_inr:,} INR <small>/ ${pkg.price_usd} USD</small></span>
-                <a class="cta-link" href="/services/{html.escape(pkg.key)}">View Specs &amp; Deliverables →</a>
+                <a class="cta-link" href="/services/{html.escape(pkg.key)}">View Specs &amp; Demo →</a>
               </div>
             </article>
             """
@@ -235,13 +240,15 @@ def list_service_landing_pages() -> HTMLResponse:
     <p>Clustered Subscriptions &amp; Modular Tools: every capability is organized into 4 functional AI clusters across 5 transparent monthly INR/USD tiers (save 20% annually), backed by HITL governance and ECDSA NIST P-256 cryptographic audit logs.</p>
   </header>
   <main>
+    {render_inline_product_preview_section("growth_all_in_one", "AskforWrite AI Company OS")}
+
     <h2 class="section-title">1. The 4 Functional AI Capability Clusters</h2>
     <p class="section-sub">Related tools, specialist agents, and operational services grouped cleanly so teams only pay for the capabilities they need.</p>
     <section class="clusters-grid">
       {"".join(cluster_cards_html)}
     </section>
 
-    <h2 class="section-title">2. Clustered Monthly &amp; Annual Subscription Plans</h2>
+    <h2 class="section-title" id="pricing">2. Clustered Monthly &amp; Annual Subscription Plans</h2>
     <p class="section-sub">Start with a single cluster, bundle Growth or Operations, or unlock all 4 clusters with stackable add-on modules. AFW DirectPay charges 0% AskforWrite platform commission (bank, gateway, or network fees may apply per rail). WordPress live publishing requires Owner HITL approval and credentials; Pixel AI outputs structured prompt recipes; WhatsApp/social dispatch requires configured external bridges.</p>
     <section class="tiers-grid">
       {"".join(tier_cards_html)}
@@ -260,7 +267,7 @@ def list_service_landing_pages() -> HTMLResponse:
     return HTMLResponse(content=page_html, status_code=status.HTTP_200_OK)
 
 
-@router.get("/services/{service_key}", response_class=HTMLResponse, response_model=None, include_in_schema=False)
+@router.api_route("/services/{service_key}", methods=["GET", "HEAD"], response_class=HTMLResponse, response_model=None, include_in_schema=False)
 def get_service_landing_page(service_key: str) -> Response:
     """Render a dedicated, SEO/AEO/GEO-optimized HTML5 landing page for a specific catalog service."""
     clean_key = service_key.strip().lower()
@@ -311,7 +318,7 @@ def get_service_landing_page(service_key: str) -> Response:
         "priceCurrency": "INR",
         "priceValidUntil": "2027-12-31",
         "availability": "https://schema.org/InStock",
-        "url": f"{BASE_URL}{checkout_url}",
+        "url": canonical_url,
     }
     usd_offer: dict[str, object] = {
         "@type": "Offer",
@@ -319,7 +326,7 @@ def get_service_landing_page(service_key: str) -> Response:
         "priceCurrency": "USD",
         "priceValidUntil": "2027-12-31",
         "availability": "https://schema.org/InStock",
-        "url": f"{BASE_URL}{checkout_url}&currency=USD",
+        "url": canonical_url,
     }
     if is_recurring:
         inr_offer["priceSpecification"] = {"@type": "UnitPriceSpecification", "price": str(pkg.price_inr), "priceCurrency": "INR", "unitText": "MONTH"}
@@ -426,12 +433,14 @@ def get_service_landing_page(service_key: str) -> Response:
       <strong>Commercial Pricing:</strong> ₹{pkg.price_inr:,} INR / ${pkg.price_usd} USD ({html.escape(billing_label)})
       &nbsp;|&nbsp; <strong>Included Quotas:</strong> {pkg.lead_credits_monthly} Service/Lead Credits &amp; {pkg.outreach_credits_monthly} Outreach Credits
       <div style="margin-top:16px;">
-        <a class="cta-btn" href="{checkout_url}">Proceed to Verified Checkout →</a>
+        <a class="cta-btn" rel="nofollow" href="{checkout_url}">Proceed to Verified Checkout →</a>
+        <a class="cta-secondary" href="/#demo">▶ Watch Customer Demo</a>
         <a class="cta-secondary" href="/dashboard/#portal">Sign In to Customer Portal</a>
       </div>
     </div>
   </header>
   <main>
+    {render_inline_product_preview_section(pkg.key, pkg.name)}
     <section>
       <h2>Target Buyer Persona &amp; Operational Problem Solved</h2>
       <p><strong>Intended Buyer Persona:</strong> {html.escape(pkg.target_buyer_persona)}</p>

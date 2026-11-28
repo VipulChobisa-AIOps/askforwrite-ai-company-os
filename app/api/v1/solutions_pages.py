@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.security.auth import require_platform_manager
 from app.services.catalog import CATALOG
+from app.services.media_showcase import get_screenshot_for_sku, render_inline_product_preview_section
 from app.services.seo_meta import (
     BASE_URL,
     CANONICAL_ORG_SCHEMA,
@@ -307,7 +308,7 @@ def _resolve_sku_data(slug: str) -> Dict[str, Any]:
     return {**meta, "sku": sku_key, "catalog": catalog_entry}
 
 
-@router.get("/solutions", response_class=HTMLResponse)
+@router.api_route("/solutions", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def solutions_hub_page() -> HTMLResponse:
     """Indexable SSR hub page for all AskforWrite AI Company OS vertical solutions."""
     cards_html = ""
@@ -319,6 +320,7 @@ def solutions_hub_page() -> HTMLResponse:
         price_inr = pkg.price_inr if pkg else 3999
         price_usd = pkg.price_usd if pkg else 49
         url = f"{BASE_URL}/solutions/{slug}"
+        shot = get_screenshot_for_sku(sku_key)
         item_list_elements.append(
             {
                 "@type": "ListItem",
@@ -329,13 +331,20 @@ def solutions_hub_page() -> HTMLResponse:
         )
         cards_html += f"""
         <article class="card">
-            <div class="badge">{html_lib.escape(info["hero_badge"])}</div>
-            <h2><a href="/solutions/{html_lib.escape(slug)}">{html_lib.escape(info["headline"])}</a></h2>
-            <p>{html_lib.escape(info["subheadline"])}</p>
-            <div class="price">₹{price_inr:,}/mo <span>(${price_usd} USD/mo · Annual -20%)</span></div>
-            <div class="actions">
-                <a class="btn-primary" href="/solutions/{html_lib.escape(slug)}">Explore Solution &amp; Architecture →</a>
-                <a class="btn-secondary" href="/v1/pay/checkout?package={html_lib.escape(sku_key)}">Instant Checkout</a>
+            <div>
+              <div style="margin:-24px -24px 16px;border-bottom:1px solid #1f2937;overflow:hidden;border-radius:12px 12px 0 0;background:#020617;">
+                <img src="{html_lib.escape(shot['src'])}" alt="{html_lib.escape(info['headline'])}" loading="lazy" style="width:100%;height:170px;object-fit:cover;object-position:top;display:block;" />
+              </div>
+              <div class="badge">{html_lib.escape(info["hero_badge"])}</div>
+              <h2><a href="/solutions/{html_lib.escape(slug)}">{html_lib.escape(info["headline"])}</a></h2>
+              <p>{html_lib.escape(info["subheadline"])}</p>
+            </div>
+            <div>
+              <div class="price">₹{price_inr:,}/mo <span>(${price_usd} USD/mo · Annual -20%)</span></div>
+              <div class="actions">
+                  <a class="btn-primary" href="/solutions/{html_lib.escape(slug)}">Explore Solution &amp; Demo →</a>
+                  <a class="btn-secondary" rel="nofollow" href="/v1/pay/checkout?package={html_lib.escape(sku_key)}">Instant Checkout</a>
+              </div>
             </div>
         </article>
         """
@@ -447,7 +456,7 @@ def solutions_hub_page() -> HTMLResponse:
         </nav>
         <div class="badge">ASKFORWRITE AI COMPANY OS · VERTICAL SOLUTIONS</div>
         <h1>Production-Verified AI Operating Systems for Real Business Outcomes</h1>
-        <p>Every AskforWrite vertical solution connects real operational telemetry to deterministic AI workflows, human-in-the-loop (HITL) governance, instant multi-currency checkout (Razorpay, PayPal, Sovereign UPI &amp; Polygon/Base USDC), and ECDSA NIST P-256 TrustBlock receipts.</p>
+        <p>Every AskforWrite vertical solution connects real operational telemetry to deterministic AI workflows, human-in-the-loop (HITL) governance, instant multi-currency checkout (AFW DirectPay Instant UPI QR, Direct Bank Wire, Razorpay INR &amp; PayPal USD), and ECDSA NIST P-256 TrustBlock receipts.</p>
     </header>
     <main>
         <div class="grid">{cards_html}</div>
@@ -458,7 +467,7 @@ def solutions_hub_page() -> HTMLResponse:
                     <h2 style="margin:6px 0;color:#fff;">Bundle All 4 Field &amp; Vertical AI Engines in the Operations Suite</h2>
                     <p style="margin:0;color:#cbd5e1;max-width:680px;">Get Warehouse StockSense AI + Field Force GPS/PWA + Produce Quality Vision AI + Urban Mobility AI + ECDSA Trust Ledger together for <strong>₹9,999/month ($129 USD)</strong> — or ₹7,999/mo billed annually.</p>
                 </div>
-                <a class="btn-primary" href="/v1/pay/checkout?package=operations_suite">Subscribe to Operations Suite →</a>
+                <a class="btn-primary" rel="nofollow" href="/v1/pay/checkout?package=operations_suite">Subscribe to Operations Suite →</a>
             </div>
         </div>
     </main>
@@ -470,7 +479,7 @@ def solutions_hub_page() -> HTMLResponse:
     return HTMLResponse(content=page_html, status_code=200)
 
 
-@router.get("/solutions/{slug}", response_class=HTMLResponse)
+@router.api_route("/solutions/{slug}", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def solution_detail_page(slug: str) -> HTMLResponse:
     """Dedicated SSR indexable landing page for a specific vertical SKU."""
     data = _resolve_sku_data(slug)
@@ -543,7 +552,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
                         "price": str(price_inr),
                         "priceValidUntil": "2027-12-31",
                         "availability": "https://schema.org/InStock",
-                        "url": f"{BASE_URL}/v1/pay/checkout?package={sku_key}",
+                        "url": canonical_url,
                     },
                     {
                         "@type": "Offer",
@@ -551,7 +560,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
                         "price": str(price_usd),
                         "priceValidUntil": "2027-12-31",
                         "availability": "https://schema.org/InStock",
-                        "url": f"{BASE_URL}/v1/pay/checkout?package={sku_key}&currency=USD",
+                        "url": canonical_url,
                     },
                 ],
             },
@@ -578,8 +587,11 @@ def solution_detail_page(slug: str) -> HTMLResponse:
     {social_meta_tags(title=short_title, description=meta_desc, canonical_url=canonical_url, og_type="product")}
     <script type="application/ld+json">{json.dumps(schema_graph)}</script>
     <style>
-        body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 0; line-height: 1.65; }}
-        .container {{ max-width: 960px; margin: 0 auto; padding: 36px 24px 48px; }}
+        * {{ box-sizing: border-box; }}
+        body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 0; line-height: 1.65; overflow-x: hidden; }}
+        .container {{ max-width: 960px; margin: 0 auto; padding: 36px 20px 48px; }}
+        code {{ overflow-wrap: anywhere; }}
+        .table-wrap {{ width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }}
         .breadcrumb {{ font-size: 0.85rem; color: #94a3b8; margin-bottom: 16px; }}
         .breadcrumb a {{ color: #38bdf8; text-decoration: none; }}
         .badge {{ display: inline-block; background: #1e293b; color: #38bdf8; padding: 4px 12px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; }}
@@ -616,10 +628,12 @@ def solution_detail_page(slug: str) -> HTMLResponse:
                 <div style="font-size:0.9rem;color:#94a3b8;">Includes instant workspace activation, REST API &amp; Customer Portal access, Strict BYOK privacy, and ECDSA NIST P-256 TrustBlock receipts.</div>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                <a class="btn" href="/v1/pay/checkout?package={html_lib.escape(sku_key)}">Activate {html_lib.escape(sku_key)} →</a>
+                <a class="btn" rel="nofollow" href="/v1/pay/checkout?package={html_lib.escape(sku_key)}">Activate {html_lib.escape(sku_key)} →</a>
                 <a class="btn-alt" href="/services/{html_lib.escape(sku_key)}">Full SKU Specs</a>
             </div>
         </div>
+
+        {render_inline_product_preview_section(sku_key, data["headline"])}
 
         <section>
             <h2>Operational Bottlenecks Solved</h2>
@@ -640,6 +654,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
 
         <section>
             <h2>Standalone Module vs. Clustered Subscription Comparison</h2>
+            <div class="table-wrap">
             <table>
                 <thead>
                     <tr><th>Option</th><th>Monthly Price</th><th>Annual (-20%)</th><th>Best For</th></tr>
@@ -655,7 +670,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
                         <td><strong>{html_lib.escape(cluster_name)}</strong></td>
                         <td>₹{cluster_inr:,}/mo (${cluster_usd} USD)</td>
                         <td>₹{round(cluster_inr * 0.8):,}/mo (${round(cluster_usd * 0.8)} USD)</td>
-                        <td>Teams bundling multi-agent workflows + ECDSA Trust Ledger <a href="/v1/pay/checkout?package={html_lib.escape(cluster_sku)}" style="color:#38bdf8;">(Checkout →)</a></td>
+                        <td>Teams bundling multi-agent workflows + ECDSA Trust Ledger <a rel="nofollow" href="/v1/pay/checkout?package={html_lib.escape(cluster_sku)}" style="color:#38bdf8;">(Checkout →)</a></td>
                     </tr>
                     <tr>
                         <td><strong>Business Pro (All 4 Clusters)</strong></td>
@@ -665,6 +680,7 @@ def solution_detail_page(slug: str) -> HTMLResponse:
                     </tr>
                 </tbody>
             </table>
+            </div>
         </section>
 
         <section>

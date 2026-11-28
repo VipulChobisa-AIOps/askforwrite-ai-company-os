@@ -498,7 +498,7 @@ def _build_runtime_health_metadata(
     return data
 
 
-@app.get("/healthz", tags=["system"])
+@app.api_route("/healthz", methods=["GET", "HEAD"], tags=["system"])
 def liveness_check() -> dict[str, Any]:
     """Zero-dependency process liveness probe for Render supervisor (<5 ms, never blocks on DB)."""
     app_env = os.environ.get("APP_ENV", "production")
@@ -566,7 +566,7 @@ def gsc_oauth_browser_callback(
         ) from exc
 
 
-@app.get("/", include_in_schema=False)
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def root(request: Request) -> Any:
     """Root entrypoint: serves the public SSR commercial homepage to browsers & ALL search/AI crawlers, JSON to API clients."""
     from app.services.seo_meta import is_browser_or_crawler, render_public_homepage_html
@@ -661,7 +661,19 @@ def refund_redirect() -> RedirectResponse:
     return RedirectResponse(url="/legal/refund-policy")
 
 
-@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+@app.get("/pricing", include_in_schema=False)
+def pricing_redirect() -> RedirectResponse:
+    """Redirect /pricing cleanly to the clustered pricing & services directory."""
+    return RedirectResponse(url="/services#pricing", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@app.get("/demo", include_in_schema=False)
+def demo_redirect() -> RedirectResponse:
+    """Redirect /demo cleanly to the interactive customer demo showcase."""
+    return RedirectResponse(url="/#demo", status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+
+@app.api_route("/robots.txt", methods=["GET", "HEAD"], response_class=PlainTextResponse, include_in_schema=False)
 def robots_txt() -> PlainTextResponse:
     """Technical SEO & AI Search/Answer Engine Crawler directives."""
     content = (
@@ -670,10 +682,13 @@ def robots_txt() -> PlainTextResponse:
         "Allow: /services\n"
         "Allow: /solutions\n"
         "Allow: /legal/\n"
+        "Allow: /static/\n"
+        "Allow: /dashboard/media/\n"
         "Allow: /llms.txt\n"
         "Allow: /llms-full.txt\n"
         "Allow: /v1/revenue/catalog\n"
         "Allow: /v1/previews/\n"
+        "Allow: /v1/pay/checkout\n"
         "Disallow: /v1/accounts/\n"
         "Disallow: /v1/approvals\n"
         "Disallow: /v1/audit-export\n"
@@ -722,7 +737,7 @@ def robots_txt() -> PlainTextResponse:
     return PlainTextResponse(content=content)
 
 
-@app.get("/sitemap.xml", include_in_schema=False)
+@app.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
 def sitemap_xml() -> Response:
     """Dynamic canonical XML Sitemap with ISO lastmod dates — zero duplicate or non-canonical URLs."""
     from app.api.v1.solutions_pages import SOLUTION_SLUGS
