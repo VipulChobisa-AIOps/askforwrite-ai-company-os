@@ -69,7 +69,7 @@ def ensure_genesis_block(db: Session) -> TrustBlock:
     genesis_payload = {
         "title": "AskforWrite AI Company OS Trust Ledger Genesis",
         "protocol": "AFW-COMPANY-OS-TRUST-CHAIN-V2",
-        "standard": "SHA-256 Merkle Hash-Chaining with ECDSA NIST P-256 Signatures",
+        "standard": "SHA-256 Linear Hash-Chaining with ECDSA NIST P-256 Signatures",
         "authority": "Vipul Chobisa (Owner)",
         "created_at": GENESIS_TIMESTAMP_STR,
     }
@@ -206,7 +206,7 @@ def verify_chain_integrity(db: Session) -> dict[str, Any]:
     Validates:
       1. Genesis Block integrity.
       2. Consecutive index monotonicity.
-      3. Exact prev_hash linkage (SHA-256 Merkle chain).
+      3. Exact prev_hash linkage (SHA-256 linear hash-chain).
       4. Exact payload_hash recalculation.
       5. Exact block_hash recalculation.
       6. Asymmetric ECDSA NIST P-256 signature validity.

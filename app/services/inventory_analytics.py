@@ -264,8 +264,16 @@ def compute_reorder_recommendations(
         annual_demand = float(item.get("annual_demand", 1000))
         holding_cost = float(item.get("holding_cost_annual", 50.0))
 
-        # Exponential smoothing next period forecast: S_{t+1} = alpha * Actual + (1 - alpha) * S_t
-        forecast_next = round(forecast_alpha * daily_d + (1 - forecast_alpha) * daily_d, 2)
+        # True single exponential smoothing when historical observations are supplied;
+        # otherwise use current observed daily demand without pretending smoothing occurred.
+        history = item.get("daily_demand_history")
+        if isinstance(history, list) and len(history) >= 2:
+            smoothed = float(history[0])
+            for obs in history[1:]:
+                smoothed = forecast_alpha * float(obs) + (1.0 - forecast_alpha) * smoothed
+            forecast_next = round(smoothed, 2)
+        else:
+            forecast_next = round(daily_d, 2)
 
         # Safety Stock: SS = Z * sqrt(L) * sigma_d
         safety_stock = int(math.ceil(service_level_z * math.sqrt(lead_time) * std_dev))
@@ -337,7 +345,7 @@ def detect_dead_stock(
                 "unit_cost": item["unit_cost"],
                 "locked_capital": round(capital, 2),
                 "zone": item.get("zone", "General Staging"),
-                "recommended_liquidation_action": "Mark down 40% or bundle with Fasteners SKU-FAS-007",
+                "recommended_liquidation_action": "Review for 30-40% clearance markdown, supplier return, or high-velocity SKU bundling",
             })
 
     return {
@@ -396,6 +404,9 @@ def execute_inventory_audit(
 
     urgent_reorders = [r for r in reorder_result if r["reorder_needed"]]
 
+    # Exact normal CDF percentage for one-sided service level Z (e.g., Z=1.65 -> 95.1%, Z=1.96 -> 97.5%)
+    service_level_pct = round(0.5 * (1.0 + math.erf(service_level_z / math.sqrt(2.0))) * 100.0, 1)
+
     combined_audit = {
         "audit_metrics": {
             "total_skus": len(inventory_items),
@@ -403,7 +414,7 @@ def execute_inventory_audit(
             "urgent_reorder_skus_count": len(urgent_reorders),
             "dead_stock_skus_count": dead_stock_result["dead_stock_count"],
             "capital_locked_in_dead_stock": dead_stock_result["total_locked_capital"],
-            "service_level_target": f"{round(service_level_z * 57.5, 1)}%",
+            "service_level_target": f"{service_level_pct}%",
         },
         "summary": {
             "total_skus": len(inventory_items),
@@ -411,7 +422,7 @@ def execute_inventory_audit(
             "urgent_reorder_skus_count": len(urgent_reorders),
             "dead_stock_skus_count": dead_stock_result["dead_stock_count"],
             "capital_locked_in_dead_stock": dead_stock_result["total_locked_capital"],
-            "service_level_target": f"{round(service_level_z * 57.5, 1)}%",
+            "service_level_target": f"{service_level_pct}%",
         },
         "abc_analysis": abc_result,
         "reorder_recommendations": reorder_result,

@@ -144,8 +144,8 @@ def test_p6_vertical_pack_deployments_diagnostics_and_isolation(p6_client) -> No
 
     for pack_key, expected_mod in (
         ("distribution_wholesale", "warehouse_stocksense"),
-        ("logistics_warehousing", "spatiotemporal_logistics_optimization"),
-        ("manufacturing", "computer_vision_quality_analytics"),
+        ("logistics_warehousing", "field_force_ops"),
+        ("manufacturing", "digital_qa_benchmark"),
     ):
         dep = client.post(
             "/v1/p6/packs/deployments",

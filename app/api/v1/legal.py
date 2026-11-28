@@ -79,24 +79,26 @@ TERMS_OF_SERVICE = {
                 "AskforWrite AI Company OS provides an enterprise autonomous workspace orchestrating AI agents across "
                 "lead discovery, research synthesis, proposal drafting, human-in-the-loop (HITL) approval governance, "
                 "field force telematics verification, and direct commercial settlements. All actions modifying tenant status "
-                "or dispatching external communications are cryptographically signed and sealed into an immutable "
-                "ECDSA NIST P-256 Merkle Trust Ledger."
+                "or dispatching external communications are cryptographically signed and sealed into a tamper-evident "
+                "ECDSA NIST P-256 linear hash-chain audit ledger."
             ),
         },
         {
-            "heading": "3. Strict Bring-Your-Own-Key (BYOK) Gemini API Isolation",
+            "heading": "3. Managed AI Usage Credits & Optional Bring-Your-Own-Key (BYOK) Isolation",
             "body": (
-                "To prevent commercial quota contention and protect tenant autonomy, commercial tenants and customers "
-                "are required to supply their own Google Gemini API key (\"BYOK\"). Tenant requests operate strictly on the "
-                "tenant's supplied key and never consume, hammer, or draw down the Owner's server quota. If a commercial "
-                "tenant executes an AI request without configuring a BYOK key, the system executes a zero-cost deterministic "
-                "rule-based fallback. ASKFORWRITE charges zero markup or surcharge on tenant LLM token usage."
+                "Commercial plans include a transparent monthly Managed AI Usage-Credit allowance (e.g., 150 AI Credits/mo "
+                "on Starter, 600 AI Credits/mo on Pro, plus optional prepaid top-up packs starting at ₹499 / $7 for 100 credits) "
+                "protected by per-tenant daily spend caps and automatic refunds on failed provider calls. The system never silently "
+                "delivers canned boilerplate to paying accounts when credits are exhausted—requests fail closed with HTTP 402 until "
+                "topped up. Agencies and enterprise accounts may alternatively supply their own Google Gemini API key (\"BYOK\") "
+                "for 0 AI Credit deduction on LLM calls with strict key isolation."
             ),
         },
         {
             "heading": "4. User Accounts, Credentials & Role Separation",
             "body": (
-                "Accounts are partitioned by cryptographic Organization IDs (tenants). You are solely responsible for safeguarding "
+                "Accounts are partitioned by Organization IDs at the application layer with verified cross-tenant isolation "
+                "enforcement. You are solely responsible for safeguarding "
                 "your API keys, JWT bearer tokens, and passwords. Any activity conducted under your credentials is your legal "
                 "responsibility. In the event of suspected unauthorized access, you must notify info@askforwrite.in immediately. "
                 "Owner Command Center access requires authorized 32-character API key authentication and remains restricted to "
@@ -104,12 +106,12 @@ TERMS_OF_SERVICE = {
             ),
         },
         {
-            "heading": "5. Data Ownership, Provenance & Cryptographic Trust Ledger",
+            "heading": "5. Data Ownership, Provenance & Cryptographic Audit Chain",
             "body": (
                 "Each organization retains 100% legal ownership over its proprietary business inputs, prospect records, "
                 "and analytical outputs. ASKFORWRITE processes data strictly to fulfill contracted service execution. "
-                "Every milestone, order fulfillment, and attendance verification is hashed and appended to a tamper-evident "
-                "Merkle DAG trust chain, providing exportable proof of data provenance under Section 65B of the Indian Evidence Act."
+                "Every Digital QA review receipt, order fulfillment, and attendance verification is hashed and appended to a "
+                "tamper-evident SHA-256 linear hash-chain signed with ECDSA NIST P-256 keys."
             ),
         },
         {

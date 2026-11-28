@@ -112,7 +112,16 @@ class TestSubscriptionLifecycleAndRolePermissions(unittest.TestCase):
             plan_id="plan_starter_monthly",
             status="active",
         )
-        self.db.add_all([self.sub_a, self.sub_b])
+        from app.db.models import UserRecord
+
+        self.db.add_all([
+            self.sub_a,
+            self.sub_b,
+            UserRecord(id="user-a-owner", org_id="org-sub-a", email="owner@alpha.com", full_name="Alpha Owner", role="tenant_admin", is_active=True),
+            UserRecord(id="user-a-mgr", org_id="org-sub-a", email="manager@alpha.com", full_name="Alpha Mgr", role="manager", is_active=True),
+            UserRecord(id="user-a-mem", org_id="org-sub-a", email="member@alpha.com", full_name="Alpha Mem", role="member", is_active=True),
+            UserRecord(id="user-b-owner", org_id="org-sub-b", email="owner@beta.com", full_name="Beta Owner", role="tenant_admin", is_active=True),
+        ])
         self.db.commit()
 
         # Generate scoped tokens
@@ -142,6 +151,9 @@ class TestSubscriptionLifecycleAndRolePermissions(unittest.TestCase):
         )
 
     def tearDown(self):
+        from app.db.models import UserRecord
+
+        self.db.query(UserRecord).filter(UserRecord.id.in_(["user-a-owner", "user-a-mgr", "user-a-mem", "user-b-owner"])).delete(synchronize_session=False)
         self.db.query(SubscriptionRecord).delete()
         self.db.query(CustomerRecord).delete()
         self.db.query(OrganizationRecord).delete()

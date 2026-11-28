@@ -90,7 +90,7 @@ class TestCustomerSignupOnboarding(unittest.TestCase):
         mock_dispatcher.send.assert_called_once()
         email_kwargs = mock_dispatcher.send.call_args[1]
         self.assertEqual(email_kwargs["recipient_email"], "director@apexdistro.com")
-        self.assertIn("AskforWrite Field Operations Automation Suite", email_kwargs["subject"])
+        self.assertIn("FieldGuard", email_kwargs["subject"])
 
     def test_customer_signup_duplicate_email_fails(self):
         # Create an account first

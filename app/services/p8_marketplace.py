@@ -878,7 +878,7 @@ def compute_master_roadmap_scorecard(db: Session) -> dict[str, Any]:
         "p3_1_blockers": p3_1.get("blocking_gaps", []),
         "p3_1_owner_actions_required": p3_1.get("owner_actions_required", []),
         "security_hardening": {
-            "migration_head": "o5d0e1f2a3b4",
+            "migration_head": "q7f2a3b4c5d6",
             "status": "LOCAL_SECURITY_HARDENED",
             "controls": {
                 "auth_and_tenant_isolation": "LOCAL_VERIFIED",

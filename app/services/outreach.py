@@ -353,6 +353,33 @@ def dispatch_outreach(
                     f"Outreach quota reached ({org.outreach_credits_used}/{org.outreach_credits_limit} credits used)"
                 )
 
+    # Enforce global 10-emails/day Sniper Outbound cap & 7-day bounce circuit breaker at dispatch time
+    from app.services.p2_outreach_pipeline import check_outbound_deliverability_health
+
+    health = check_outbound_deliverability_health(db)
+    if not health["deliverability_healthy"]:
+        raise ValueError(
+            f"Outbound dispatch auto-paused by deliverability circuit breaker: {health['pause_reason']}"
+        )
+
+    now_utc = datetime.now(UTC)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    max_daily_sends = int(os.getenv("P2_OUTREACH_MAX_DAILY", "10"))
+    dispatched_today = (
+        db.query(OutreachRecord)
+        .filter(
+            OutreachRecord.sent_at.isnot(None),
+            OutreachRecord.sent_at >= today_start,
+            OutreachRecord.status.in_(("DISPATCHED", "ACCEPTED_QUEUED", "DELIVERED", "BOUNCED", "COMPLAINED")),
+        )
+        .count()
+    )
+    if dispatched_today >= max_daily_sends:
+        raise ValueError(
+            f"Daily Sniper Outbound dispatch limit reached ({dispatched_today}/{max_daily_sends} emails sent today). "
+            "Remaining approved emails will send tomorrow."
+        )
+
     # Dispatch message via provider
     active_dispatcher = dispatcher or get_email_dispatcher()
     try:
@@ -371,6 +398,14 @@ def dispatch_outreach(
     now = datetime.now(UTC)
     outreach.status = "DISPATCHED"
     outreach.sent_at = now
+    meta = dict(outreach.metadata_json or {})
+    meta["dispatch_receipt"] = receipt
+    if isinstance(receipt, dict) and receipt.get("message_id"):
+        meta["provider_message_id"] = str(receipt["message_id"])
+    meta["delivery_state"] = str(receipt.get("status", "accepted_queued")) if isinstance(receipt, dict) else "accepted_queued"
+    outreach.metadata_json = meta
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(outreach, "metadata_json")
     db.add(outreach)
 
     # Deduct 1 outreach credit

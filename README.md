@@ -6,7 +6,7 @@
   </a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-blue?style=for-the-badge&logo=python" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/Framework-FastAPI-009688?style=for-the-badge&logo=fastapi" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/Security-ECDSA%20NIST%20P--256%20Merkle-8A2BE2?style=for-the-badge" alt="Security" />
+  <img src="https://img.shields.io/badge/Security-ECDSA%20NIST%20P--256%20Hash--Chain-8A2BE2?style=for-the-badge" alt="Security" />
   <img src="https://img.shields.io/badge/Payments-AFW%20DirectPay%200%25%20Platform%20Fee-orange?style=for-the-badge" alt="Sovereign Payments" />
   <img src="https://img.shields.io/badge/Hosting-Render%20Blueprint-46E3B7?style=for-the-badge" alt="Render Hosting" />
 </p>
@@ -19,7 +19,7 @@
 
 **AskforWrite AI Company OS** is a multi-tenant, **Human-in-the-Loop (HITL)** AI operations platform engineered by **Vipul Kumar Chobisa**.
 
-It combines modular SME business workflows (starting commercially with the **14-Day Managed SEO & Content Pilot**), an ECDSA NIST P-256 Merkle DAG audit ledger, multi-rail payment orchestration (**Razorpay**, **PayPal**, and **AFW DirectPay**), unified Service/Agent/Connector registries, 8-state HITL approval workflows, atomic credit accounting, and durable execution evidence. All outbound communications, WordPress publications, and refunds require explicit human authorization.
+It combines focused SME business workflows (starting commercially with the **14-Day Managed SEO, Content & Digital QA Pilot**), an **ECDSA NIST P-256 tamper-evident linear hash-chain** audit ledger, Managed AI Usage-Credit metering (with optional BYOK), multi-rail payment orchestration (**Razorpay**, **PayPal**, and **AFW DirectPay**), 10-emails/day Sniper Outbound with Resend webhooks, 8-state HITL approval workflows, and durable execution evidence. All outbound communications, WordPress publications, and refunds require explicit human authorization.
 
 ---
 
@@ -88,23 +88,19 @@ flowchart TD
         ShiftScheduler <--> Watchdog
     end
 
-    subgraph L2["L2 — 8-Vertical Specialist Agent Fleet"]
-        Discovery["Discovery SDR<br/>(Zero-Mock DuckDuckGo Live)"]
-        GrowthAIO["2026 SEO / GEO / AIO Engine<br/>(Schema, /llms.txt, FAQPage)"]
+    subgraph L2["L2 — 3-Pillar Specialist Agent Fleet"]
+        Discovery["Discovery & 10/Day Sniper SDR<br/>(Live Web + Resend Webhooks + IMAP)"]
+        GrowthAIO["SEO / GEO + Digital QA Benchmark<br/>(Brand Protocol, Anti-Slop, Signed Receipts)"]
         Social["Omnichannel Social Closer<br/>(Reels, LinkedIn, WhatsApp)"]
-        MangoCV["AgriTech Produce CV<br/>(HSV + GLCM Texture Inspection)"]
-        MobilityML["Mobility Logistics ML<br/>(OLS Demand + Fleet Rebalance)"]
-        StockSense["StockSense Warehouse AI<br/>(Pareto ABC + Dynamic EOQ/ROP)"]
-        FieldForce["Field Operations Engine<br/>(Anti-Spoof GPS + Verification)"]
+        FieldForce["FieldGuard Operations (Phase 2 Beta)<br/>(Anti-Spoof GPS, Tour & Conveyance Audit)"]
+        StockSense["StockSense Warehouse & 3PL (Phase 3)<br/>(ABC-XYZ, ROP/EOQ, Persistent WMS Roadmap)"]
         ASK4["Academic Research Copilot<br/>(Deep Scholarly Synthesis)"]
 
         ShiftScheduler --> Discovery
         ShiftScheduler --> GrowthAIO
         ShiftScheduler --> Social
-        ShiftScheduler --> MangoCV
-        ShiftScheduler --> MobilityML
-        ShiftScheduler --> StockSense
         ShiftScheduler --> FieldForce
+        ShiftScheduler --> StockSense
         ShiftScheduler --> ASK4
     end
 
@@ -119,10 +115,10 @@ flowchart TD
         SalesWidget --> DirectPay
     end
 
-    subgraph L4["L4 — Cryptographic Ledger & Multi-Tenant Isolation"]
-        TrustChain["ECDSA NIST P-256 Merkle Ledger<br/>(trust_chain.py — Cryptographic Proofs)"]
-        AutoProv["Instant Tenant Auto-Provisioning<br/>(Org + User + Password + Invoice Dispatch)"]
-        DataLayer["Multi-Tenant PostgreSQL / SQLite<br/>(RLS + Tenant Idempotency Guard)"]
+    subgraph L4["L4 — Cryptographic Audit Chain & Multi-Tenant Isolation"]
+        TrustChain["ECDSA NIST P-256 Linear Hash-Chain<br/>(trust_chain.py — Tamper-Evident Receipts)"]
+        AutoProv["Instant Tenant Auto-Provisioning<br/>(Org + User + Managed AI Credits + Invoice)"]
+        DataLayer["Multi-Tenant PostgreSQL / SQLite<br/>(Application-Layer Tenant Isolation + Idempotency)"]
 
         DirectPay --> TrustChain
         TrustChain --> AutoProv
@@ -140,21 +136,22 @@ flowchart TD
 
 | SKU Key | Core Scope | Billing Type | Pricing (INR / USD) | Notes |
 |---|---|---|---|---|
-| **`managed_seo_content_pilot`** | 14-Day Managed SEO & Content Pilot (1 Technical Audit, 1 Commercial Keyword Map, 2 Human-Reviewed Articles, Schema JSON-LD, HITL WordPress Delivery) | `managed_pilot_14d` (One-Time) | **₹4,999 / $59** | Primary initial commercial wedge; manual conversion after 14 days |
+| **`managed_seo_content_pilot`** | 14-Day Managed SEO, Content & Digital QA Pilot (1 Technical Audit, 1 Keyword Map, 2 Live-LLM Human-Reviewed Articles, Brand QA Benchmark + Signed ECDSA Review Receipts) | `managed_pilot_14d` (One-Time) | **₹4,999 / $59** | Primary Phase 1 commercial wedge; manual conversion after 14 days |
+| **`ai_credits_100` / `500` / `2000`** | Managed AI Usage-Credit Top-Up Packs (zero BYOK setup; fail-closed, auto-refund on failure) | `one_time_purchase` | **₹499 / ₹1,999 / ₹6,499** | Instant top-up into organization `ai_credits` pool |
 | **`ask4_academic_order`** | ASK4 Academic Research & Order Fulfillment (Single Report + BibTeX + NIST P-256 Seal) | `one_time_purchase` | **₹999 / $15** | Single-engagement fulfillment |
 | **`pixel_ai_pack`** | Pixel AI Visual Creative Pack (20 multi-aspect prompt recipes & campaign kit) | `one_time_purchase` | **₹1,499 / $19** | Prompt/blueprint pack (image rendering requires external diffusion API) |
 
-### Modular Specialist Tools (Monthly Subscriptions)
+### Modular Specialist Tools (Monthly Subscriptions — Managed AI Credits Included)
 
-| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Pricing (INR / USD / mo) | Illustrative Projection* |
+| Vertical SKU | Core Capability & Engine | Target Buyer Persona | Pricing (INR / USD / mo) | Rollout Stage & Notes |
 |---|---|---|---|---|
-| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot (GEO/AIO, Schema JSON-LD, HITL approval gate) | Content agencies, Media publishers | **₹1,999 / $29** | Model projection: faster editorial drafting (human review required) |
-| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Campaign copy, multi-platform ad variations) | Performance marketers, B2B SaaS | **₹2,499 / $35** | Model projection: accelerated creative iteration |
-| **`field_force`** | Field Operations Automation (Anti-Spoof GPS, Proof-of-Visit, Auto-Conveyance) | Logistics operators, FMCG sales networks | **₹3,999 / $49** | Model projection: stronger attendance & mileage auditability |
-| **`mango_quality_analytics`** | AgriTech Produce Vision & Ripeness AI (HSV Color + GLCM Texture + Shelf-Life) | Exporters, Packhouses, Fresh Fruit Distributors | **₹3,999 / $49** | Model projection: standardized batch grading workflow |
-| **`bike_rebalance_analytics`** | Urban Mobility & Spatio-Temporal Logistics (OLS Demand Forecasting + Station Churn) | Micro-mobility operators, EV fleet managers | **₹3,999 / $49** | Model projection: improved dock rebalancing planning |
-| **`warehouse_automation`** | StockSense Warehouse AI (Pareto ABC, Dynamic EOQ/ROP, Dead-Stock Scoring) | 3PL Warehouses, Supply Chain Directors | **₹3,999 / $49** | Model projection: structured dead-stock & reorder visibility |
-| **`trust_engine`** | AFW 2030 Cryptographic Trust Engine (ECDSA NIST P-256 Merkle DAG Audit Ledger) | Regulated fintechs, Health-tech, Legal firms | **₹3,999 / $49** | Verifiable cryptographic audit trail (`/v1/trust/verify`) |
+| **`seo_blog_copilot`** | 4-Site WordPress AI Copilot + Digital QA Protocol Gate (GEO/AIO, Schema JSON-LD, HITL approval) | Content agencies, Media publishers | **₹1,999 / $29** | **Phase 1 Live** — Managed AI credits included |
+| **`marketing_suite`** | PixelBot Omnichannel Marketing Suite (Campaign copy, multi-platform ad variations) | Performance marketers, B2B SaaS | **₹2,499 / $35** | **Phase 1 Live** — Managed AI credits included |
+| **`field_force`** | FieldGuard — GPS Attendance, Tour & Conveyance Audit | Distributors, FMCG/pharma sales, Service crews | **₹3,999 / $49** | **Phase 2 Beta** — Real Vision OCR, Geo-OTP & Mobile PWA rollout |
+| **`warehouse_automation`** | StockSense — SME Warehouse & 3PL OS (ABC-XYZ, ROP/EOQ, Dead-Stock) | SME Warehouses (5k–100k sq ft), Regional 3PLs | **₹3,999 / $49** | **Phase 3 Design Partner** — Persistent bin/lot WMS & 3PL billing rebuild |
+| **`trust_engine`** | ECDSA NIST P-256 Tamper-Evident Audit Chain & Verification Receipts | Agencies & SME Operations (embedded verification layer) | **₹3,999 / $49** | Linear SHA-256 hash-chain (`/v1/trust/verify` & `/v1/digital-qa/receipts/{id}`) |
+
+> *Note: Produce Vision CV (`mango_quality_analytics`) and Urban Mobility Rebalancing (`bike_rebalance_analytics`) were extracted out of Company OS and preserved locally as separate standalone products.*
 
 ### Transparent Operational Boundaries & Verification
 * **Pixel AI Creative Studio**: Generates structured prompt specifications, aspect ratio blueprints (1:1, 9:16, 16:9), and typography overlays (prompt recipes). Rendering image files directly requires an external diffusion provider API key.
@@ -221,7 +218,7 @@ All protected endpoints require `X-API-Key` (Owner or Manager key). Requests sup
 | | `GET /v1/me/subscriptions`, `GET /v1/me/usage`, `POST /v1/me/use-service` | Customer JWT | Active catalog tier, credit consumption, and quota-gated capability execution |
 | **Customer Success (P3)** | `GET /v1/cs/control-centre`, `/customers/{org_id}`, `/ops/readiness`, `/acceptance`, `/release-readiness` | Manager / Owner | P3 lifecycle, readiness gates, delivery QA, health alerts, HITL support/growth, unit economics, DLQ & P3.1 release-readiness summary |
 | **GSC Integration (P3.1)** | `GET/POST /v1/me/integrations/gsc/*`, `/v1/cs/integrations/gsc/{org_id}/*` | Customer JWT / Platform Manager | 5-state Search Console verification (`OAuth_CONNECTED` -> `ATTRIBUTION_READY` / `BLOCKED`) with Fernet vault encryption |
-| **Trust Ledger** | `GET /v1/trust/verify` | Public | Cryptographic verification of NIST P-256 Merkle chain integrity |
+| **Audit Chain** | `GET /v1/trust/verify` | Public | Cryptographic verification of NIST P-256 linear hash-chain integrity |
 | | `GET /v1/trust/blocks` | Manager | Export verified blocks and provenance metadata |
 | **System** | `GET /health` | None | Service liveness, database connectivity, and uptime telemetry |
 
@@ -289,7 +286,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 * **Local Custody**: Web3 private keys are never committed to version control. They are generated via `scripts/generate_sovereign_vault.py` and stored in local, git-ignored vaults (`.sovereign_wallets.json` and `keys/sovereign_vault.json`).
 * **HITL Circuit Breakers**: All external communications (outbound email via Hostinger SMTP, WordPress network publication, refunds) require cryptographic Owner authorization.
-* **Audit Trail**: Every state transition, payment receipt, and delivery milestone is sealed into an immutable **ECDSA NIST P-256 Merkle Block** verified by `/v1/trust/verify`.
+* **Audit Trail**: Every state transition, Digital QA review receipt, payment settlement, and delivery milestone is sealed into a tamper-evident **ECDSA NIST P-256 Linear Hash-Chain Block** verified by `/v1/trust/verify`.
 
 ---
 

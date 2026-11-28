@@ -30,16 +30,17 @@ class TestCatalogService(unittest.TestCase):
 
     def test_catalog_package_integrity(self):
         packages = get_all_packages()
-        self.assertEqual(len(packages), 16)
+        self.assertEqual(len(packages), 17)
 
         expected_keys = {
             "seo_blog_copilot",
             "marketing_suite",
             "field_force",
             "trust_engine",
-            "mango_quality_analytics",
-            "bike_rebalance_analytics",
             "warehouse_automation",
+            "ai_credits_100",
+            "ai_credits_500",
+            "ai_credits_2000",
             "ask4_academic_order",
             "pixel_ai_pack",
             "managed_seo_content_pilot",
@@ -70,7 +71,7 @@ class TestCatalogService(unittest.TestCase):
     def test_get_package(self):
         pkg = get_package("field_force")
         self.assertIsNotNone(pkg)
-        self.assertEqual(pkg.name, "AskforWrite Field Operations Automation Suite")
+        self.assertIn("FieldGuard", pkg.name)
         self.assertEqual(pkg.price_inr, 3999)
         self.assertEqual(pkg.price_usd, 49)
 

@@ -263,8 +263,13 @@ class OrganizationRecord(Base):
     lead_credits_used: Mapped[int] = mapped_column(Integer, default=0)
     outreach_credits_limit: Mapped[int] = mapped_column(Integer, default=20)
     outreach_credits_used: Mapped[int] = mapped_column(Integer, default=0)
+    ai_credits_limit: Mapped[int] = mapped_column(Integer, default=150, nullable=False)
+    ai_credits_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ai_daily_spend_cap_inr: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
+    ai_billing_mode: Mapped[str] = mapped_column(String(32), default="MANAGED_CREDITS", nullable=False)
     lead_credits_quota = synonym("lead_credits_limit")
     outreach_credits_quota = synonym("outreach_credits_limit")
+    ai_credits_quota = synonym("ai_credits_limit")
     is_active: Mapped[bool] = mapped_column(default=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -2071,3 +2076,70 @@ class TenantInvitationRecord(Base):
     __table_args__ = (
         Index("ix_tenant_inv_org_email_status", "org_id", "email", "status"),
     )
+
+
+class RevokedTokenRecord(Base):
+    """Persistent revoked JWT JTI table surviving process restarts and multi-worker deployments."""
+
+    __tablename__ = "revoked_tokens"
+
+    jti: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    reason: Mapped[str] = mapped_column(String(64), default="logout", nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+
+
+class DigitalQAProtocolRecord(Base):
+    """Configurable tenant/client Digital Asset & Content QA Benchmark protocol."""
+
+    __tablename__ = "digital_qa_protocols"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    min_score: Mapped[int] = mapped_column(Integer, default=80, nullable=False)
+    min_word_count: Mapped[int] = mapped_column(Integer, default=800, nullable=False)
+    max_word_count: Mapped[int] = mapped_column(Integer, default=4500, nullable=False)
+    require_schema_ld: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_faq: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_live_llm: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    brand_voice: Mapped[str] = mapped_column(String(250), default="authoritative, truthful, non-promotional", nullable=False)
+    mandatory_terms_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    forbidden_terms_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    banned_slop_phrases_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class DigitalQAReportRecord(Base):
+    """Tamper-evident Digital QA Benchmark evaluation and signed human-review receipt."""
+
+    __tablename__ = "digital_qa_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    receipt_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    protocol_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    draft_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    target_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    overall_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, index=True, nullable=False)
+    output_origin: Mapped[str] = mapped_column(String(64), default="LIVE_PROVIDER_VERIFIED", nullable=False)
+    checks_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    defects_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    flagged_claims_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    human_reviewer: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    human_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trust_block_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    trust_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)

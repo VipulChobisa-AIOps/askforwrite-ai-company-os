@@ -115,12 +115,33 @@ def execute_seo_draft(
     db.add(draft)
     db.flush()  # flush to get draft.id
 
+    # Run mandatory Digital Asset & Content QA Benchmark gate before entering HITL approval queue
+    from app.services.digital_qa import evaluate_and_record_digital_qa
+
+    qa_report = evaluate_and_record_digital_qa(
+        db=db,
+        org_id=org_id,
+        content=content_draft,
+        title=f"{primary_kw} ({target_network})",
+        keywords=kw_list,
+        draft_id=draft.id,
+        task_id=task_id,
+        used_fallback=used_fallback,
+        output_origin="SIMULATED_SYNTHETIC" if used_fallback else "LIVE_PROVIDER_VERIFIED",
+        actor=agent_id,
+        commit=False,
+    )
+
     # Request Owner Approval for LIVE_PUBLISHED (atomic with draft update)
     approval_detail: dict = {
         "seo_draft_id": draft.id,
         "network": target_network,
         "used_fallback": used_fallback,
         "word_count": len(content_draft.split()),
+        "digital_qa_receipt_id": qa_report["receipt_id"],
+        "digital_qa_score": qa_report["overall_score"],
+        "digital_qa_passed": qa_report["passed"],
+        "digital_qa_defects_count": len(qa_report["defects"]),
     }
     if org_id:
         approval_detail["org_id"] = org_id
@@ -137,7 +158,7 @@ def execute_seo_draft(
     )
 
     draft.approval_id = approval["approval_id"]
-    draft.status = "PENDING_APPROVAL"
+    draft.status = "PENDING_APPROVAL" if qa_report["passed"] or not require_live_llm else "QA_FLAGGED"
 
     audit = AuditLog(
         task_id=task_id,
@@ -146,15 +167,25 @@ def execute_seo_draft(
         capability_name=CAPABILITY_NAME,
         action="generate_draft",
         input_payload={"network": target_network, "keywords": keywords},
-        output_payload={"status": draft.status, "approval_id": approval["approval_id"]},
-        status="COMPLETED"
+        output_payload={
+            "status": draft.status,
+            "approval_id": approval["approval_id"],
+            "digital_qa_receipt_id": qa_report["receipt_id"],
+            "digital_qa_score": qa_report["overall_score"],
+            "digital_qa_passed": qa_report["passed"],
+        },
+        status="COMPLETED",
     )
     db.add(audit)
 
     result = {
         "status": draft.status,
         "draft_id": draft.id,
-        "approval_id": approval["approval_id"]
+        "approval_id": approval["approval_id"],
+        "digital_qa_receipt_id": qa_report["receipt_id"],
+        "digital_qa_score": qa_report["overall_score"],
+        "digital_qa_passed": qa_report["passed"],
+        "digital_qa_receipt_url": qa_report["receipt_url"],
     }
 
     idemp = IdempotencyRecord(

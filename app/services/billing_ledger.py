@@ -31,6 +31,63 @@ class InsufficientCreditsError(ValueError):
     """Raised when a tenant lacks sufficient execution/lead credits."""
 
 
+class InsufficientAICreditsError(InsufficientCreditsError):
+    """Raised when a tenant lacks sufficient Managed AI Usage Credits (triggers HTTP 402)."""
+
+
+class DailySpendCapExceededError(InsufficientCreditsError):
+    """Raised when a tenant exceeds its daily platform AI COGS safety ceiling."""
+
+
+# Transparent action -> Managed AI Credit costs (>95% gross margin at ₹5/credit vs Gemini Flash COGS)
+AI_CREDIT_COSTS: dict[str, int] = {
+    "seo_blog_copilot": 10,
+    "managed_seo_content_pilot": 10,
+    "seo_article_with_qa": 10,
+    "digital_qa": 2,
+    "digital_qa_benchmark": 2,
+    "marketing_suite": 5,
+    "growth_all_in_one": 5,
+    "ask4_academic_order": 5,
+    "pixel_ai_pack": 5,
+    "field_receipt_ocr": 1,
+    "field_photo_vision": 1,
+    "field_voice_debrief": 1,
+    "warehouse_ai_brief": 2,
+    "default": 1,
+}
+
+AI_CREDIT_TOPUP_PACKS: dict[str, dict[str, int]] = {
+    "ai_credits_100": {"credits": 100, "INR": 499, "USD": 7},
+    "ai_credits_500": {"credits": 500, "INR": 1999, "USD": 25},
+    "ai_credits_2000": {"credits": 2000, "INR": 6499, "USD": 79},
+}
+
+TIER_AI_CREDIT_ALLOWANCES: dict[str, dict[str, Any]] = {
+    "managed_pilot": {"ai_credits": 100, "daily_spend_cap_inr": 100.0},
+    "managed_seo_content_pilot": {"ai_credits": 100, "daily_spend_cap_inr": 100.0},
+    "launch": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "starter": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "company_os_starter": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "modular_seo": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "modular_marketing": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "modular_field_ops": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "modular_inventory_ai": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "modular_trust": {"ai_credits": 150, "daily_spend_cap_inr": 100.0},
+    "growth": {"ai_credits": 600, "daily_spend_cap_inr": 350.0},
+    "growth_all_in_one": {"ai_credits": 600, "daily_spend_cap_inr": 350.0},
+    "pro": {"ai_credits": 600, "daily_spend_cap_inr": 350.0},
+    "business_pro": {"ai_credits": 600, "daily_spend_cap_inr": 350.0},
+    "company_os_pro": {"ai_credits": 600, "daily_spend_cap_inr": 350.0},
+    "operations": {"ai_credits": 800, "daily_spend_cap_inr": 400.0},
+    "operations_suite": {"ai_credits": 800, "daily_spend_cap_inr": 400.0},
+    "enterprise": {"ai_credits": 3000, "daily_spend_cap_inr": 1500.0},
+    "company_os_enterprise": {"ai_credits": 3000, "daily_spend_cap_inr": 1500.0},
+    "all_access": {"ai_credits": 3000, "daily_spend_cap_inr": 1500.0},
+    "free": {"ai_credits": 0, "daily_spend_cap_inr": 0.0},
+}
+
+
 # Map canonical SKUs & provider plan IDs to MRR monthly INR & USD equivalents
 EXTRA_AGENT_PRICE = {"INR": 999, "USD": 15}
 EXTRA_SEAT_PRICE = {"INR": 499, "USD": 8}
@@ -63,14 +120,14 @@ MODULE_CAPABILITY_MAP: dict[str, dict[str, Any]] = {
         "price_usd": 29,
     },
     "seo": {
-        "capabilities": ["seo_content_automation", "seo_blog_copilot", "wordpress_publisher"],
-        "agents": ["seo_content_agent"],
+        "capabilities": ["seo_content_automation", "seo_blog_copilot", "digital_qa", "wordpress_publisher"],
+        "agents": ["seo_content_agent", "digital_qa_agent"],
         "price_inr": 1999,
         "price_usd": 29,
     },
     "seo_content": {
-        "capabilities": ["seo_content_automation", "seo_blog_copilot", "wordpress_publisher"],
-        "agents": ["seo_content_agent"],
+        "capabilities": ["seo_content_automation", "seo_blog_copilot", "digital_qa", "wordpress_publisher"],
+        "agents": ["seo_content_agent", "digital_qa_agent"],
         "price_inr": 1999,
         "price_usd": 29,
     },
@@ -93,8 +150,8 @@ MODULE_CAPABILITY_MAP: dict[str, dict[str, Any]] = {
         "price_usd": 45,
     },
     "customer_ops": {
-        "capabilities": ["support_followup", "trust_ledger_audit", "mango_quality_analytics"],
-        "agents": ["support_followup_agent", "trust_governance_agent"],
+        "capabilities": ["support_followup", "trust_ledger_audit", "digital_qa"],
+        "agents": ["support_followup_agent", "trust_governance_agent", "digital_qa_agent"],
         "price_inr": 3499,
         "price_usd": 45,
     },
@@ -105,7 +162,7 @@ MODULE_CAPABILITY_MAP: dict[str, dict[str, Any]] = {
         "price_usd": 29,
     },
     "field_force": {
-        "capabilities": ["field_force_automation", "delivery_field_force", "bike_rebalance_analytics"],
+        "capabilities": ["field_force_automation", "delivery_field_force"],
         "agents": ["field_ops_agent"],
         "price_inr": 3999,
         "price_usd": 49,
@@ -117,14 +174,14 @@ MODULE_CAPABILITY_MAP: dict[str, dict[str, Any]] = {
         "price_usd": 49,
     },
     "inventory": {
-        "capabilities": ["warehouse_automation", "warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
-        "agents": ["warehouse_stocksense_agent", "quality_vision_agent", "mobility_rebalance_agent"],
+        "capabilities": ["warehouse_automation", "warehouse_stocksense", "inventory_analytics"],
+        "agents": ["warehouse_stocksense_agent"],
         "price_inr": 3999,
         "price_usd": 49,
     },
     "inventory_quality": {
-        "capabilities": ["warehouse_automation", "warehouse_stocksense", "computer_vision_quality_analytics", "spatiotemporal_logistics_optimization"],
-        "agents": ["warehouse_stocksense_agent", "quality_vision_agent", "mobility_rebalance_agent"],
+        "capabilities": ["warehouse_automation", "warehouse_stocksense", "inventory_analytics", "digital_qa"],
+        "agents": ["warehouse_stocksense_agent", "digital_qa_agent"],
         "price_inr": 3999,
         "price_usd": 49,
     },
@@ -786,3 +843,295 @@ def refund_credit_reservation(
     )
     db.flush()
     return {"already_refunded": False, "balance_after": balance_after}
+
+
+# ── Dedicated Managed AI Usage-Credit Pool (Separate from Lead/Outreach Credits) ──
+
+
+def get_ai_credit_cost(action_key: str) -> int:
+    """Return transparent Managed AI Credit cost for an action/service."""
+    return int(AI_CREDIT_COSTS.get((action_key or "").strip().lower(), AI_CREDIT_COSTS["default"]))
+
+
+def get_ai_credit_summary(db: Session, org_id: str) -> dict[str, Any]:
+    """Return current Managed AI Usage-Credit balance, spend cap, billing mode, and recent ledger."""
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise ValueError(f"Organization '{org_id}' not found")
+    limit = int(getattr(org, "ai_credits_limit", 150) or 0)
+    used = int(getattr(org, "ai_credits_used", 0) or 0)
+    remaining = max(0, limit - used)
+    pct_used = round((used / limit) * 100.0, 1) if limit > 0 else 100.0
+    entries = (
+        db.query(CreditLedgerRecord)
+        .filter(
+            CreditLedgerRecord.org_id == org_id,
+            CreditLedgerRecord.credit_pool == "ai_credits",
+        )
+        .order_by(CreditLedgerRecord.created_at.desc())
+        .limit(25)
+        .all()
+    )
+    return {
+        "org_id": org.id,
+        "tier": org.tier,
+        "ai_billing_mode": str(getattr(org, "ai_billing_mode", "MANAGED_CREDITS") or "MANAGED_CREDITS"),
+        "ai_credits_limit": limit,
+        "ai_credits_used": used,
+        "ai_credits_remaining": remaining,
+        "utilization_pct": pct_used,
+        "low_balance_warning": pct_used >= 80.0 or remaining <= 10,
+        "ai_daily_spend_cap_inr": float(getattr(org, "ai_daily_spend_cap_inr", 100.0) or 0.0),
+        "action_costs": dict(AI_CREDIT_COSTS),
+        "topup_packs": {
+            k: {**v, "checkout_url": f"/v1/pay/checkout?package={k}"}
+            for k, v in AI_CREDIT_TOPUP_PACKS.items()
+        },
+        "recent_ledger": [
+            {
+                "id": e.id,
+                "entry_type": e.entry_type,
+                "delta": e.delta,
+                "balance_after": e.balance_after,
+                "status": e.status,
+                "reason": e.reason,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in entries
+        ],
+    }
+
+
+def reserve_ai_credits(
+    db: Session,
+    *,
+    org_id: str,
+    cost: int,
+    idempotency_key: str,
+    execution_id: str,
+    actor: str = "system",
+    reason: str = "Managed AI execution",
+    byok_supplied: bool = False,
+) -> dict[str, Any]:
+    """Atomically reserve Managed AI Credits with daily COGS spend circuit breaker (0 deduction when BYOK)."""
+    existing = db.query(CreditLedgerRecord).filter_by(idempotency_key=idempotency_key).first()
+    if existing:
+        return {
+            "idempotent_replay": True,
+            "entry_id": existing.id,
+            "delta": existing.delta,
+            "balance_after": existing.balance_after,
+            "status": existing.status,
+            "byok_zero_credit": existing.delta == 0,
+        }
+
+    org = db.get(OrganizationRecord, org_id)
+    if not org or not org.is_active:
+        raise InsufficientAICreditsError(f"Organization '{org_id}' is missing or inactive")
+
+    if byok_supplied:
+        rem = max(0, int(getattr(org, "ai_credits_limit", 0) or 0) - int(getattr(org, "ai_credits_used", 0) or 0))
+        entry = CreditLedgerRecord(
+            org_id=org_id,
+            execution_id=execution_id,
+            idempotency_key=idempotency_key,
+            entry_type="BYOK_ZERO_DEBIT",
+            credit_pool="ai_credits",
+            delta=0,
+            balance_after=rem,
+            status="COMMITTED",
+            reason=f"{reason} (BYOK key supplied — 0 managed AI credits deducted)",
+            created_by=actor,
+        )
+        db.add(entry)
+        db.flush()
+        return {
+            "idempotent_replay": False,
+            "entry_id": entry.id,
+            "delta": 0,
+            "balance_after": rem,
+            "status": "COMMITTED",
+            "byok_zero_credit": True,
+        }
+
+    # Check per-tenant hard daily platform API spend circuit breaker
+    from sqlalchemy import func
+    from app.db.models import ExecutionEvidenceRecord
+
+    daily_cap = float(getattr(org, "ai_daily_spend_cap_inr", 100.0) or 0.0)
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_spend = float(
+        db.query(func.coalesce(func.sum(ExecutionEvidenceRecord.provider_cost_inr), 0.0))
+        .filter(
+            ExecutionEvidenceRecord.tenant_id == org_id,
+            ExecutionEvidenceRecord.started_at >= today_start,
+        )
+        .scalar()
+        or 0.0
+    )
+    if daily_cap > 0 and today_spend >= daily_cap:
+        raise DailySpendCapExceededError(
+            f"Daily managed AI spend safety cap reached (₹{today_spend:.2f} / ₹{daily_cap:.2f}). "
+            "Supply a BYOK X-Gemini-API-Key or wait for daily reset."
+        )
+
+    clean_cost = max(1, int(cost))
+    stmt = (
+        update(OrganizationRecord)
+        .where(
+            and_(
+                OrganizationRecord.id == org_id,
+                OrganizationRecord.is_active.is_(True),
+                (OrganizationRecord.ai_credits_limit - OrganizationRecord.ai_credits_used) >= clean_cost,
+            )
+        )
+        .values(ai_credits_used=OrganizationRecord.ai_credits_used + clean_cost)
+    )
+    res = db.execute(stmt)
+    if res.rowcount != 1:
+        remaining = max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0))
+        raise InsufficientAICreditsError(
+            f"Insufficient Managed AI Credits: required={clean_cost}, remaining={remaining}. "
+            "Top up via /v1/pay/checkout?package=ai_credits_100 or provide your own X-Gemini-API-Key."
+        )
+    db.expire(org, ["ai_credits_used"])
+    org = db.get(OrganizationRecord, org_id)
+    balance_after = max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0))
+
+    entry = CreditLedgerRecord(
+        org_id=org_id,
+        execution_id=execution_id,
+        idempotency_key=idempotency_key,
+        entry_type="RESERVE",
+        credit_pool="ai_credits",
+        delta=-clean_cost,
+        balance_after=balance_after,
+        status="RESERVED",
+        reason=reason,
+        created_by=actor,
+    )
+    db.add(entry)
+    db.flush()
+    return {
+        "idempotent_replay": False,
+        "entry_id": entry.id,
+        "delta": -clean_cost,
+        "balance_after": balance_after,
+        "status": "RESERVED",
+        "byok_zero_credit": False,
+    }
+
+
+def commit_ai_credit_reservation(db: Session, *, idempotency_key: str) -> None:
+    """Finalize a reserved Managed AI Credit entry after live execution succeeds."""
+    entry = db.query(CreditLedgerRecord).filter_by(idempotency_key=idempotency_key).first()
+    if entry and entry.status == "RESERVED":
+        entry.status = "COMMITTED"
+        entry.entry_type = "DEBIT"
+        db.flush()
+
+
+def refund_ai_credit_reservation(
+    db: Session,
+    *,
+    org_id: str,
+    cost: int,
+    idempotency_key: str,
+    execution_id: str,
+    actor: str = "system",
+    reason: str = "Automatic refund for failed live AI execution",
+) -> dict[str, Any]:
+    """Idempotently refund reserved Managed AI Credits so failed provider calls cost 0 credits."""
+    clean_cost = max(0, int(cost))
+    refund_key = f"refund:{idempotency_key}"
+    existing_refund = db.query(CreditLedgerRecord).filter_by(idempotency_key=refund_key).first()
+    if existing_refund:
+        return {"already_refunded": True, "balance_after": existing_refund.balance_after}
+
+    orig = db.query(CreditLedgerRecord).filter_by(idempotency_key=idempotency_key).first()
+    if orig is None or clean_cost == 0 or orig.status == "REVERSED" or orig.delta == 0:
+        org = db.get(OrganizationRecord, org_id)
+        bal = max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0)) if org else 0
+        return {"already_refunded": orig is not None and orig.status == "REVERSED", "balance_after": bal}
+
+    stmt = (
+        update(OrganizationRecord)
+        .where(OrganizationRecord.id == org_id)
+        .values(
+            ai_credits_used=case(
+                (OrganizationRecord.ai_credits_used >= clean_cost, OrganizationRecord.ai_credits_used - clean_cost),
+                else_=0,
+            )
+        )
+    )
+    db.execute(stmt)
+    orig.status = "REVERSED"
+    org = db.get(OrganizationRecord, org_id)
+    if org:
+        db.expire(org, ["ai_credits_used"])
+        org = db.get(OrganizationRecord, org_id)
+    balance_after = max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0)) if org else 0
+
+    db.add(
+        CreditLedgerRecord(
+            org_id=org_id,
+            execution_id=execution_id,
+            idempotency_key=refund_key,
+            entry_type="REFUND",
+            credit_pool="ai_credits",
+            delta=clean_cost,
+            balance_after=balance_after,
+            status="COMMITTED",
+            reason=reason,
+            created_by=actor,
+        )
+    )
+    db.flush()
+    return {"already_refunded": False, "balance_after": balance_after}
+
+
+def grant_ai_credit_topup(
+    db: Session,
+    *,
+    org_id: str,
+    pack_key: str,
+    actor: str = "system",
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Atomically credit a prepaid AI Credit Top-Up Pack (100 / 500 / 2,000 credits) to an organization."""
+    spec = AI_CREDIT_TOPUP_PACKS.get((pack_key or "").strip().lower())
+    if not spec:
+        raise ValueError(f"Unknown AI credit top-up pack '{pack_key}'. Valid: {', '.join(AI_CREDIT_TOPUP_PACKS)}")
+    idem = (idempotency_key or f"ai-topup:{org_id}:{pack_key}:{uuid.uuid4().hex[:10]}").strip()
+    existing = db.query(CreditLedgerRecord).filter_by(idempotency_key=idem).first()
+    if existing:
+        return {"idempotent_replay": True, "credits_added": existing.delta, "balance_after": existing.balance_after}
+
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise ValueError(f"Organization '{org_id}' not found")
+    added = int(spec["credits"])
+    org.ai_credits_limit = int(org.ai_credits_limit or 0) + added
+    new_bal = max(0, org.ai_credits_limit - int(org.ai_credits_used or 0))
+    db.add(
+        CreditLedgerRecord(
+            org_id=org_id,
+            execution_id=None,
+            idempotency_key=idem,
+            entry_type="TOPUP",
+            credit_pool="ai_credits",
+            delta=added,
+            balance_after=new_bal,
+            status="COMMITTED",
+            reason=f"Purchased Managed AI Credit Pack '{pack_key}' (+{added} credits, ₹{spec['INR']} / ${spec['USD']})",
+            created_by=actor,
+        )
+    )
+    db.commit()
+    return {
+        "idempotent_replay": False,
+        "pack_key": pack_key,
+        "credits_added": added,
+        "ai_credits_limit": org.ai_credits_limit,
+        "ai_credits_remaining": new_bal,
+    }

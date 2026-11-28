@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -36,15 +37,11 @@ client = TestClient(app)
 
 
 def _owner_headers() -> dict[str, str]:
-    from app.security.auth import create_access_token
-
-    token = create_access_token(
-        user_id="p1-test-owner",
-        email="owner@askforwrite.in",
-        role="owner",
-        org_id=None,
-    )
-    return {"Authorization": f"Bearer {token}"}
+    owner_key = os.environ.get("OWNER_API_KEY", "").strip()
+    if len(owner_key) < 32:
+        owner_key = "p1-test-owner-key-must-be-at-least-32-characters-long-0001"
+        os.environ["OWNER_API_KEY"] = owner_key
+    return {"X-API-Key": owner_key}
 
 
 def _signup_customer(

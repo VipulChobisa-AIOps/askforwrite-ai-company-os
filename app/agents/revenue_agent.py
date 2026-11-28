@@ -60,18 +60,6 @@ KEYWORDS_MAP: dict[str, tuple[str, ...]] = {
         "sku", "depreciation", "dead stock", "deadstock", "holding cost",
         "stocksense", "barcode", "storage layout", "stocktake", "3pl", "fulfillment",
     ),
-    "mango_quality_analytics": (
-        "mango", "produce", "fruit", "harvest", "ripeness", "agri", "agritech",
-        "cold chain", "cold-chain", "packhouse", "grading", "brix", "sugar",
-        "shelf life", "shelf-life", "colorimetry", "hsv", "glcm", "export rejection",
-        "perishable", "horticulture", "sorting",
-    ),
-    "bike_rebalance_analytics": (
-        "bike", "bicycle", "micro-mobility", "micromobility", "scooter",
-        "dock", "docking", "station churn", "rebalance", "rebalancing",
-        "fleet demand", "transit", "circadian", "commuter peak", "rush hour",
-        "truck rebalance", "turnover ratio", "bike-share", "ebike",
-    ),
 }
 
 # Alias for external agents and service introspection
@@ -79,24 +67,6 @@ SERVICE_KEYWORD_MAP = KEYWORDS_MAP
 
 # Domain pain point diagnoses and ROI impact metrics
 PAIN_POINT_DIAGNOSIS: dict[str, dict[str, object]] = {
-    "mango_quality_analytics": {
-        "pain_points": [
-            "Subjective manual sorting causes 15-20% export container rejection at destination ports",
-            "Lack of non-destructive Brix and firmness measurements leads to shelf-life uncertainty",
-            "Cold chain breakdown risks and non-uniform ripening across distributed packhouses",
-        ],
-        "roi_formula": "Saves ₹3,50,000 - ₹8,00,000 per perishable export container via automated CV defect sorting",
-        "roi_multiplier": 5.2,
-    },
-    "bike_rebalance_analytics": {
-        "pain_points": [
-            "Station starvation and dock overflow causing up to 28% commuter churn during peak rush hours",
-            "Inefficient rebalancing truck dispatch routes increasing fuel costs and transit lag",
-            "Unpredictable circadian tidal fleet demand across metro transit corridors",
-        ],
-        "roi_formula": "Increases daily ride turnover by 24% while reducing truck rebalancing fuel consumption by 35%",
-        "roi_multiplier": 4.8,
-    },
     "warehouse_automation": {
         "pain_points": [
             "Unscheduled stockouts of critical high-margin SKUs causing missed SLAs and penalties",
@@ -135,12 +105,12 @@ PAIN_POINT_DIAGNOSIS: dict[str, dict[str, object]] = {
     },
     "trust_engine": {
         "pain_points": [
-            "Regulatory compliance audit friction for fintech, healthtech, and enterprise clients",
-            "Tamperable centralized logs that fail third-party SOC 2 and ISO verification",
-            "Disputed transactions and operational workflow non-repudiation vulnerabilities",
+            "Client skepticism toward AI-generated agency deliverables without verifiable human editorial sign-off",
+            "Tamperable operational logs for field attendance, conveyance claims, and warehouse stocktakes",
+            "Disputed delivery milestones without exportable cryptographic provenance receipts",
         ],
-        "roi_formula": "Provides instant cryptographic Merkle proof, eliminating audit preparation fees",
-        "roi_multiplier": 7.5,
+        "roi_formula": "Issues instant ECDSA NIST P-256 human-review and operational audit receipts",
+        "roi_multiplier": 4.0,
     },
     "growth_all_in_one": {
         "pain_points": [
@@ -203,8 +173,6 @@ def diagnose_lead_opportunity(
         "trust_engine": "trust_engine",
         "growth_all_in_one": "growth_all_in_one",
         "warehouse_automation": "warehouse_automation",
-        "mango_quality_analytics": "mango_quality_analytics",
-        "bike_rebalance_analytics": "bike_rebalance_analytics",
     }
 
     for pkg_key, keywords in KEYWORDS_MAP.items():

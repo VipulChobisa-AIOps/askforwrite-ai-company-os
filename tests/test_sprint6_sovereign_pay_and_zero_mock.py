@@ -123,8 +123,8 @@ class Sprint6ZeroMockAndSovereignPayTests(unittest.TestCase):
             "minimalist.co",
             "kapiva.in",
             "plumgoodness.com",
-            "signzy.com",
-            "karza.in",
+            "dentsu.com",
+            "schbang.com",
         ]
         for exp in expected_domains:
             found = any(exp in w for w in all_websites)

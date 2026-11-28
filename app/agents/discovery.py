@@ -14,9 +14,7 @@ PRODUCT_KEYWORDS = {
         "geofence", "workforce", "sales rep",
     ),
     "warehouse_automation": ("warehouse", "inventory", "stock", "stocksense"),
-    "marketing_suite": ("marketing", "content", "seo", "campaign"),
-    "mango_quality_analytics": ("mango", "produce", "fruit", "harvest", "ripeness", "packhouse", "agritech", "cold-chain"),
-    "bike_rebalance_analytics": ("bike", "fleet", "micro-mobility", "rebalance", "dock", "station churn", "transit"),
+    "marketing_suite": ("marketing", "content", "seo", "campaign", "digital qa"),
 }
 
 

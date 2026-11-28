@@ -542,7 +542,7 @@ def _render_checkout_html(session: Any) -> str:
     </div>
     <div class="order-features">
       <span class="feature-tag">✓ 0% Gateway Deduction</span>
-      <span class="feature-tag">✓ NIST P-256 Merkle Block Sealed</span>
+      <span class="feature-tag">✓ ECDSA P-256 Hash-Chain Sealed</span>
       <span class="feature-tag">✓ Instant Autonomous Provisioning</span>
     </div>
   </div>
@@ -633,7 +633,7 @@ def _render_checkout_html(session: Any) -> str:
     <div class="verify-title">
       <span>🛡️</span> Instant Activation & Trust Block Verification
     </div>
-    <p class="verify-desc">Submit your payment reference for immediate 0-second multi-tenant activation and NIST P-256 Merkle DAG sealing.</p>
+    <p class="verify-desc">Submit your payment reference for HITL verification, tenant activation, and ECDSA NIST P-256 linear hash-chain sealing.</p>
 
     <div class="form-group">
       <label class="form-label" for="verify-rail">Settlement Rail Used</label>

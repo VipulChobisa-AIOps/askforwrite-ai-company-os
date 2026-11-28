@@ -643,3 +643,135 @@ async def list_webhook_events(
             for r in records
         ],
     }
+
+
+def _verify_resend_svix_signature(raw_body: bytes, headers: dict[str, str], secret: str) -> bool:
+    """Verify Svix HMAC-SHA256 webhook signature sent by Resend (`svix-id`, `svix-timestamp`, `svix-signature`)."""
+    import base64
+    import hashlib
+    import hmac
+
+    svix_id = headers.get("svix-id", "").strip()
+    svix_ts = headers.get("svix-timestamp", "").strip()
+    svix_sig = headers.get("svix-signature", "").strip()
+    if not svix_id or not svix_ts or not svix_sig:
+        return False
+
+    clean_secret = secret.strip()
+    if clean_secret.startswith("whsec_"):
+        try:
+            secret_bytes = base64.b64decode(clean_secret[6:])
+        except Exception:
+            return False
+    else:
+        secret_bytes = clean_secret.encode("utf-8")
+
+    signed_content = f"{svix_id}.{svix_ts}.".encode("utf-8") + raw_body
+    expected_b64 = base64.b64encode(hmac.new(secret_bytes, signed_content, hashlib.sha256).digest()).decode("utf-8")
+
+    for part in svix_sig.split(" "):
+        if "," not in part:
+            continue
+        ver, sig_val = part.split(",", 1)
+        if ver == "v1" and hmac.compare_digest(sig_val.strip(), expected_b64):
+            return True
+    return False
+
+
+@router.post("/resend")
+async def resend_webhook_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Receive Svix-signed Resend delivery/bounce/complaint events to verify true inbox delivery."""
+    import json
+    import os
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.db.models import LeadRecordRow, OutreachRecord
+    from app.services.suppression import add_db_suppression
+
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    webhook_secret = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+
+    if webhook_secret:
+        if not _verify_resend_svix_signature(raw_body, headers, webhook_secret):
+            raise HTTPException(status_code=401, detail="Invalid Resend Svix webhook signature")
+    elif app_env in ("production", "staging"):
+        raise HTTPException(status_code=503, detail="RESEND_WEBHOOK_SECRET is not configured")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON webhook payload") from exc
+
+    event_type = str(payload.get("type") or "").strip().lower()
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    email_id = str(data.get("email_id") or data.get("id") or "").strip()
+    to_list = data.get("to") if isinstance(data.get("to"), list) else ([data.get("to")] if data.get("to") else [])
+    recipient_email = str(to_list[0] if to_list else "").strip().lower()
+    now = datetime.now(UTC)
+
+    matched: OutreachRecord | None = None
+    candidates = db.query(OutreachRecord).order_by(OutreachRecord.created_at.desc()).limit(250).all()
+    for row in candidates:
+        meta = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+        rec_msg_id = str(meta.get("provider_message_id") or (meta.get("dispatch_receipt") or {}).get("message_id") or "").strip()
+        if email_id and rec_msg_id and rec_msg_id == email_id:
+            matched = row
+            break
+    if matched is None and recipient_email:
+        for row in candidates:
+            if (row.recipient_email or "").strip().lower() == recipient_email:
+                matched = row
+                break
+
+    updated_status: str | None = None
+    if matched is not None:
+        meta = dict(matched.metadata_json or {})
+        meta["last_resend_event"] = event_type
+        meta["last_resend_event_at"] = now.isoformat()
+        if event_type == "email.delivered":
+            matched.status = "DELIVERED"
+            meta["delivery_verified"] = True
+            meta["delivered_at"] = now.isoformat()
+            updated_status = "DELIVERED"
+        elif event_type == "email.bounced":
+            matched.status = "BOUNCED"
+            bounce_info = data.get("bounce") if isinstance(data.get("bounce"), dict) else {}
+            reason = str(bounce_info.get("message") or data.get("reason") or "Resend webhook bounce")[:240]
+            matched.error_message = reason
+            meta["delivery_verified"] = False
+            meta["bounce_reason"] = reason
+            updated_status = "BOUNCED"
+            if recipient_email:
+                add_db_suppression(db, recipient_email, reason=f"resend_bounce:{reason[:80]}", source="resend_webhook")
+        elif event_type == "email.complained":
+            matched.status = "COMPLAINED"
+            meta["delivery_verified"] = False
+            updated_status = "COMPLAINED"
+            if recipient_email:
+                add_db_suppression(db, recipient_email, reason="resend_spam_complaint", source="resend_webhook")
+            if matched.lead_id:
+                lead = db.get(LeadRecordRow, matched.lead_id)
+                if lead:
+                    lead.do_not_contact = True
+                    lead.status = "DO_NOT_CONTACT"
+                    db.add(lead)
+        elif event_type in ("email.sent", "email.delivery_delayed"):
+            meta["delivery_state"] = event_type
+            updated_status = matched.status
+        matched.metadata_json = meta
+        flag_modified(matched, "metadata_json")
+        db.add(matched)
+        db.commit()
+
+    return {
+        "status": "processed",
+        "event_type": event_type,
+        "email_id": email_id,
+        "matched_outreach_id": matched.id if matched else None,
+        "updated_status": updated_status,
+    }

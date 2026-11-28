@@ -986,12 +986,6 @@ def test_registry_optional_auth_analytics_field_force_and_mobile_boundaries(matr
     analytics_cases = [
         ("POST", "/v1/growth/campaign/unified", {"client_name": "A", "product_or_service": "SEO", "target_audience": "B2B", "idempotency_key": "k_g1"}),
         ("POST", "/v1/growth/creative", {"product_name": "SEO", "target_audience": "B2B"}),
-        ("POST", "/v1/mobility/forecast", {"hour_of_day": 10}),
-        ("POST", "/v1/mobility/optimize", {"hour_of_day": 10}),
-        ("POST", "/v1/mobility/rebalance", {"hour_of_day": 10}),
-        ("POST", "/v1/mobility/uat", {"rating": 5}),
-        ("POST", "/v1/quality/inspect", {"preset_or_sample": "premium_export"}),
-        ("POST", "/v1/quality/uat", {"rating": 5}),
         ("POST", "/v1/inventory/analyze", {}),
         ("POST", "/v1/inventory/audit", {}),
         ("POST", "/v1/inventory/reorder", {}),

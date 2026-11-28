@@ -7,19 +7,15 @@ NEED_KEYWORDS = {
         "field", "gps", "tracking", "attendance", "geofence", "workforce",
     ),
     "warehouse_automation": ("warehouse", "inventory", "stock", "storage", "stocksense"),
-    "marketing_suite": ("marketing", "content", "seo", "campaign"),
-    "mango_quality_analytics": ("mango", "produce", "fruit", "harvest", "ripeness", "packhouse", "agritech", "cold-chain"),
-    "bike_rebalance_analytics": ("bike", "fleet", "micro-mobility", "rebalance", "dock", "station churn", "transit"),
+    "marketing_suite": ("marketing", "content", "seo", "campaign", "digital qa"),
 }
 
 CAPABILITY_DESCRIPTIONS = {
     "field_force_management": (
-        "Field-force attendance, task coordination, and workforce visibility."
+        "FieldGuard GPS attendance, business tour conveyance audit, and workforce visibility."
     ),
-    "warehouse_automation": "Inventory control and warehouse layout optimization.",
-    "marketing_suite": "Marketing content and campaign generation capabilities.",
-    "mango_quality_analytics": "Produce computer vision grading, multi-model ripeness analysis, and shelf-life certification.",
-    "bike_rebalance_analytics": "Circadian mobility demand forecasting, station churn rebalancing, and priority truck routing.",
+    "warehouse_automation": "StockSense SME inventory control, replenishment, and 3PL warehouse analytics.",
+    "marketing_suite": "SEO/GEO content generation, Digital QA benchmarking, and campaign automation.",
 }
 
 BUDGET_TERMS = ("budget", "inr", "usd", "rs.", "$", "investment", "spend")

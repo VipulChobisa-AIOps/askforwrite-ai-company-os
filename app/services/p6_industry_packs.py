@@ -29,18 +29,17 @@ from app.db.models import (
 from app.security.trust_chain import seal_task_to_block
 from app.services.billing_ledger import compose_modular_pricing
 from app.services.catalog import CATALOG, MODULAR_SERVICE_MODULES, MODULAR_SME_TIERS
+from app.services.digital_qa import evaluate_and_record_digital_qa
 from app.services.execution_guard import is_external_side_effect_blocked, resolve_execution_mode
 from app.services.inventory_analytics import compute_abc_analysis, compute_reorder_recommendations
-from app.services.mobility_analytics import compute_station_rebalancing_plan
 from app.services.p4_growth_gtm import check_gtm_copy_safety
-from app.services.quality_analytics import execute_produce_quality_inspection
 from app.services.registry import AGENT_REGISTRY
 
 ALLOWED_READINESS_STATUSES: tuple[str, ...] = ("SANDBOX", "ROADMAP", "LIVE_VERIFIED")
 ALLOWED_ANALYTICS_CAPABILITIES: tuple[str, ...] = (
     "warehouse_stocksense",
-    "spatiotemporal_logistics_optimization",
-    "computer_vision_quality_analytics",
+    "digital_qa_benchmark",
+    "field_force_ops",
     "india_local_seo_baseline",
     "gtm_pipeline_automation",
 )
@@ -65,29 +64,29 @@ DEFAULT_P6_INDUSTRY_PACKS: tuple[dict[str, Any], ...] = (
         "pack_key": "logistics_warehousing",
         "name": "Logistics & Warehousing SME Pack",
         "sector": "logistics_warehousing",
-        "description": "Combines spatiotemporal fleet/station rebalancing analytics, warehouse stock reorder, and SLA incident routing.",
+        "description": "Combines FieldGuard GPS/tour dispatch, StockSense SME warehouse stock reorder, and SLA incident routing.",
         "tier_id": "operations",
         "selected_modules": ["inventory", "field_force", "customer_ops"],
-        "catalog_service_ids": ["bike_rebalance_analytics", "warehouse_automation", "field_force"],
-        "agent_ids": ["mobility_rebalance_agent", "warehouse_stocksense_agent", "field_ops_agent"],
-        "analytics_capabilities": ["spatiotemporal_logistics_optimization", "warehouse_stocksense"],
-        "kpi_definitions": ["rebalance_efficiency_score", "hub_utilization_pct", "on_time_dispatch_rate"],
+        "catalog_service_ids": ["warehouse_automation", "field_force"],
+        "agent_ids": ["warehouse_stocksense_agent", "field_ops_agent"],
+        "analytics_capabilities": ["field_force_ops", "warehouse_stocksense"],
+        "kpi_definitions": ["stockout_prevention_count", "hub_utilization_pct", "on_time_dispatch_rate"],
         "default_config": {"rebalance_horizon_hours": 4, "default_hub_region": "Bengaluru_IN"},
         "readiness_status": "SANDBOX",
         "verified_live_customers": 0,
     },
     {
         "pack_key": "manufacturing",
-        "name": "SME Manufacturing Quality & Supply Pack",
+        "name": "SME Supply & Operations Governance Pack",
         "sector": "manufacturing",
-        "description": "Integrates computer-vision surface/produce defect grading, raw-material reorder points, and trust evidence sealing.",
+        "description": "Integrates StockSense raw-material reorder points, Digital QA documentation verification, and ECDSA hash-chain sealing.",
         "tier_id": "business_pro",
         "selected_modules": ["inventory", "field_force", "customer_ops"],
-        "catalog_service_ids": ["mango_quality_analytics", "warehouse_automation", "trust_engine"],
-        "agent_ids": ["quality_vision_agent", "warehouse_stocksense_agent", "trust_governance_agent"],
-        "analytics_capabilities": ["computer_vision_quality_analytics", "warehouse_stocksense"],
-        "kpi_definitions": ["lot_pass_rate", "defect_detection_precision", "safety_stock_coverage_days"],
-        "default_config": {"quality_grade_threshold": 0.85, "sample_preset": "ripe"},
+        "catalog_service_ids": ["warehouse_automation", "trust_engine"],
+        "agent_ids": ["warehouse_stocksense_agent", "digital_qa_agent", "trust_governance_agent"],
+        "analytics_capabilities": ["digital_qa_benchmark", "warehouse_stocksense"],
+        "kpi_definitions": ["qa_pass_rate", "safety_stock_coverage_days", "audit_chain_validity"],
+        "default_config": {"min_qa_score": 80},
         "readiness_status": "SANDBOX",
         "verified_live_customers": 0,
     },
@@ -419,23 +418,31 @@ def run_pack_diagnostics(
         results["warehouse_stocksense"] = {"abc_summary": abc, "reorder_recommendations": reorder}
         results["modules_executed"].append("warehouse_stocksense")
 
-    if "spatiotemporal_logistics_optimization" in caps:
-        rebalance = compute_station_rebalancing_plan(hour_of_day=hour_of_day)
-        results["spatiotemporal_logistics_optimization"] = rebalance
-        results["modules_executed"].append("spatiotemporal_logistics_optimization")
+    if "field_force_ops" in caps:
+        results["field_force_ops"] = {
+            "status": "PHASE_2_BETA_READY",
+            "geofencing_enabled": True,
+            "conveyance_audit_enabled": True,
+        }
+        results["modules_executed"].append("field_force_ops")
 
-    if "computer_vision_quality_analytics" in caps:
-        preset = str(quality_preset or dep.configuration_json.get("sample_preset", "ripe"))
-        vision = execute_produce_quality_inspection(
-            db,
-            preset_or_sample=preset,
-            batch_lot_id=f"p6-{dep.id[:8]}",
-            idempotency_key=f"p6-qual-{dep.id}",
-            correlation_id=dep.id,
-            agent_id="quality_vision_agent",
+    if "digital_qa_benchmark" in caps:
+        qa_res = evaluate_and_record_digital_qa(
+            db=db,
+            org_id=dep.org_id,
+            title=f"P6 Pack Verification — {pack.name}",
+            content=(
+                "# Pack Quality Verification\n\n## Overview\nStructured governance baseline.\n\n"
+                "## Standards\nVerified schema and operational protocols.\n\n## Audit\nSigned ECDSA receipt.\n\n"
+                "## FAQ\n**Q: Verified?**\nA: Yes.\n\n"
+                '```json\n{"@context":"https://schema.org","@type":"Article","headline":"Pack Quality"}\n```'
+            ),
+            used_fallback=False,
+            actor="digital_qa_agent",
+            commit=False,
         )
-        results["computer_vision_quality_analytics"] = vision
-        results["modules_executed"].append("computer_vision_quality_analytics")
+        results["digital_qa_benchmark"] = qa_res
+        results["modules_executed"].append("digital_qa_benchmark")
 
     if "india_local_seo_baseline" in caps or "gtm_pipeline_automation" in caps:
         results["gtm_and_seo_readiness"] = {

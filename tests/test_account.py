@@ -281,11 +281,20 @@ class AccountServiceTests(unittest.TestCase):
             json={"name": "Tenant Beta"},
         ).json()
 
+        # Seed real user inside Tenant Alpha (deleted/nonexistent users fail closed with 401)
+        alpha_user_resp = self.client.post(
+            f"/v1/accounts/orgs/{org_a['id']}/users",
+            headers=MANAGER_HEADERS,
+            json={"email": "manager@alpha.com", "full_name": "Alpha Manager", "role": "admin"},
+        )
+        self.assertEqual(alpha_user_resp.status_code, 201, alpha_user_resp.text)
+        alpha_user = alpha_user_resp.json()
+
         # Generate access token for Tenant Alpha member
         alpha_token = create_access_token(
-            user_id="user-alpha-1",
+            user_id=alpha_user["id"],
             email="manager@alpha.com",
-            role="manager",
+            role="admin",
             org_id=org_a["id"],
         )
         alpha_headers = {"Authorization": f"Bearer {alpha_token}"}

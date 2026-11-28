@@ -25,16 +25,15 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.commercial import router as commercial_router
 from app.api.v1.customer_portal import router as customer_portal_router
 from app.api.v1.customer_success import router as customer_success_router
+from app.api.v1.digital_qa import router as digital_qa_router
 from app.api.v1.field_force import router as field_force_router
 from app.api.v1.growth_suite import router as growth_suite_router
 from app.api.v1.inventory_analytics import router as inventory_analytics_router
 from app.api.v1.leads import router as leads_router
 from app.api.v1.legal import router as legal_router
 from app.api.v1.mobile_bridge import router as mobile_bridge_router
-from app.api.v1.mobility_analytics import router as mobility_analytics_router
 from app.api.v1.outreach import router as outreach_router
 from app.api.v1.previews import router as previews_router
-from app.api.v1.quality_analytics import router as quality_analytics_router
 from app.api.v1.registry import router as registry_router
 from app.api.v1.revenue import router as revenue_router
 from app.api.v1.scheduler import router as scheduler_router
@@ -219,7 +218,7 @@ app = FastAPI(
         "**AskforWrite AI Company OS** — A production-grade, multi-agent B2B SaaS platform.\n\n"
         "### Key capabilities\n"
         "- 🤖 **Multi-agent orchestration** (Discovery → Research → Sales → Delivery) with Human-in-the-Loop governance\n"
-        "- 🔐 **Cryptographic trust ledger** — ECDSA P-256 Merkle chain, tamper-evident audit trail\n"
+        "- 🔐 **Cryptographic audit ledger** — ECDSA NIST P-256 tamper-evident linear hash-chain\n"
         "- 📍 **Field Force Management** — GPS attendance, visit verification, task dispatch, conveyance claims\n"
         "- 💰 **Revenue Engine** — AI pitch generation with embedded Razorpay/PayPal payment links\n"
         "- 🏢 **Multi-tenant SaaS** — Org isolation, tiered rate limiting, self-serve signup\n"
@@ -272,13 +271,12 @@ app.include_router(audit_export_router)
 app.include_router(legal_router)
 app.include_router(mobile_bridge_router)
 app.include_router(growth_suite_router)
-app.include_router(quality_analytics_router)
-app.include_router(mobility_analytics_router)
 app.include_router(inventory_analytics_router)
 app.include_router(registry_router)
 app.include_router(workflows_router)
 app.include_router(commercial_router)
 app.include_router(customer_success_router)
+app.include_router(digital_qa_router)
 app.include_router(watchdog_router)
 app.include_router(previews_router)
 app.include_router(scheduler_router)
@@ -793,7 +791,7 @@ def llms_txt() -> PlainTextResponse:
         "## Clustered Subscription Plans (Save 20% on Annual Billing)\n"
         "- Cluster 1 (Content, SEO & Creative Studio): SEO/GEO Blog Copilot (`seo_blog_copilot`, INR 1,999/mo), PixelBot Marketing Suite (`marketing_suite`, INR 2,499/mo), WordPress Publisher, Pixel AI Pack (INR 1,499), ASK4 Research (INR 999).\n"
         "- Cluster 2 (Sales, Lead Discovery & 24/7 AI Closer): Live SMB Discovery, Opportunity Gap Scanner, Evidence Research, Sales Proposals & WhatsApp/Web AI Closer.\n"
-        "- Cluster 3 (Field Ops, Logistics & Vertical AI): Warehouse StockSense AI (`warehouse_automation`), Field Force GPS/PWA (`field_force`), Produce Quality Vision AI (`mango_quality_analytics`), Urban Mobility Rebalancing AI (`bike_rebalance_analytics`) — INR 3,999/mo ($49/mo) each standalone.\n"
+        "- Cluster 3 (Field Ops & Warehouse — Phase 2/3): FieldGuard GPS, Tour & Conveyance Audit (`field_force`, Phase 2 Beta), StockSense SME Warehouse & 3PL OS (`warehouse_automation`, Phase 3 Design Partner) — INR 3,999/mo ($49/mo) each standalone.\n"
         "- Cluster 4 (Governance, Trust & Autonomous Scale): ECDSA NIST P-256 Trust Ledger (`trust_engine`, INR 3,999/mo), HITL approval gates, emergency kill-switches & BYOK isolation.\n"
         "- Launch (`launch` / `company_os_starter`): INR 2,999/mo (USD 39/mo) — Cluster 1 (Content, SEO & Creative Studio).\n"
         "- Growth Suite (`growth` / `growth_all_in_one`): INR 6,999/mo (USD 89/mo) — Cluster 1 + Cluster 2 (Content/SEO/Creative + Sales, Discovery & 24/7 AI Closer).\n"
@@ -815,8 +813,7 @@ def llms_txt() -> PlainTextResponse:
         "- Refund & Cancellation Policy: https://os.askforwrite.com/legal/refund-policy\n"
         "- Warehouse & Dark-Store Automation AI: https://os.askforwrite.com/solutions/warehouse-automation\n"
         "- Field Force Route & Attendance Verification AI: https://os.askforwrite.com/solutions/field-force\n"
-        "- Agri-Produce Quality Grading AI: https://os.askforwrite.com/solutions/produce-quality-ai\n"
-        "- Urban EV Fleet & Micro-Mobility AI: https://os.askforwrite.com/solutions/urban-mobility-ai\n"
+        "- Digital QA & Managed SEO Content Pilot: https://os.askforwrite.com/solutions/digital-qa-content-pilot\n"
         "- Autonomous SEO/AEO/GEO Blog Copilot: https://os.askforwrite.com/solutions/seo-blog-copilot\n"
     )
     return PlainTextResponse(content=content)

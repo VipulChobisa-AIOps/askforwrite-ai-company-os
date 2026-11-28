@@ -49,16 +49,19 @@ class APIPrincipal:
 
 # ── Password Hashing (PBKDF2-HMAC-SHA256) ───────────────────────────────────
 
+OWASP_PBKDF2_ROUNDS = 600_000
+
 
 def hash_password(password: str) -> str:
-    """Hash password using PBKDF2-HMAC-SHA256 with cryptographically random salt."""
+    """Hash password using OWASP-recommended PBKDF2-HMAC-SHA256 (600,000 iterations) with random salt."""
     salt = secrets.token_hex(16)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
-    return f"pbkdf2:sha256:100000${salt}${key.hex()}"
+    rounds = int(os.environ.get("PBKDF2_ITERATIONS", str(OWASP_PBKDF2_ROUNDS)))
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), rounds)
+    return f"pbkdf2:sha256:{rounds}${salt}${key.hex()}"
 
 
 def verify_password(plain_password: str, hashed_password: str | None) -> bool:
-    """Verify plain password against PBKDF2 hash string."""
+    """Verify plain password against PBKDF2 hash string (supports legacy 100K and current 600K hashes)."""
     if not hashed_password or not hashed_password.startswith("pbkdf2:sha256:"):
         return False
     try:
@@ -75,32 +78,105 @@ def verify_password(plain_password: str, hashed_password: str | None) -> bool:
 
 # ── Signed Bearer Token Helpers ──────────────────────────────────────────────
 
+_DEV_ONLY_FALLBACK_SECRET = "local-dev-only-non-production-ephemeral-signing-key-do-not-deploy"
+
 
 def _get_signing_secret() -> str:
-    return (
-        os.environ.get("JWT_SECRET_KEY")
-        or os.environ.get("SECRET_KEY")
-        or os.environ.get("AUTH_SECRET_KEY")
-        or os.environ.get("OWNER_API_KEY")
-        or os.environ.get("MANAGER_API_KEY")
-        or "default-insecure-askforwrite-dev-secret-do-not-use-in-prod"
+    """Return signing secret, failing closed in production/staging if unconfigured.
+
+    Never falls back to OWNER_API_KEY, MANAGER_API_KEY, or a public constant in production.
+    """
+    secret = (
+        os.environ.get("JWT_SECRET_KEY", "").strip()
+        or os.environ.get("SECRET_KEY", "").strip()
+        or os.environ.get("AUTH_SECRET_KEY", "").strip()
     )
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+    if secret:
+        if app_env in ("production", "staging") and len(secret) < 32:
+            raise RuntimeError(
+                "CRITICAL SECURITY ERROR: JWT_SECRET_KEY must be at least 32 characters in production/staging."
+            )
+        return secret
+
+    if app_env in ("production", "staging"):
+        raise RuntimeError(
+            "CRITICAL SECURITY ERROR: JWT_SECRET_KEY (or SECRET_KEY) must be explicitly set in production/staging. "
+            "Refusing to sign or verify tokens with an insecure fallback secret."
+        )
+    return _DEV_ONLY_FALLBACK_SECRET
 
 
 _REVOKED_TOKENS: set[str] = set()
 _REVOKED_USERS: set[str] = set()
 
 
-def revoke_token(token_or_jti: str) -> None:
-    """Revoke a specific token string or token jti identifier."""
-    if token_or_jti:
-        _REVOKED_TOKENS.add(token_or_jti.strip())
+def revoke_token(
+    token_or_jti: str,
+    *,
+    db: Session | None = None,
+    user_id: str | None = None,
+    org_id: str | None = None,
+    jti: str | None = None,
+    exp: int | float | None = None,
+    reason: str = "logout",
+    bump_token_version: bool = False,
+) -> None:
+    """Revoke a token in memory AND persistently in the database so revocation survives restarts."""
+    clean_tok = (token_or_jti or "").strip()
+    if clean_tok:
+        _REVOKED_TOKENS.add(clean_tok)
+    clean_jti = (jti or "").strip()
+    if clean_jti:
+        _REVOKED_TOKENS.add(clean_jti)
+
+    if isinstance(db, Session):
+        from sqlalchemy.orm.attributes import flag_modified
+
+        from app.db.models import RevokedTokenRecord, UserRecord
+
+        record_jti = clean_jti or (hashlib.sha256(clean_tok.encode("utf-8")).hexdigest() if clean_tok else None)
+        if record_jti:
+            existing = db.get(RevokedTokenRecord, record_jti)
+            if existing is None:
+                expires_dt = datetime.fromtimestamp(float(exp), tz=UTC) if exp else (datetime.now(UTC) + timedelta(hours=24))
+                db.add(
+                    RevokedTokenRecord(
+                        jti=record_jti,
+                        user_id=user_id,
+                        org_id=org_id,
+                        reason=reason,
+                        revoked_at=datetime.now(UTC),
+                        expires_at=expires_dt,
+                    )
+                )
+        if bump_token_version and user_id:
+            user = db.get(UserRecord, user_id)
+            if user is not None:
+                meta = dict(user.metadata_json or {})
+                meta["token_version"] = int(meta.get("token_version") or 0) + 1
+                meta["last_logout_at"] = datetime.now(UTC).isoformat()
+                user.metadata_json = meta
+                flag_modified(user, "metadata_json")
+        db.commit()
 
 
-def revoke_user(user_id: str) -> None:
-    """Revoke all active tokens for a deactivated user ID."""
+def revoke_user(user_id: str, *, db: Session | None = None) -> None:
+    """Revoke all active tokens for a deactivated or removed user ID."""
     if user_id:
         _REVOKED_USERS.add(user_id.strip())
+    if isinstance(db, Session) and user_id:
+        from sqlalchemy.orm.attributes import flag_modified
+
+        from app.db.models import UserRecord
+
+        user = db.get(UserRecord, user_id)
+        if user is not None:
+            meta = dict(user.metadata_json or {})
+            meta["token_version"] = int(meta.get("token_version") or 0) + 1
+            user.metadata_json = meta
+            flag_modified(user, "metadata_json")
+            db.commit()
 
 
 def is_token_revoked(token: str, payload: dict[str, Any]) -> bool:
@@ -199,41 +275,71 @@ def get_current_principal(
                 detail="Invalid token scope: platform privileges cannot bind to a tenant organization",
             )
 
-        if isinstance(db, Session) and sub:
-            from app.db.models import OrganizationRecord, UserRecord
+        if isinstance(db, Session):
+            from app.db.models import OrganizationRecord, RevokedTokenRecord, UserRecord
 
+            # 1a. Persistent token revocation check (survives worker restarts & deploys)
+            jti = payload.get("jti")
+            tok_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            if jti and db.get(RevokedTokenRecord, str(jti)) is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                )
+            if db.get(RevokedTokenRecord, tok_hash) is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                )
+
+            if not sub:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Malformed token: missing subject",
+                )
+
+            # 1b. Fail closed when user row is deleted or missing (never trust stale JWT claims)
             user = db.get(UserRecord, sub)
-            if user is not None:
-                if not user.is_active:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="User account is inactive or deactivated",
-                    )
-                if user.org_id != org_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Token organization scope mismatch",
-                    )
-                token_pfp = payload.get("pfp")
-                if token_pfp and user.password_hash:
-                    current_pfp = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()[:16]
-                    if not hmac.compare_digest(str(token_pfp), current_pfp):
-                        raise HTTPException(
-                            status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Token invalidated due to credential rotation",
-                        )
-                user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
-                min_tv = int(user_meta.get("token_version") or 0)
-                token_tv = int(payload.get("tv") or 0)
-                if min_tv > 0 and token_tv < min_tv:
+            if user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User account not found or has been removed",
+                )
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is inactive or deactivated",
+                )
+            if user.org_id != org_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Token organization scope mismatch",
+                )
+            token_pfp = payload.get("pfp")
+            if token_pfp and user.password_hash:
+                current_pfp = hashlib.sha256(user.password_hash.encode("utf-8")).hexdigest()[:16]
+                if not hmac.compare_digest(str(token_pfp), current_pfp):
                     raise HTTPException(
                         status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token session has been revoked",
+                        detail="Token invalidated due to credential rotation",
                     )
-                role = str(user.role or "customer").strip().lower()
+            user_meta = user.metadata_json if isinstance(user.metadata_json, dict) else {}
+            min_tv = int(user_meta.get("token_version") or 0)
+            token_tv = int(payload.get("tv") or 0)
+            if min_tv > 0 and token_tv < min_tv:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token session has been revoked",
+                )
+            role = str(user.role or "customer").strip().lower()
             if org_id:
                 org = db.get(OrganizationRecord, org_id)
-                if org is not None and not org.is_active:
+                if org is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Organization account not found",
+                    )
+                if not org.is_active:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Organization account is inactive or suspended",

@@ -30,6 +30,7 @@ from app.security.auth import (
     enforce_tenant_access,
     get_current_principal,
     require_owner,
+    require_platform_manager,
     require_tenant_manager,
 )
 from app.services.approvals import ApprovalConflict, ApprovalNotFound
@@ -113,6 +114,17 @@ def list_outreach_records(
         total=total,
         records=[OutreachResponse.model_validate(r) for r in records],
     )
+
+
+@router.get("/sniper-monitor")
+def sniper_outbound_monitor_endpoint(
+    principal: APIPrincipal = Depends(require_platform_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """1-screen 10-emails/day Sniper Outbound & 7-day deliverability health monitor."""
+    from app.services.p2_outreach_pipeline import get_daily_sniper_monitor
+
+    return get_daily_sniper_monitor(db)
 
 
 @router.get("/{outreach_id}", response_model=OutreachResponse)

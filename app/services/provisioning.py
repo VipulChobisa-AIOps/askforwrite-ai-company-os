@@ -238,22 +238,35 @@ def auto_provision_tenant_on_payment(
         existing_org = db.get(OrganizationRecord, existing_user.org_id)
         if existing_org:
             from app.security.auth import TENANT_ADMIN_ROLES
+            from app.services.billing_ledger import AI_CREDIT_TOPUP_PACKS, TIER_AI_CREDIT_ALLOWANCES, grant_ai_credit_topup
 
-            existing_org.tier = pkg.tier
-            existing_org.lead_credits_limit = max(existing_org.lead_credits_limit or 0, pkg.lead_credits_monthly)
-            existing_org.outreach_credits_limit = max(existing_org.outreach_credits_limit or 0, pkg.outreach_credits_monthly)
-            existing_org.is_active = True
-            existing_user.is_active = True
-            meta = dict(existing_org.metadata_json or {})
-            meta.update({
-                "package_key": pkg.key,
-                "package_name": pkg.name,
-                "category": pkg.category,
-                "entitled_capabilities": list(pkg.entitled_capabilities),
-                "payment_provider": event.provider.value,
-                "subscription_status": "ACTIVE",
-            })
-            existing_org.metadata_json = meta
+            if pkg.key in AI_CREDIT_TOPUP_PACKS:
+                grant_ai_credit_topup(
+                    db,
+                    org_id=existing_org.id,
+                    pack_key=pkg.key,
+                    actor=f"payment:{event.provider.value}",
+                    idempotency_key=f"pay-topup:{event.id}",
+                )
+            else:
+                existing_org.tier = pkg.tier
+                existing_org.lead_credits_limit = max(existing_org.lead_credits_limit or 0, pkg.lead_credits_monthly)
+                existing_org.outreach_credits_limit = max(existing_org.outreach_credits_limit or 0, pkg.outreach_credits_monthly)
+                ai_spec = TIER_AI_CREDIT_ALLOWANCES.get(pkg.key) or TIER_AI_CREDIT_ALLOWANCES.get(pkg.tier) or {"ai_credits": 150, "daily_spend_cap_inr": 100.0}
+                existing_org.ai_credits_limit = max(int(existing_org.ai_credits_limit or 0), int(ai_spec["ai_credits"]))
+                existing_org.ai_daily_spend_cap_inr = max(float(existing_org.ai_daily_spend_cap_inr or 0.0), float(ai_spec["daily_spend_cap_inr"]))
+                existing_org.is_active = True
+                existing_user.is_active = True
+                meta = dict(existing_org.metadata_json or {})
+                meta.update({
+                    "package_key": pkg.key,
+                    "package_name": pkg.name,
+                    "category": pkg.category,
+                    "entitled_capabilities": list(pkg.entitled_capabilities),
+                    "payment_provider": event.provider.value,
+                    "subscription_status": "ACTIVE",
+                })
+                existing_org.metadata_json = meta
 
             existing_admin_count = (
                 db.query(UserRecord)

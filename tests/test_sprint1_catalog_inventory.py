@@ -102,7 +102,7 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         self.assertEqual(pkg.price_inr, 3999)
         self.assertEqual(pkg.price_usd, 49)
         self.assertIn("inventory_analytics", pkg.entitled_capabilities)
-        self.assertIn("Dynamic Reorder Point (ROP)", pkg.key_features[1])
+        self.assertIn("ROP/EOQ", pkg.key_features[0])
 
     def test_catalog_b2c_one_off_skus(self):
         # ask4_academic_order (INR 999 / USD 15)
@@ -123,69 +123,59 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
         ent = get_package("company_os_enterprise")
         self.assertIsNotNone(ent)
         self.assertIn("warehouse_automation", ent.entitled_capabilities)
-        self.assertIn("mango_quality_analytics", ent.entitled_capabilities)
-        self.assertIn("bike_rebalance_analytics", ent.entitled_capabilities)
+        self.assertIn("digital_qa", ent.entitled_capabilities)
+        self.assertNotIn("mango_quality_analytics", ent.entitled_capabilities)
+        self.assertNotIn("bike_rebalance_analytics", ent.entitled_capabilities)
 
         all_acc = get_package("all_access")
         self.assertIsNotNone(all_acc)
         self.assertEqual(all_acc.price_inr, 44999)
         self.assertIn("warehouse_automation", all_acc.entitled_capabilities)
+        self.assertIn("digital_qa", all_acc.entitled_capabilities)
         self.assertIn("ask4_academic_order", all_acc.entitled_capabilities)
         self.assertIn("pixel_ai_pack", all_acc.entitled_capabilities)
 
     # ── 2. Sales Agent Brain Alignment Tests ──────────────────────────────────
 
-    def test_service_keyword_map_contains_mango_bike_warehouse(self):
-        self.assertIn("mango_quality_analytics", SERVICE_KEYWORD_MAP)
-        self.assertIn("bike_rebalance_analytics", SERVICE_KEYWORD_MAP)
+    def test_service_keyword_map_contains_core_os_verticals(self):
+        self.assertNotIn("mango_quality_analytics", SERVICE_KEYWORD_MAP)
+        self.assertNotIn("bike_rebalance_analytics", SERVICE_KEYWORD_MAP)
         self.assertIn("warehouse_automation", SERVICE_KEYWORD_MAP)
-
-        mango_kws = SERVICE_KEYWORD_MAP["mango_quality_analytics"]
-        self.assertIn("brix", mango_kws)
-        self.assertIn("packhouse", mango_kws)
-        self.assertIn("ripeness", mango_kws)
-
-        bike_kws = SERVICE_KEYWORD_MAP["bike_rebalance_analytics"]
-        self.assertIn("station churn", bike_kws)
-        self.assertIn("micro-mobility", bike_kws)
-        self.assertIn("rebalance", bike_kws)
+        self.assertIn("field_operations_automation", SERVICE_KEYWORD_MAP)
+        self.assertIn("seo_blog_copilot", SERVICE_KEYWORD_MAP)
 
     def test_pain_point_diagnosis_and_roi_calculator(self):
-        self.assertIn("mango_quality_analytics", PAIN_POINT_DIAGNOSIS)
-        self.assertIn("bike_rebalance_analytics", PAIN_POINT_DIAGNOSIS)
+        self.assertNotIn("mango_quality_analytics", PAIN_POINT_DIAGNOSIS)
+        self.assertNotIn("bike_rebalance_analytics", PAIN_POINT_DIAGNOSIS)
         self.assertIn("warehouse_automation", PAIN_POINT_DIAGNOSIS)
-
-        roi_mango = calculate_estimated_roi("mango_quality_analytics", monthly_budget_inr=50000)
-        self.assertEqual(roi_mango["package_key"], "mango_quality_analytics")
-        self.assertGreater(roi_mango["projected_value_inr"], 50000)
-        self.assertEqual(roi_mango["roi_multiplier"], "5.2x")
+        self.assertIn("seo_blog_copilot", PAIN_POINT_DIAGNOSIS)
 
         roi_inv = calculate_estimated_roi("warehouse_automation", monthly_budget_inr=40000)
         self.assertEqual(roi_inv["roi_multiplier"], "6.1x")
 
-    def test_diagnose_lead_opportunity_mango(self):
+    def test_diagnose_lead_opportunity_field_ops(self):
         diag = diagnose_lead_opportunity(
-            company="Ratnagiri Mango Packhouse Exports",
-            website="https://ratnagirimango.example.com",
-            signals=["operating cold chain packhouse", "Brix ripeness grading and shelf life testing"],
+            company="Deccan FMCG Distribution Network",
+            website="https://deccanfmcg.in",
+            signals=["proxy attendance fraud across distributed field sales reps", "disputed GPS conveyance mileage claims"],
             geography="Maharashtra, India",
-            industry="Agriculture & Food Exports",
+            industry="Distribution & Field Sales",
         )
-        self.assertEqual(diag["recommended_package_key"], "mango_quality_analytics")
+        self.assertEqual(diag["recommended_package_key"], "field_force")
         self.assertEqual(diag["currency"], "INR")
         self.assertEqual(diag["price"], 3999)
 
-    def test_diagnose_lead_opportunity_bike(self):
+    def test_diagnose_lead_opportunity_seo(self):
         diag = diagnose_lead_opportunity(
-            company="Bengaluru MicroMobility Fleet",
-            website="https://bengalurubikes.example.com",
-            signals=["bike-share dock overflow", "station churn during commuter peak rush hour"],
+            company="Apex Digital SEO Agency",
+            website="https://apexseo.in",
+            signals=["manual WordPress publishing bottleneck", "missing Schema.org JSON-LD and GEO optimization"],
             geography="Bengaluru, India",
-            industry="Urban Mobility",
+            industry="Digital Marketing & SEO",
         )
-        self.assertEqual(diag["recommended_package_key"], "bike_rebalance_analytics")
+        self.assertEqual(diag["recommended_package_key"], "seo_blog_copilot")
         self.assertEqual(diag["currency"], "INR")
-        self.assertEqual(diag["price"], 3999)
+        self.assertEqual(diag["price"], 1999)
 
     def test_diagnose_lead_opportunity_warehouse(self):
         diag = diagnose_lead_opportunity(
@@ -314,36 +304,31 @@ class Sprint1CatalogInventoryTests(unittest.TestCase):
 
     # ── 5. Customer Portal /v1/me/use-service Tests ───────────────────────────
 
-    def test_customer_portal_use_service_mango(self):
-        resp = self.client.post(
-            "/v1/me/use-service",
-            headers=self.portal_headers,
-            json={
-                "service_key": "mango_quality_analytics",
-                "payload": {"variety": "Kesar", "sample_count": 3},
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["status"], "COMPLETED")
-        self.assertEqual(data["service_key"], "mango_quality_analytics")
-        self.assertIn("lot_id", data["result"])
-        self.assertIn("inspection_summary", data["result"])
+    def test_customer_portal_extracted_mango_bike_return_410(self):
+        for extracted_key in ("mango_quality_analytics", "bike_rebalance_analytics"):
+            resp = self.client.post(
+                "/v1/me/use-service",
+                headers=self.portal_headers,
+                json={"service_key": extracted_key, "payload": {}},
+            )
+            self.assertEqual(resp.status_code, 410)
 
-    def test_customer_portal_use_service_bike(self):
+    def test_customer_portal_use_service_digital_qa(self):
         resp = self.client.post(
             "/v1/me/use-service",
             headers=self.portal_headers,
             json={
-                "service_key": "bike_rebalance_analytics",
-                "payload": {"hour_of_day": 8, "temperature_c": 22.0},
+                "service_key": "digital_qa",
+                "payload": {
+                    "title": "Portal QA Test",
+                    "content": "# Portal QA\n## 1. A\nText\n## 2. B\nText\n## 3. C\nText\n## FAQ\n**Q: Ok?**\nA: Yes.",
+                },
             },
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["status"], "COMPLETED")
-        self.assertIn("demand_forecast", data["result"])
-        self.assertIn("priority_rebalancing_dispatch", data["result"])
+        self.assertIn("receipt_id", data["result"])
 
     def test_customer_portal_use_service_warehouse(self):
         resp = self.client.post(

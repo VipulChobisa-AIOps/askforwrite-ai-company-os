@@ -957,22 +957,15 @@ class CompetitorAdversarialAuditTests(unittest.TestCase):
         self.assertIn("not entitled", camp_resp.json()["detail"].lower())
 
         # 3. Direct call to unentitled Quality Analytics -> 403 Forbidden
-        quality_resp = self.client.post(
-            "/v1/quality/inspect",
-            headers=headers,
-            json={"preset_or_sample": "ripe", "crop_variety": "Alphonso Mango"},
+        # 3 & 4. Extracted Mango/Bike routes are unmounted (404 Not Found)
+        self.assertEqual(
+            self.client.post("/v1/quality/inspect", headers=headers, json={"preset_or_sample": "ripe"}).status_code,
+            404,
         )
-        self.assertEqual(quality_resp.status_code, 403)
-        self.assertIn("not entitled", quality_resp.json()["detail"].lower())
-
-        # 4. Direct call to unentitled Mobility Analytics -> 403 Forbidden
-        mob_resp = self.client.post(
-            "/v1/mobility/forecast",
-            headers=headers,
-            json={"hour_of_day": 10, "temperature_f": 72.0},
+        self.assertEqual(
+            self.client.post("/v1/mobility/forecast", headers=headers, json={"hour_of_day": 10}).status_code,
+            404,
         )
-        self.assertEqual(mob_resp.status_code, 403)
-        self.assertIn("not entitled", mob_resp.json()["detail"].lower())
 
         # 5. Direct call to unentitled Inventory Analytics -> 403 Forbidden
         inv_resp = self.client.post(

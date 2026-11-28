@@ -130,6 +130,9 @@ class UserProfileResponse(BaseModel):
     tier: str
     lead_credits_remaining: int
     outreach_credits_remaining: int
+    ai_credits_remaining: int = 0
+    ai_credits_limit: int = 150
+    ai_billing_mode: str = "MANAGED_CREDITS"
     is_active: bool
 
 
@@ -214,13 +217,50 @@ def _validate_and_lock_invitation(
     return inv, org, appr
 
 
+from collections import defaultdict
+import time as _time
+
+_FAILED_LOGIN_BUCKETS: dict[str, list[float]] = defaultdict(list)
+_FAILED_LOGIN_MAX = int(os.environ.get("AUTH_MAX_FAILED_LOGINS_PER_ACCOUNT", "10"))
+_FAILED_LOGIN_WINDOW_SEC = 900  # 15 minutes
+
+
+def _check_account_login_lockout(email_clean: str) -> None:
+    if os.environ.get("APP_ENV", "development").strip().lower() == "development":
+        return
+    key = hashlib.sha256(email_clean.encode("utf-8")).hexdigest()[:24]
+    now = _time.monotonic()
+    cutoff = now - _FAILED_LOGIN_WINDOW_SEC
+    attempts = [t for t in _FAILED_LOGIN_BUCKETS[key] if t > cutoff]
+    _FAILED_LOGIN_BUCKETS[key] = attempts
+    if len(attempts) >= _FAILED_LOGIN_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts for this account. Please try again in 15 minutes.",
+        )
+
+
+def _record_failed_login(email_clean: str) -> None:
+    if os.environ.get("APP_ENV", "development").strip().lower() == "development":
+        return
+    key = hashlib.sha256(email_clean.encode("utf-8")).hexdigest()[:24]
+    _FAILED_LOGIN_BUCKETS[key].append(_time.monotonic())
+
+
+def _clear_failed_logins(email_clean: str) -> None:
+    key = hashlib.sha256(email_clean.encode("utf-8")).hexdigest()[:24]
+    _FAILED_LOGIN_BUCKETS.pop(key, None)
+
+
 @router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
 def login_user(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     """Authenticate user with email and password and issue a signed Bearer token."""
     email_clean = payload.email.lower().strip()
+    _check_account_login_lockout(email_clean)
     user = db.query(UserRecord).filter(UserRecord.email == email_clean).first()
 
     if not user:
+        _record_failed_login(email_clean)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -234,10 +274,13 @@ def login_user(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginRes
 
     # Validate password
     if not user.password_hash or not verify_password(payload.password, user.password_hash):
+        _record_failed_login(email_clean)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+
+    _clear_failed_logins(email_clean)
 
     org = db.get(OrganizationRecord, user.org_id)
     if not org or not org.is_active:
@@ -698,6 +741,9 @@ def get_current_user_profile(
             tier="enterprise",
             lead_credits_remaining=9999,
             outreach_credits_remaining=9999,
+            ai_credits_remaining=9999,
+            ai_credits_limit=9999,
+            ai_billing_mode="OWNER_UNLIMITED",
             is_active=True,
         )
 
@@ -706,6 +752,10 @@ def get_current_user_profile(
     tier = org.tier if org else "free"
     leads_rem = max(0, (org.lead_credits_limit - org.lead_credits_used)) if org else 0
     outreach_rem = max(0, (org.outreach_credits_limit - org.outreach_credits_used)) if org else 0
+    ai_lim = int(getattr(org, "ai_credits_limit", 150) or 0) if org else 0
+    ai_used = int(getattr(org, "ai_credits_used", 0) or 0) if org else 0
+    ai_rem = max(0, ai_lim - ai_used)
+    ai_mode = str(getattr(org, "ai_billing_mode", "MANAGED_CREDITS") or "MANAGED_CREDITS") if org else "MANAGED_CREDITS"
 
     return UserProfileResponse(
         user_id=user.id,
@@ -717,6 +767,9 @@ def get_current_user_profile(
         tier=tier,
         lead_credits_remaining=leads_rem,
         outreach_credits_remaining=outreach_rem,
+        ai_credits_remaining=ai_rem,
+        ai_credits_limit=ai_lim,
+        ai_billing_mode=ai_mode,
         is_active=user.is_active,
     )
 
@@ -725,9 +778,29 @@ def get_current_user_profile(
 def logout_endpoint(
     authorization: str | None = Header(default=None),
     principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
 ) -> dict[str, str]:
-    """Revoke the current bearer authentication token."""
+    """Persistently revoke the current bearer token (survives restarts and multi-worker deployments)."""
     if authorization and authorization.lower().startswith("bearer "):
+        from app.security.auth import decode_access_token
+
         token = authorization[7:].strip()
-        revoke_token(token)
-    return {"status": "logged_out", "message": "Token revoked successfully"}
+        jti = None
+        exp = None
+        try:
+            claims = decode_access_token(token)
+            jti = claims.get("jti")
+            exp = claims.get("exp")
+        except Exception:
+            pass
+        revoke_token(
+            token,
+            db=db,
+            user_id=principal.user_id,
+            org_id=principal.org_id,
+            jti=jti,
+            exp=exp,
+            reason="logout",
+            bump_token_version=True,
+        )
+    return {"status": "logged_out", "message": "Token revoked persistently"}

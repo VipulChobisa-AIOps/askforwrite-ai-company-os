@@ -61,7 +61,7 @@ def test_sitemap_has_all_16_skus_5_solutions_4_legal_lastmod_and_zero_duplicates
 
 
 def test_legacy_service_hyphen_aliases_301_to_solutions() -> None:
-    for slug in ("warehouse-automation", "field-force", "produce-quality-ai", "urban-mobility-ai", "seo-blog-copilot"):
+    for slug in ("warehouse-automation", "field-force", "digital-qa-content-pilot", "seo-blog-copilot"):
         r = client.get(f"/services/{slug}", follow_redirects=False)
         assert r.status_code == 301
         assert r.headers["location"] == f"/solutions/{slug}"
@@ -108,7 +108,7 @@ def test_legal_pages_negotiate_html_for_browsers_and_json_for_api() -> None:
 
 
 def test_no_fake_verification_placeholders_and_unified_org_sameas() -> None:
-    for path in ("/", "/services", "/solutions", "/solutions/warehouse-automation", "/solutions/urban-mobility-ai", "/services/operations_suite"):
+    for path in ("/", "/services", "/solutions", "/solutions/warehouse-automation", "/solutions/digital-qa-content-pilot", "/services/operations_suite"):
         r = client.get(path, headers={"Accept": "text/html", "User-Agent": "Googlebot/2.1"})
         assert r.status_code == 200
         assert "verification-ready" not in r.text

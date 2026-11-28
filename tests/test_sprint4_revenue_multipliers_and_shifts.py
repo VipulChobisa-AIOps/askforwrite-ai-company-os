@@ -66,23 +66,18 @@ class Sprint4RevenueMultipliersAndShiftsTests(unittest.TestCase):
         self.assertIn("estimated_roi", first_wh)
         self.assertIn("net_monthly_savings_inr", first_wh["estimated_roi"])
 
-        # 2. Mango Quality Analytics
-        mango_leads = discover_smb_leads(vertical="mango_quality_analytics", region="India", limit=2)
-        self.assertGreaterEqual(len(mango_leads), 1)
-        first_mango = mango_leads[0]
-        self.assertEqual(first_mango["recommended_package"], "mango_quality_analytics")
-        all_signals = " ".join([s for l in mango_leads for s in l.get("observed_signals", [])]).lower()
-        self.assertTrue("export" in all_signals or "mango" in all_signals or "quality" in all_signals)
+        # 2. Field Operations
+        field_leads = discover_smb_leads(vertical="field_force", region="India", limit=2)
+        self.assertGreaterEqual(len(field_leads), 1)
 
         # 3. Growth All-in-One
         growth_leads = discover_smb_leads(vertical="growth_all_in_one", region="India", limit=2)
         self.assertGreaterEqual(len(growth_leads), 1)
         self.assertEqual(growth_leads[0]["recommended_package"], "growth_all_in_one")
 
-        # 4. Bike Rebalance Analytics
-        bike_leads = discover_smb_leads(vertical="bike_rebalance_analytics", region="Bengaluru", limit=2)
-        self.assertGreaterEqual(len(bike_leads), 1)
-        self.assertEqual(bike_leads[0]["recommended_package"], "bike_rebalance_analytics")
+        # 4. SEO Blog Copilot
+        seo_leads = discover_smb_leads(vertical="seo_blog_copilot", region="Bengaluru", limit=2)
+        self.assertGreaterEqual(len(seo_leads), 1)
 
     def test_post_leads_discover_smb_endpoint_and_trust_block(self):
         """POST /v1/leads/discover-smb must discover leads, persist to DB, and seal TrustBlock."""

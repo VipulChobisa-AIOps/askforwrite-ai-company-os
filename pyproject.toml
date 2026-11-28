@@ -21,7 +21,6 @@ dependencies = [
     "google-genai>=2.0,<3",
     "langsmith>=0.1,<1",
     "langgraph>=1.0.10,<2",
-    "langchain-google-genai>=2.0,<5",
     "sentry-sdk[fastapi]>=2.0,<3",
     "numpy>=1.26,<3",
     "pillow>=13.0.0,<14",

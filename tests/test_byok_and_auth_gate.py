@@ -162,7 +162,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
                 "password": "CustomerSecurePass123!",
                 "full_name": "Customer Lead",
                 "company_name": "Innovate Co",
-                "package_key": "mango_quality_analytics",
+                "package_key": "managed_seo_content_pilot",
                 "gemini_api_key": "AIzaSySignupKey987654321",
             },
         )
@@ -247,12 +247,12 @@ class BYOKAndAuthGateTests(unittest.TestCase):
         resp = self.client.post(
             "/v1/auth/signup",
             json={
-                "email": "mango_trader@fruitops.com",
+                "email": "ops_trader@warehouseops.com",
                 "password": "Password123!",
-                "full_name": "Mango Trader",
-                "company_name": "Fruit Ops",
-                "package_key": "mango_quality_analytics",
-                "gemini_api_key": "AIzaSyCustomFruitOpsKey9999",
+                "full_name": "Warehouse Ops",
+                "company_name": "Stock Ops",
+                "package_key": "warehouse_automation",
+                "gemini_api_key": "AIzaSyCustomStockOpsKey9999",
             },
         )
         token = resp.json()["access_token"]
@@ -263,16 +263,15 @@ class BYOKAndAuthGateTests(unittest.TestCase):
             "/v1/me/use-service",
             headers=headers,
             json={
-                "service_key": "mango_quality_analytics",
-                "payload": {"variety": "Kesar", "brix": 17.5},
+                "service_key": "warehouse_automation",
+                "payload": {"service_level_z": 1.65},
             },
         )
         self.assertEqual(service_resp.status_code, 200)
         s_data = service_resp.json()
         self.assertEqual(s_data["status"], "COMPLETED")
-        self.assertEqual(s_data["service_key"], "mango_quality_analytics")
-        self.assertIn("lot_id", s_data["result"])
-        self.assertEqual(s_data["result"]["crop_variety"], "Kesar")
+        self.assertEqual(s_data["service_key"], "warehouse_automation")
+        self.assertIn("audit_metrics", s_data["result"])
 
     # ── PART 3: Dashboard UI Auth Gate Verification ──────────────────────────
 
@@ -374,7 +373,7 @@ class BYOKAndAuthGateTests(unittest.TestCase):
         session_resp = self.client.post(
             "/v1/pay/create-session",
             json={
-                "package_key": "mango_quality_analytics",
+                "package_key": "managed_seo_content_pilot",
                 "company_name": "Rajasthan Enterprise Corp",
                 "customer_email": "billing@rajasthanent.in",
                 "currency": "INR",

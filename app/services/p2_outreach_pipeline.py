@@ -61,6 +61,85 @@ _FORBIDDEN_CLAIM_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
+def check_outbound_deliverability_health(db: Session) -> dict[str, Any]:
+    """Rolling 7-day deliverability circuit breaker: auto-pauses if bounce rate > 5% or complaint rate > 3%."""
+    now = datetime.now(UTC)
+    window_start = now - timedelta(days=7)
+    recent = (
+        db.query(OutreachRecord)
+        .filter(
+            OutreachRecord.sent_at.isnot(None),
+            OutreachRecord.sent_at >= window_start,
+        )
+        .all()
+    )
+    total_sent = len(recent)
+    bounced = sum(1 for r in recent if r.status == "BOUNCED")
+    complained = sum(1 for r in recent if r.status == "COMPLAINED")
+    delivered = sum(1 for r in recent if r.status == "DELIVERED")
+    bounce_pct = round((bounced / total_sent) * 100.0, 2) if total_sent > 0 else 0.0
+    complaint_pct = round((complained / total_sent) * 100.0, 2) if total_sent > 0 else 0.0
+
+    healthy = True
+    pause_reason: str | None = None
+    if total_sent >= 10 and bounce_pct > 5.0:
+        healthy = False
+        pause_reason = f"7-day bounce rate {bounce_pct}% exceeded 5.0% safety threshold ({bounced}/{total_sent})."
+    elif total_sent >= 10 and complaint_pct > 3.0:
+        healthy = False
+        pause_reason = f"7-day complaint rate {complaint_pct}% exceeded 3.0% safety threshold ({complained}/{total_sent})."
+
+    return {
+        "window_days": 7,
+        "total_sent_7d": total_sent,
+        "delivered_verified_7d": delivered,
+        "bounced_7d": bounced,
+        "complained_7d": complained,
+        "bounce_rate_7d_pct": bounce_pct,
+        "complaint_rate_7d_pct": complaint_pct,
+        "deliverability_healthy": healthy,
+        "pause_reason": pause_reason,
+    }
+
+
+def get_daily_sniper_monitor(db: Session) -> dict[str, Any]:
+    """Return 1-screen 10-emails/day Sniper Outbound dashboard metrics and stagger schedule."""
+    now = datetime.now(UTC)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    daily_cap = int(os.getenv("P2_OUTREACH_MAX_DAILY", "10"))
+    stagger_minutes = int(os.getenv("P2_OUTREACH_STAGGER_MINUTES", "25"))
+
+    today_rows = db.query(OutreachRecord).filter(OutreachRecord.created_at >= today_start).all()
+    sent_today = [r for r in today_rows if r.sent_at is not None and r.status in ("DISPATCHED", "ACCEPTED_QUEUED", "DELIVERED", "BOUNCED", "COMPLAINED")]
+    delivered_today = [r for r in sent_today if r.status == "DELIVERED"]
+    accepted_today = [r for r in sent_today if r.status in ("DISPATCHED", "ACCEPTED_QUEUED")]
+    bounced_today = [r for r in sent_today if r.status == "BOUNCED"]
+    complained_today = [r for r in sent_today if r.status == "COMPLAINED"]
+    pending_approval_today = [r for r in today_rows if r.status == "PENDING_APPROVAL"]
+    replied_leads = (
+        db.query(LeadRecordRow)
+        .filter(LeadRecordRow.status == "REPLIED")
+        .count()
+    )
+    health = check_outbound_deliverability_health(db)
+
+    return {
+        "date_utc": today_start.strftime("%Y-%m-%d"),
+        "daily_send_cap": daily_cap,
+        "sent_today": len(sent_today),
+        "remaining_slots_today": max(0, daily_cap - len(sent_today)),
+        "pending_owner_approval": len(pending_approval_today),
+        "accepted_queued_today": len(accepted_today),
+        "delivered_webhook_verified_today": len(delivered_today),
+        "bounced_today": len(bounced_today),
+        "complained_today": len(complained_today),
+        "total_replied_leads": replied_leads,
+        "stagger_interval_minutes": stagger_minutes,
+        "recommended_send_window_ist": "10:00 - 16:00 IST (1 email every 25 mins, plain-text first)",
+        "deliverability_health_7d": health,
+    }
+
+
 def validate_outreach_integrity(subject: str, body_text: str) -> list[str]:
     """Check outreach draft for prohibited fabricated claims, relationships, discounts, or false urgency."""
     combined = f"{subject}\n{body_text}"
@@ -200,10 +279,16 @@ def prepare_p2_outreach(
             f"Duplicate outreach prevented: outreach '{pending_existing.id}' is already in status '{pending_existing.status}' awaiting owner decision."
         )
 
-    # Rate limits (per-lead 7d and global daily cap)
+    # Rate limits (per-lead 7d and strict 10-emails/day Sniper Outbound cap)
     now = datetime.now(UTC)
     max_per_lead_7d = int(os.getenv("P2_OUTREACH_MAX_PER_LEAD_7D", "2"))
-    max_daily_total = int(os.getenv("P2_OUTREACH_MAX_DAILY", "25"))
+    max_daily_total = int(os.getenv("P2_OUTREACH_MAX_DAILY", "10"))
+
+    health = check_outbound_deliverability_health(db)
+    if not health["deliverability_healthy"]:
+        raise ValueError(
+            f"Outbound Sniper Engine auto-paused by deliverability circuit breaker: {health['pause_reason']}"
+        )
 
     recent_for_lead = (
         db.query(OutreachRecord)

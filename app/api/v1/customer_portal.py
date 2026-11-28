@@ -37,6 +37,7 @@ from app.security.auth import (
     get_current_principal,
     hash_password,
     is_service_entitled,
+    require_tenant_admin,
     verify_password,
 )
 from app.services.catalog import CATALOG, build_payment_link, get_all_packages, get_package
@@ -204,12 +205,11 @@ _CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "field_conveyance": "Mileage reimbursement and expense verification",
     "seo_copilot": "AI-generated SEO blog post and keyword strategy drafts",
     "marketing_suite": "Ad copy, campaign brief, and social post generation",
-    "trust_ledger": "Cryptographic ECDSA trust chain and audit ledger access",
-    "payment_processing": "Razorpay and PayPal subscription management",
+    "trust_ledger": "ECDSA NIST P-256 tamper-evident linear hash-chain and verification receipts",
+    "digital_qa": "Digital Asset & Content QA Benchmark protocol gate with signed human-review receipts",
+    "payment_processing": "Razorpay, PayPal, and AFW DirectPay subscription & AI credit billing",
     "multi_tenant_accounts": "Organization and team user management",
-    "mango_quality_analytics": "Computer vision quality grading & Brix estimation for fresh produce",
-    "bike_rebalance_analytics": "Urban micro-mobility demand forecasting & station rebalance dispatch",
-    "warehouse_automation": "StockSense Pareto ABC analysis, ROP/EOQ reorder optimization & dead-stock alerts",
+    "warehouse_automation": "StockSense SME Warehouse & 3PL inventory analytics (Phase 3 Design Partner)",
     "ask4_academic_order": "Scholarly research retrieval, citation indexing & thesis verification",
     "pixel_ai_pack": "Omnichannel multi-aspect advertising visual creatives & campaign prompt generation",
 }
@@ -747,19 +747,35 @@ def use_tenant_service(
             detail=f"Service '{service_key}' is not entitled under your current package ({pkg_name}). Please upgrade your subscription.",
         )
 
-    # Ensure tenant's stored BYOK Gemini key is used if no header key was provided
+    # Ensure tenant's stored BYOK Gemini key OR Managed AI Credit pool is resolved cleanly
     meta = org.metadata_json or {}
     org_gemini_key = meta.get("gemini_api_key")
     from app.agents.llm_client import _REQUEST_GEMINI_KEY, set_request_llm_context
-
-    if not _REQUEST_GEMINI_KEY.get() and org_gemini_key:
-        set_request_llm_context(gemini_key=org_gemini_key, is_owner=False)
-    elif not _REQUEST_GEMINI_KEY.get():
-        set_request_llm_context(gemini_key=None, is_owner=False)
+    from app.services.billing_ledger import (
+        DailySpendCapExceededError,
+        InsufficientAICreditsError,
+        commit_ai_credit_reservation,
+        get_ai_credit_cost,
+        refund_ai_credit_reservation,
+        reserve_ai_credits,
+    )
 
     service_key = body.service_key.strip().lower()
     input_payload = body.payload or {}
     exec_result: dict[str, Any] = {}
+
+    _AI_METERED_SERVICES = {
+        "seo_blog_copilot",
+        "managed_seo_content_pilot",
+        "marketing_suite",
+        "growth_all_in_one",
+        "ask4_academic_order",
+        "pixel_ai_pack",
+    }
+    has_byok_key = bool((_REQUEST_GEMINI_KEY.get() or org_gemini_key or "").strip())
+    ai_credit_reservation_key: str | None = None
+    ai_credit_cost = 0
+    managed_ai_used = False
 
     # Check tenant-level or global agent pause / emergency stop before running or deducting credits
     from app.services.watchdog import AGENT_RUNTIME_CONTROLS
@@ -777,45 +793,67 @@ def use_tenant_service(
             ),
         )
 
+    if service_key in _AI_METERED_SERVICES and not has_byok_key:
+        ai_credit_cost = get_ai_credit_cost(service_key)
+        ai_credit_reservation_key = f"portal-ai:{org.id}:{service_key}:{uuid.uuid4().hex[:12]}"
+        try:
+            reserve_ai_credits(
+                db,
+                org_id=org.id,
+                cost=ai_credit_cost,
+                idempotency_key=ai_credit_reservation_key,
+                execution_id=ai_credit_reservation_key,
+                actor=user.email,
+                reason=f"Managed AI execution: {service_key}",
+                byok_supplied=False,
+            )
+            managed_ai_used = True
+            set_request_llm_context(gemini_key=None, is_owner=False, managed_ai_authorized=True)
+        except DailySpendCapExceededError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={"error_code": "DAILY_AI_SPEND_CAP_EXCEEDED", "message": str(exc)},
+            ) from exc
+        except InsufficientAICreditsError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "error_code": "INSUFFICIENT_AI_CREDITS",
+                    "message": str(exc),
+                    "credits_required": ai_credit_cost,
+                    "credits_remaining": max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0)),
+                    "topup_url": "/v1/pay/checkout?package=ai_credits_100",
+                },
+            ) from exc
+    elif has_byok_key:
+        eff_key = (_REQUEST_GEMINI_KEY.get() or org_gemini_key or "").strip()
+        set_request_llm_context(gemini_key=eff_key, is_owner=False, managed_ai_authorized=False)
+    else:
+        set_request_llm_context(gemini_key=None, is_owner=False, managed_ai_authorized=False)
 
-    if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading"):
-        from app.services.quality_analytics import execute_produce_quality_inspection
-        variety = input_payload.get("variety") or input_payload.get("crop_variety") or "Alphonso Mango"
-        lot_id = input_payload.get("lot_id") or input_payload.get("batch_lot_id") or f"LOT-PORTAL-{uuid.uuid4().hex[:6].upper()}"
-        res = execute_produce_quality_inspection(
-            db=db,
-            preset_or_sample=input_payload.get("preset_or_sample") or input_payload.get("preset") or "ripe",
-            batch_lot_id=lot_id,
-            crop_variety=variety,
-            idempotency_key=f"portal-mango-{uuid.uuid4()}",
-        )
-        report = res.get("inspection_report", {})
-        exec_result = {
-            "lot_id": lot_id,
-            "crop_variety": variety,
-            "inspection_summary": report,
-            "inspection_report": report,
-            "task_id": res.get("task_id"),
-        }
 
-    elif service_key in ("bike_rebalance_analytics", "mobility_analytics", "bike_rebalance"):
-        from app.services.mobility_analytics import execute_mobility_optimization
-        temp_c = float(input_payload.get("temperature_c", 22.0))
-        temp_f = (temp_c * 9.0 / 5.0) + 32.0 if "temperature_c" in input_payload else float(input_payload.get("temperature_f", 72.0))
-        res = execute_mobility_optimization(
-            db=db,
-            hour_of_day=int(input_payload.get("hour_of_day", 9)),
-            temperature_f=temp_f,
-            humidity_pct=float(input_payload.get("humidity_pct", 58.0)),
-            idempotency_key=f"portal-bike-{uuid.uuid4()}",
+    if service_key in ("mango_quality_analytics", "quality_analytics", "quality_grading", "bike_rebalance_analytics", "mobility_analytics", "bike_rebalance"):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail=(
+                f"Service '{service_key}' has been extracted out of AskforWrite AI Company OS into a separate standalone product. "
+                "Use AskforWrite Company OS core services: managed_seo_content_pilot, seo_blog_copilot, digital_qa, marketing_suite, field_force, warehouse_automation."
+            ),
         )
-        combined = res.get("result", {})
-        exec_result = {
-            "demand_forecast": combined.get("forecast", {}),
-            "priority_rebalancing_dispatch": combined.get("rebalancing", {}).get("priority_rebalance_routes", []),
-            "rebalance_plan": combined.get("rebalancing", {}),
-            "task_id": res.get("task_id"),
-        }
+
+    elif service_key in ("digital_qa", "digital_qa_benchmark"):
+        from app.services.digital_qa import evaluate_and_record_digital_qa
+        exec_result = evaluate_and_record_digital_qa(
+            db=db,
+            org_id=org.id,
+            content=str(input_payload.get("content") or ""),
+            title=str(input_payload.get("title") or f"{org.name} Content Deliverable"),
+            keywords=list(input_payload.get("keywords") or []),
+            target_url=input_payload.get("target_url"),
+            protocol_id=input_payload.get("protocol_id"),
+            used_fallback=bool(input_payload.get("used_fallback", False)),
+            actor=user.email,
+        )
 
     elif service_key in ("warehouse_automation", "inventory_analytics", "inventory"):
         from app.services.inventory_analytics import execute_inventory_audit
@@ -1090,11 +1128,25 @@ def use_tenant_service(
         }
 
     else:
+        if ai_credit_reservation_key:
+            refund_ai_credit_reservation(
+                db,
+                org_id=org.id,
+                cost=ai_credit_cost,
+                idempotency_key=ai_credit_reservation_key,
+                execution_id=ai_credit_reservation_key,
+                actor=user.email,
+                reason="Refund: unsupported service key",
+            )
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Service '{service_key}' is not executable via /v1/me/use-service. "
-                   "Supported: mango_quality_analytics, bike_rebalance_analytics, warehouse_automation, ask4_academic_order, pixel_ai_pack, seo_blog_copilot, managed_seo_content_pilot, wordpress_publisher, marketing_suite, growth_all_in_one, lead_discovery, evidence_research, sales_capture, revenue_engine, field_force, trust_engine.",
+                   "Supported: managed_seo_content_pilot, seo_blog_copilot, digital_qa, wordpress_publisher, marketing_suite, growth_all_in_one, lead_discovery, evidence_research, sales_capture, revenue_engine, field_force, warehouse_automation, ask4_academic_order, pixel_ai_pack, trust_engine.",
         )
+
+    if ai_credit_reservation_key:
+        commit_ai_credit_reservation(db, idempotency_key=ai_credit_reservation_key)
 
     if org.lead_credits_limit > 0:
         org.lead_credits_used += 1
@@ -1111,20 +1163,17 @@ def use_tenant_service(
             capability_name="customer_portal",
             action="use_service",
             input_payload={"service_key": service_key, "org_id": org.id, "user_id": user.id},
-            output_payload={"status": "COMPLETED", "service_key": service_key},
+            output_payload={"status": "COMPLETED", "service_key": service_key, "ai_credits_debited": ai_credit_cost},
             status="COMPLETED",
         )
     )
     db.commit()
 
-    has_custom_gemini = bool((org_gemini_key or "").strip())
-    fallback_used = not has_custom_gemini and service_key in (
-        "seo_blog_copilot",
-        "managed_seo_content_pilot",
-        "marketing_suite",
-        "growth_all_in_one",
-        "ask4_academic_order",
-    )
+    from app.agents.llm_client import get_last_llm_usage
+
+    llm_usage = get_last_llm_usage() or {}
+    has_custom_gemini = has_byok_key
+    fallback_used = bool(llm_usage.get("used_fallback", False)) if service_key in _AI_METERED_SERVICES else False
     cap_status = "HUMAN_ASSISTED" if service_key in ("seo_blog_copilot", "managed_seo_content_pilot", "wordpress_publisher", "marketing_suite") else "LOCAL_ENGINE_VERIFIED"
     if service_key == "ask4_academic_order" and fallback_used:
         cap_status = "SIMULATED"
@@ -1136,13 +1185,19 @@ def use_tenant_service(
         json.dumps(input_payload, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
 
+    provider_label = (
+        "gemini_byok"
+        if has_custom_gemini
+        else ("gemini_managed_credits" if managed_ai_used and not fallback_used else "local_deterministic_engine")
+    )
+
     evidence_envelope = {
         "execution_id": audit_task_id,
         "tenant_id": org.id,
         "agent_id": principal.subject or user.email,
         "tool_id": service_key,
         "mode": str(input_payload.get("mode", "tenant_portal")),
-        "provider": "gemini_byok" if has_custom_gemini else "local_deterministic_engine",
+        "provider": provider_label,
         "input_reference": input_ref,
         "fallback_used": fallback_used,
         "external_request_id": None,
@@ -1150,6 +1205,7 @@ def use_tenant_service(
         "completed_at": now_iso,
         "result_status": cap_status,
         "credits_consumed": 1,
+        "ai_credits_consumed": ai_credit_cost,
         "approval_id": exec_result.get("approval_id") if isinstance(exec_result, dict) else None,
         "evidence_reference": f"audit://{audit_task_id}/{corr_id}",
     }
@@ -2533,5 +2589,39 @@ def get_managed_seo_pilot_status(
             "refund_policy": "/legal/refund-policy",
             "support_email": "info@askforwrite.in",
         },
+    }
+
+
+class AIBillingModeUpdate(BaseModel):
+    ai_billing_mode: str = Field(..., pattern="^(MANAGED_CREDITS|BYOK_DISCOUNT)$")
+
+
+@router.get("/ai-credits", summary="Get Managed AI Usage-Credit balance, spend cap, action costs, and top-up packs")
+def get_my_ai_credits(
+    principal: APIPrincipal = Depends(get_current_principal),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.billing_ledger import get_ai_credit_summary
+
+    org_id = _require_tenant_org(principal)
+    return get_ai_credit_summary(db, org_id)
+
+
+@router.post("/ai-credits/mode", summary="Switch organization between MANAGED_CREDITS and BYOK_DISCOUNT mode")
+def update_my_ai_billing_mode(
+    payload: AIBillingModeUpdate,
+    principal: APIPrincipal = Depends(require_tenant_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    org_id = _require_tenant_org(principal)
+    org = db.get(OrganizationRecord, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    org.ai_billing_mode = payload.ai_billing_mode
+    db.commit()
+    return {
+        "org_id": org.id,
+        "ai_billing_mode": org.ai_billing_mode,
+        "ai_credits_remaining": max(0, int(org.ai_credits_limit or 0) - int(org.ai_credits_used or 0)),
     }
 

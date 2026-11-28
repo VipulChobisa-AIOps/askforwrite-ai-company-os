@@ -180,7 +180,9 @@ class ResendEmailDispatcher:
                 body = json.loads(resp.read().decode("utf-8", errors="replace"))
             return {
                 "provider": "resend",
-                "status": "delivered",
+                "status": "accepted_queued",
+                "accepted": True,
+                "delivery_verified": False,
                 "recipient": recipient_email,
                 "sender": sender,
                 "message_id": str(body.get("id") or ""),

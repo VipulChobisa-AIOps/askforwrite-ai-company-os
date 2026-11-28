@@ -101,11 +101,19 @@ class MasterAuditHardeningTests(unittest.TestCase):
             do_not_contact=False,
             status="DISCOVERED",
         )
-        self.db.add_all([org_a, org_b, lead_b])
+        user_a = UserRecord(
+            id=f"user-a-{uuid.uuid4().hex[:6]}",
+            org_id=org_a.id,
+            email="admin@tenantalpha.in",
+            full_name="Tenant Alpha Admin",
+            role="admin",
+            is_active=True,
+        )
+        self.db.add_all([org_a, org_b, lead_b, user_a])
         self.db.commit()
 
         token_a = create_access_token(
-            user_id=f"user-a-{uuid.uuid4().hex[:6]}",
+            user_id=user_a.id,
             email="admin@tenantalpha.in",
             role="admin",
             org_id=org_a.id,
@@ -606,7 +614,7 @@ class MasterAuditHardeningTests(unittest.TestCase):
         self.assertIn("application/ld+json", hub.text)
         self.assertIn("ItemList", hub.text)
 
-        for slug in ("warehouse-automation", "field-force", "produce-quality-ai"):
+        for slug in ("warehouse-automation", "field-force", "digital-qa-content-pilot"):
             page = self.client.get(f"/solutions/{slug}")
             self.assertEqual(page.status_code, 200, f"Failed GET /solutions/{slug}")
             self.assertIn(f'rel="canonical" href="https://os.askforwrite.com/solutions/{slug}"', page.text)
@@ -624,7 +632,7 @@ class MasterAuditHardeningTests(unittest.TestCase):
         sitemap = self.client.get("/sitemap.xml")
         self.assertIn("https://os.askforwrite.com/solutions/warehouse-automation", sitemap.text)
         self.assertIn("https://os.askforwrite.com/solutions/field-force", sitemap.text)
-        self.assertIn("https://os.askforwrite.com/solutions/produce-quality-ai", sitemap.text)
+        self.assertIn("https://os.askforwrite.com/solutions/digital-qa-content-pilot", sitemap.text)
 
         preflight = self.client.get("/v1/ops/preflight", headers=self.manager_headers)
         self.assertEqual(preflight.status_code, 200, preflight.text)

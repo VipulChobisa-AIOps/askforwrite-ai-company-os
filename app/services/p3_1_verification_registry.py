@@ -64,14 +64,14 @@ def _inspect_auth_and_isolation() -> dict[str, Any]:
     jwt_set = bool(os.environ.get("JWT_SECRET_KEY", "").strip())
     owner_set = bool(os.environ.get("OWNER_API_KEY", "").strip())
     mgr_set = bool(os.environ.get("MANAGER_API_KEY", "").strip())
-    app_env = os.environ.get("APP_ENV", "development").strip().lower()
-    
-    # In live staging or production with complete secrets and multi-tenant isolation confirmed:
+    live_probe_recorded = os.environ.get("AFW_LIVE_AUTH_VERIFIED", "").strip().lower() in ("1", "true", "yes")
+
+    # Never self-promote to LIVE_VERIFIED merely because env vars exist; require explicit recorded live probe.
     if jwt_set and owner_set and mgr_set:
-        state = "LIVE_VERIFIED" if app_env in ("staging", "production") else "LOCAL_VERIFIED"
+        state = "LIVE_VERIFIED" if live_probe_recorded else "LOCAL_VERIFIED"
     else:
         state = "BLOCKED"
-        
+
     return {
         "state": state,
         "jwt_configured": jwt_set,
@@ -79,9 +79,9 @@ def _inspect_auth_and_isolation() -> dict[str, Any]:
         "manager_key_configured": mgr_set,
         "ready_for_production": state == "LIVE_VERIFIED",
         "notes": (
-            "Tenant isolation, RBAC, and cryptographic authorization verified live in runtime environment."
+            "Tenant isolation, RBAC, persistent logout, and fail-closed auth verified via recorded live deployment probe."
             if state == "LIVE_VERIFIED"
-            else "Tenant isolation and role auth verified locally/in test harness; requires live deployment verification."
+            else "Auth secrets configured and unit/integration verified locally; set AFW_LIVE_AUTH_VERIFIED=true only after executing live staging/prod auth probe."
             if state == "LOCAL_VERIFIED"
             else "Missing required auth secrets in runtime environment."
         ),
@@ -91,8 +91,8 @@ def _inspect_auth_and_isolation() -> dict[str, Any]:
 def _inspect_browser_e2e() -> dict[str, Any]:
     root = _repo_root()
     e2e_file = root / "tests" / "e2e" / "test_dashboard_e2e.py"
-    dashboard_ui = (root / "app" / "dashboard" / "index.html").exists() or (Path("/app/app/dashboard/index.html").exists())
-    has_suite = e2e_file.exists() or dashboard_ui
+    has_suite = e2e_file.exists()
+    live_e2e_recorded = os.environ.get("AFW_LIVE_E2E_VERIFIED", "").strip().lower() in ("1", "true", "yes")
     try:
         import playwright  # noqa: F401
 
@@ -100,13 +100,14 @@ def _inspect_browser_e2e() -> dict[str, Any]:
     except ImportError:
         has_playwright = False
 
-    app_env = os.environ.get("APP_ENV", "development").strip().lower()
-    # In deployed staging/production, UI responsiveness is verified via live HTTP health checks and dashboard asset presence
-    if has_suite:
-        state = "LIVE_VERIFIED" if app_env in ("staging", "production") else "LOCAL_VERIFIED"
+    # Never claim LIVE_VERIFIED merely because index.html exists on disk.
+    if has_suite and live_e2e_recorded:
+        state = "LIVE_VERIFIED"
+    elif has_suite:
+        state = "LOCAL_VERIFIED"
     else:
-        state = "BLOCKED"
-        
+        state = "NOT_TESTED"
+
     return {
         "state": state,
         "suite_present": has_suite,
@@ -114,11 +115,11 @@ def _inspect_browser_e2e() -> dict[str, Any]:
         "viewports_covered": ["1440x900", "768x1024", "390x844"] if has_suite else [],
         "ready_for_production": state == "LIVE_VERIFIED",
         "notes": (
-            "Playwright desktop/mobile E2E suite and responsive UI verified."
+            "Playwright desktop/mobile E2E suite verified against live deployment."
             if state == "LIVE_VERIFIED"
-            else "Playwright desktop/mobile E2E suite covers synthetic seeded local environment; staging/live smoke still NOT_TESTED."
+            else "Playwright desktop/mobile E2E suite covers local seeded harness only; live staging/prod browser smoke requires explicit recorded run."
             if state == "LOCAL_VERIFIED"
-            else "Playwright runtime or E2E test suite missing."
+            else "Playwright E2E test suite not present in runtime image."
         ),
     }
 

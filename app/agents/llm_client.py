@@ -24,10 +24,15 @@ logger = logging.getLogger("afw.company_os.llm_client")
 # Default model used across agents; override per-agent as needed.
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-# ── BYOK Tenant Isolation State ──────────────────────────────────────────────
+# ── BYOK & Managed AI Credits Tenant Isolation State ─────────────────────────
 _REQUEST_GEMINI_KEY: ContextVar[str | None] = ContextVar("request_gemini_key", default=None)
 _REQUEST_IS_OWNER: ContextVar[bool] = ContextVar("request_is_owner", default=True)
+_REQUEST_MANAGED_AI_AUTHORIZED: ContextVar[bool] = ContextVar("request_managed_ai_authorized", default=False)
 _REQUEST_USAGE_TELEMETRY: ContextVar[dict[str, Any] | None] = ContextVar("request_usage_telemetry", default=None)
+
+
+class AICreditsRequiredError(RuntimeError):
+    """Raised when fail_closed_without_llm=True and neither BYOK key nor Managed AI Credits authorize live LLM execution."""
 
 _DEFAULT_INR_PER_TOKEN = 0.00001
 
@@ -98,11 +103,16 @@ def _record_llm_usage(
     )
 
 
-def set_request_llm_context(gemini_key: str | None, is_owner: bool) -> None:
-    """Set thread/task local context for Gemini BYOK key and owner flag."""
+def set_request_llm_context(
+    gemini_key: str | None,
+    is_owner: bool,
+    managed_ai_authorized: bool = False,
+) -> None:
+    """Set request-scoped context for BYOK Gemini key, owner status, and metered Managed AI Credit authorization."""
     cleaned = gemini_key.strip() if gemini_key and gemini_key.strip() else None
     _REQUEST_GEMINI_KEY.set(cleaned)
     _REQUEST_IS_OWNER.set(bool(is_owner))
+    _REQUEST_MANAGED_AI_AUTHORIZED.set(bool(managed_ai_authorized))
 
 
 @lru_cache(maxsize=64)
@@ -180,9 +190,8 @@ def _deterministic_fallback(prompt: str, system_instruction: str | None = None) 
         )
     if "sentiment" in prompt_lower or "crm" in prompt_lower or "debrief" in prompt_lower:
         return (
-            "Client confirmed strong operational alignment with proposed automation roadmap. "
-            "Expressed interest in expanding deployment across regional logistics hubs. "
-            "Requested formal pricing and SLA terms for follow-up next week."
+            "[LIVE_LLM_UNAVAILABLE] Automated CRM debrief synthesis was not executed because no live LLM "
+            "authorization was active. Review raw visit notes manually."
         )
     if "creative" in prompt_lower or "headline" in prompt_lower or "ad copy" in prompt_lower:
         return (
@@ -202,31 +211,39 @@ def generate(
     temperature: float = 0.7,
     max_output_tokens: int = 2048,
     fallback_text: str | None = None,
+    fail_closed_without_llm: bool = False,
 ) -> str:
     """
     Generate text via Gemini with automatic LangSmith tracing.
-    Enforces strict BYOK isolation:
-    - If a BYOK request key is set in context, uses that key.
-    - If _REQUEST_IS_OWNER is False and no BYOK key is set, NEVER falls back to Owner's key;
-      immediately uses deterministic fallback (zero cost to Owner).
-    - Only uses server's GEMINI_API_KEY if _REQUEST_IS_OWNER is True.
+    Enforces strict BYOK + Managed AI Credit isolation:
+    - If a BYOK request key is set in context, uses that key (0 Managed AI Credits).
+    - If _REQUEST_MANAGED_AI_AUTHORIZED is True (atomic credit reservation succeeded) OR _REQUEST_IS_OWNER is True,
+      uses the platform's managed Gemini pool.
+    - Otherwise, NEVER consumes Owner's key; fails closed if fail_closed_without_llm=True or returns deterministic fallback.
     """
     req_key = _REQUEST_GEMINI_KEY.get()
     is_owner = _REQUEST_IS_OWNER.get()
+    managed_ok = _REQUEST_MANAGED_AI_AUTHORIZED.get()
     eff_model = model or DEFAULT_MODEL
 
     if req_key:
         client = get_gemini_client_for_key(req_key)
-    elif not is_owner:
-        # Commercial tenant without BYOK key: zero quota consumption of Owner's key
-        logger.info("Non-owner request with no BYOK Gemini key. Utilizing deterministic fallback.")
+    elif not is_owner and not managed_ok:
+        # Commercial tenant without BYOK key or Managed AI Credit authorization: zero consumption of Owner's key
+        logger.info("Non-owner request with no BYOK key or Managed AI Credit authorization.")
         _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        if fail_closed_without_llm:
+            raise AICreditsRequiredError(
+                "Managed AI credits or a BYOK X-Gemini-API-Key are required; canned fallback output is disabled."
+            )
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
     else:
         client = get_gemini_client()
 
     if client is None:
         _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        if fail_closed_without_llm:
+            raise AICreditsRequiredError("Live Gemini provider is currently unavailable; refusing to return canned output.")
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
 
 

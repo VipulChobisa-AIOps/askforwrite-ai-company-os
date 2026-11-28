@@ -67,7 +67,9 @@ class AutonomousSalesMarketingAgentTests(unittest.TestCase):
             with patch("urllib.request.urlopen", side_effect=_fake_urlopen):
                 receipt = disp.send("buyer@acme.in", "Test Subject", "Hello buyer", from_email="info@askforwrite.in")
             self.assertEqual(receipt["provider"], "resend")
-            self.assertEqual(receipt["status"], "delivered")
+            self.assertEqual(receipt["status"], "accepted_queued")
+            self.assertTrue(receipt["accepted"])
+            self.assertFalse(receipt["delivery_verified"])
             self.assertEqual(receipt["message_id"], "re_msg_999")
             self.assertEqual(captured_req["body"]["from"], "AskforWrite AI Solutions <info@os.askforwrite.com>")
             self.assertEqual(captured_req["body"]["reply_to"], "info@askforwrite.in")

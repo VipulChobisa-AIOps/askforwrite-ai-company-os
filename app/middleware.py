@@ -1,6 +1,5 @@
 """Production middleware: CORS, request-ID propagation, and rate limiting."""
 
-import hashlib
 import hmac
 import os
 import time
@@ -234,6 +233,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             except Exception:
                 self._redis_client = None
+        elif os.environ.get("APP_ENV", "development").casefold() == "production":
+            import logging as _logging
+            _workers = int(os.environ.get("WEB_CONCURRENCY", "1") or "1")
+            if _workers > 1:
+                _logging.getLogger("app.middleware").warning(
+                    "REDIS_URL not configured in production with WEB_CONCURRENCY=%d; rate limits are per-worker only.",
+                    _workers,
+                )
+
+    @staticmethod
+    def _extract_client_ip(request: Request) -> str:
+        """Extract client IP behind trusted reverse proxies (Cloudflare / Render / Nginx)."""
+        cf_ip = (request.headers.get("cf-connecting-ip") or "").strip()
+        if cf_ip:
+            return cf_ip
+        xff = (request.headers.get("x-forwarded-for") or "").strip()
+        if xff:
+            first_ip = xff.split(",")[0].strip()
+            if first_ip:
+                return first_ip
+        real_ip = (request.headers.get("x-real-ip") or "").strip()
+        if real_ip:
+            return real_ip
+        return request.client.host if request.client else "anon"
 
     def _count_and_record(self, key: str) -> int:
         now = time.time()
@@ -268,53 +291,67 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if app_env == "development" and getattr(request.app, "title", "") == "AskforWrite AI Company OS":
             return await call_next(request)
 
-        # Extract caller identity with cryptographic token verification (prevents header spoofing)
-        api_key = request.headers.get("X-API-Key")
-        auth_header = request.headers.get("Authorization", "")
-        bucket_key = None
-        org_tier = None
-
-        if auth_header.lower().startswith("bearer "):
-            token = auth_header[7:].strip()
-            try:
-                from app.security.auth import decode_access_token
-                claims = decode_access_token(token)
-                token_org = claims.get("org_id")
-                token_sub = claims.get("sub")
-                if token_org:
-                    bucket_key = f"org:{token_org}"
-                elif token_sub:
-                    bucket_key = f"user:{token_sub}"
-                if claims.get("tier") and claims.get("tier").lower() in self.TIER_LIMITS:
-                    org_tier = claims.get("tier").lower()
-            except Exception:
-                bucket_key = f"token:{hashlib.sha256(token.encode('utf-8')).hexdigest()[:12]}"
-        elif api_key:
-            bucket_key = f"key:{hashlib.sha256(api_key.encode('utf-8')).hexdigest()[:12]}"
-
-        # Standalone non-production unit testing harness compatibility (e.g. TestTenantAwareRateLimiter)
-        if not bucket_key and app_env != "production":
-            h_org = request.headers.get("X-Org-ID")
-            h_tier = request.headers.get("X-Org-Tier", "").lower()
-            if h_org:
-                bucket_key = f"org:{h_org}"
-            if h_tier and h_tier in self.TIER_LIMITS:
-                org_tier = h_tier
-
-        if not bucket_key:
-            client_ip = request.client.host if request.client else "anon"
-            bucket_key = f"ip:{client_ip}"
-
         path = request.url.path
+        client_ip = self._extract_client_ip(request)
         is_approval_decision = (
             "/v1/approvals/" in path
             and path.endswith(("/decision", "/decide"))
             and request.method == "POST"
         )
         is_auth_endpoint = (
-            path in ("/v1/auth/login", "/v1/auth/signup", "/v1/auth/register")
+            path in ("/v1/auth/login", "/v1/auth/signup", "/v1/auth/register", "/v1/auth/accept-invitation")
             and request.method == "POST"
         )
+
+        bucket_key = None
+        org_tier = None
+
+        if is_auth_endpoint:
+            # SECURITY FIX: Never trust caller-supplied X-API-Key or Bearer headers on auth endpoints.
+            # Key strictly by real client IP so rotating random headers cannot bypass brute-force limits.
+            bucket_key = f"auth_ip:{client_ip}"
+        else:
+            api_key = (request.headers.get("X-API-Key") or "").strip()
+            auth_header = request.headers.get("Authorization", "")
+
+            if auth_header.lower().startswith("bearer "):
+                token = auth_header[7:].strip()
+                try:
+                    from app.security.auth import decode_access_token
+                    claims = decode_access_token(token)
+                    token_org = claims.get("org_id")
+                    token_sub = claims.get("sub")
+                    if token_org:
+                        bucket_key = f"org:{token_org}"
+                    elif token_sub:
+                        bucket_key = f"user:{token_sub}"
+                    if claims.get("tier") and claims.get("tier").lower() in self.TIER_LIMITS:
+                        org_tier = claims.get("tier").lower()
+                except Exception:
+                    # Invalid/unverified tokens NEVER earn their own fresh bucket; fall back to client IP.
+                    bucket_key = None
+            elif api_key:
+                owner_key = os.environ.get("OWNER_API_KEY", "").strip()
+                manager_key = os.environ.get("MANAGER_API_KEY", "").strip()
+                if owner_key and hmac.compare_digest(api_key, owner_key):
+                    bucket_key = "key:owner"
+                elif manager_key and hmac.compare_digest(api_key, manager_key):
+                    bucket_key = "key:manager"
+                else:
+                    # Unverified API key header NEVER earns a fresh bucket; fall back to client IP.
+                    bucket_key = None
+
+            # Standalone non-production unit testing harness compatibility (e.g. TestTenantAwareRateLimiter)
+            if not bucket_key and app_env != "production":
+                h_org = request.headers.get("X-Org-ID")
+                h_tier = request.headers.get("X-Org-Tier", "").lower()
+                if h_org:
+                    bucket_key = f"org:{h_org}"
+                if h_tier and h_tier in self.TIER_LIMITS:
+                    org_tier = h_tier
+
+            if not bucket_key:
+                bucket_key = f"ip:{client_ip}"
 
         # Determine dynamic limit
         if is_approval_decision:
