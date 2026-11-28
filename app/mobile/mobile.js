@@ -271,6 +271,53 @@
     log.textContent = `Synced ${n} queued event(s).`;
   });
 
+  // ── StockSense Warehouse Barcode Scanner & Blind Cycle Count ──
+  document.getElementById('btn-wms-camera-scan')?.addEventListener('click', async () => {
+    const log = document.getElementById('wms-log');
+    if (!('BarcodeDetector' in window)) {
+      log.textContent = 'Browser BarcodeDetector API unavailable — use manual/Bluetooth scanner input above.';
+      return;
+    }
+    try {
+      const detector = new window.BarcodeDetector({ formats: ['qr_code', 'ean_13', 'ean_8', 'code_128', 'upc_a'] });
+      const fileInput = document.getElementById('wms-barcode-photo');
+      const file = fileInput && fileInput.files && fileInput.files[0];
+      if (!file) {
+        log.textContent = 'Capture or select a barcode/QR photo first, then click Decode Barcode.';
+        return;
+      }
+      const bitmap = await createImageBitmap(file);
+      const codes = await detector.detect(bitmap);
+      if (codes.length) {
+        document.getElementById('wms-barcode-input').value = codes[0].rawValue;
+        log.textContent = `Decoded barcode: ${codes[0].rawValue}`;
+      } else {
+        log.textContent = 'No barcode detected in image. Try closer camera focus or enter SKU manually.';
+      }
+    } catch (e) {
+      log.textContent = `Barcode scan error: ${e.message}`;
+    }
+  });
+
+  document.getElementById('btn-wms-cycle-count')?.addEventListener('click', async () => {
+    const log = document.getElementById('wms-log');
+    const whId = document.getElementById('wms-warehouse-id').value.trim();
+    const binId = document.getElementById('wms-bin-id').value.trim();
+    const skuCode = document.getElementById('wms-barcode-input').value.trim();
+    const countedQty = parseInt(document.getElementById('wms-counted-qty').value || '0', 10);
+    try {
+      const res = await apiPost(`/v1/wms/warehouses/${encodeURIComponent(whId)}/cycle-counts`, {
+        bin_id: binId,
+        sku_code: skuCode,
+        counted_qty: countedQty,
+        notes: 'Submitted via Unified FieldGuard/StockSense Mobile PWA',
+      });
+      log.textContent = JSON.stringify(res, null, 2);
+    } catch (e) {
+      log.textContent = `Cycle count error: ${e.message}`;
+    }
+  });
+
   updateNetPill();
   refreshQueueBadge();
 })();

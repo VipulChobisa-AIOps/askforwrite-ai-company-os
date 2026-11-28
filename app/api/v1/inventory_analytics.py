@@ -59,14 +59,21 @@ class InventoryUATRequest(BaseModel):
 
 @router.get("/status")
 def get_inventory_status() -> dict[str, Any]:
-    """Retrieve operational status for StockSense Warehouse Automation."""
+    """Retrieve operational status for StockSense Warehouse Automation & Persistent SME WMS / 3PL."""
     return {
         "status": "ONLINE",
-        "engine": "StockSense v2.4 (Pareto ABC + Exponential Smoothing ROP/EOQ)",
+        "engine": "StockSense v3.0 (Persistent SME WMS, 3PL Billing, FEFO Picking & Holt Demand Forecasting)",
         "benchmark_skus_available": len(DEFAULT_BENCHMARK_SKUS),
+        "wms_api_prefix": "/v1/wms",
         "supported_features": [
+            "persistent_bin_and_lot_ledger",
+            "inbound_grn_directed_slotting_qr_labels",
+            "directed_fefo_fifo_wave_picking_expired_lot_block",
+            "cryptographic_blind_cycle_counting",
+            "3pl_multi_client_storage_and_handling_billing",
+            "bulk_csv_import_and_tally_xml_channel_sync",
             "pareto_abc_segmentation",
-            "exponential_smoothing_forecast",
+            "holt_double_exponential_smoothing_with_mae_mape",
             "dynamic_reorder_point",
             "economic_order_quantity",
             "dead_stock_aging_detection",
@@ -140,6 +147,8 @@ def submit_inventory_uat(
         rating=payload.rating,
         notes=payload.notes,
         discrepancy_reported=payload.discrepancy_reported,
+        db=db,
+        org_id=principal.org_id,
     )
     return {
         "status": "RECORDED",

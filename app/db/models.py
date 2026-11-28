@@ -2269,3 +2269,298 @@ def _reject_claim_review_mutation(mapper, connection, target) -> None:
 
 event.listen(ConveyanceClaimReviewRecord, "before_update", _reject_claim_review_mutation)
 event.listen(ConveyanceClaimReviewRecord, "before_delete", _reject_claim_review_mutation)
+
+
+# ── Phase 3: StockSense Persistent Multi-Tenant SME WMS & 3PL Models ─────────
+
+
+class WarehouseRecord(Base):
+    """Physical SME warehouse or 3PL fulfillment facility."""
+
+    __tablename__ = "warehouses"
+    __table_args__ = (
+        UniqueConstraint("org_id", "code", name="uq_warehouse_org_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    city: Mapped[str] = mapped_column(String(120), default="Jaipur", nullable=False)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    total_area_sqft: Mapped[int] = mapped_column(Integer, default=10000, nullable=False)
+    is_3pl_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class WarehouseZoneRecord(Base):
+    """Storage zone enforcing temperature/safety constraints (Ambient, Cold-Chain, Hazmat, High-Value)."""
+
+    __tablename__ = "warehouse_zones"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "code", name="uq_warehouse_zone_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouses.id", ondelete="CASCADE"), index=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    zone_type: Mapped[str] = mapped_column(String(32), default="AMBIENT", nullable=False)  # AMBIENT | COLD_CHAIN | HAZMAT | HIGH_VALUE | STAGING | QUARANTINE
+    temperature_min_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    temperature_max_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class WarehouseBinRecord(Base):
+    """Granular Aisle-Rack-Shelf-Bin storage location with velocity tier & capacity bounds."""
+
+    __tablename__ = "warehouse_bins"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "bin_code", name="uq_warehouse_bin_code"),
+        Index("ix_warehouse_bins_wh_zone", "warehouse_id", "zone_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouses.id", ondelete="CASCADE"), index=True, nullable=False)
+    zone_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouse_zones.id", ondelete="CASCADE"), index=True, nullable=False)
+    bin_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    aisle: Mapped[str] = mapped_column(String(32), default="A01", nullable=False)
+    rack: Mapped[str] = mapped_column(String(32), default="R01", nullable=False)
+    shelf: Mapped[str] = mapped_column(String(32), default="S01", nullable=False)
+    velocity_tier: Mapped[str] = mapped_column(String(8), default="B", nullable=False)  # A | B | C
+    distance_to_dispatch_m: Mapped[float] = mapped_column(Float, default=20.0, nullable=False)
+    max_weight_kg: Mapped[float] = mapped_column(Float, default=1000.0, nullable=False)
+    max_volume_cbm: Mapped[float] = mapped_column(Float, default=2.5, nullable=False)
+    max_pallet_slots: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class WarehouseClientRecord(Base):
+    """3PL brand client account with storage, inbound handling, and outbound pick/pack rate card."""
+
+    __tablename__ = "warehouse_clients"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "client_code", name="uq_warehouse_client_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouses.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact_email: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    storage_rate_per_bin_day_inr: Mapped[float] = mapped_column(Float, default=35.0, nullable=False)
+    inbound_handling_rate_per_unit_inr: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    outbound_pick_rate_per_unit_inr: Mapped[float] = mapped_column(Float, default=3.5, nullable=False)
+    packing_rate_per_order_inr: Mapped[float] = mapped_column(Float, default=25.0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class WarehouseSkuRecord(Base):
+    """Persistent warehouse SKU master with barcode, zone constraint, shelf-life/FEFO flag, and reorder policy."""
+
+    __tablename__ = "warehouse_skus"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "sku_code", name="uq_warehouse_sku_code"),
+        Index("ix_warehouse_skus_barcode", "warehouse_id", "barcode"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouses.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("warehouse_clients.id", ondelete="SET NULL"), index=True, nullable=True)
+    sku_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    barcode: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    category: Mapped[str] = mapped_column(String(120), default="General", nullable=False)
+    required_zone_type: Mapped[str] = mapped_column(String(32), default="AMBIENT", nullable=False)
+    velocity_tier: Mapped[str] = mapped_column(String(8), default="B", nullable=False)
+    unit_cost_inr: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
+    unit_weight_kg: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    requires_expiry_tracking: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
+    reorder_point: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    eoq_qty: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class StockBalanceRecord(Base):
+    """Authoritative bin-and-lot stock balance supporting strict FIFO/FEFO allocation."""
+
+    __tablename__ = "stock_balances"
+    __table_args__ = (
+        UniqueConstraint("warehouse_id", "bin_id", "sku_id", "batch_no", "expiry_date", name="uq_stock_balance_lot"),
+        Index("ix_stock_balance_fefo", "warehouse_id", "sku_id", "expiry_date"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouses.id", ondelete="CASCADE"), index=True, nullable=False)
+    bin_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouse_bins.id", ondelete="CASCADE"), index=True, nullable=False)
+    sku_id: Mapped[str] = mapped_column(String(36), ForeignKey("warehouse_skus.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    batch_no: Mapped[str] = mapped_column(String(80), default="DEFAULT", nullable=False)
+    expiry_date: Mapped[str] = mapped_column(String(10), default="", nullable=False)  # "" for non-expiring, YYYY-MM-DD otherwise
+    qty_on_hand: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    qty_reserved: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    qty_damaged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class StockLedgerEntryRecord(Base):
+    """Immutable double-entry stock movement audit trail."""
+
+    __tablename__ = "stock_ledger_entries"
+    __table_args__ = (
+        Index("ix_stock_ledger_wh_sku_ts", "warehouse_id", "sku_id", "created_at"),
+        Index("ix_stock_ledger_client_ts", "client_id", "movement_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    sku_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    from_bin_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    to_bin_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    movement_type: Mapped[str] = mapped_column(String(32), index=True, nullable=False)  # GRN_RECEIPT | PUTAWAY | PICK | PACK | DISPATCH | BIN_TRANSFER | CYCLE_COUNT_ADJUST | DAMAGE_QUARANTINE | OPENING_BALANCE
+    batch_no: Mapped[str] = mapped_column(String(80), default="DEFAULT", nullable=False)
+    expiry_date: Mapped[str] = mapped_column(String(10), default="", nullable=False)
+    quantity_delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    reference_type: Mapped[str] = mapped_column(String(32), default="MANUAL", nullable=False)
+    reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    operator_id: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+def _reject_stock_ledger_mutation(mapper, connection, target) -> None:
+    raise ValueError("Stock ledger entries are append-only and cryptographically immutable")
+
+
+event.listen(StockLedgerEntryRecord, "before_update", _reject_stock_ledger_mutation)
+event.listen(StockLedgerEntryRecord, "before_delete", _reject_stock_ledger_mutation)
+
+
+class WarehouseGrnRecord(Base):
+    """Inbound Goods Receipt Note (PO/ASN receiving, shortage/damage proof, directed slotting & QR labels)."""
+
+    __tablename__ = "warehouse_grns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    po_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
+    supplier_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="RECEIVED", nullable=False)  # RECEIVED | DISCREPANCY_FLAGGED
+    lines_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    discrepancy_summary_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    qr_labels_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    received_by: Mapped[str] = mapped_column(String(250), default="system", nullable=False)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class WarehousePickWaveRecord(Base):
+    """Directed aisle-sorted outbound order/wave picking enforcing FEFO/FIFO with expired-lot hard block."""
+
+    __tablename__ = "warehouse_pick_waves"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    client_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
+    order_reference: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    channel_source: Mapped[str] = mapped_column(String(32), default="MANUAL", nullable=False)  # MANUAL | SHOPIFY | WOOCOMMERCE | TALLY | ZOHO
+    status: Mapped[str] = mapped_column(String(32), default="OPEN", index=True, nullable=False)  # OPEN | PARTIAL_ALLOCATION | DISPATCHED | CANCELLED
+    pick_lines_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    blocked_expired_lots_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    shortfalls_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    dispatched_by: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class WarehouseCycleCountRecord(Base):
+    """Blind mobile bin stocktake count with variance calculation & ECDSA CFO/3PL certification."""
+
+    __tablename__ = "warehouse_cycle_counts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    bin_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    sku_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    batch_no: Mapped[str] = mapped_column(String(80), default="DEFAULT", nullable=False)
+    expiry_date: Mapped[str] = mapped_column(String(10), default="", nullable=False)
+    system_qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    counted_qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    variance_qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    variance_value_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING_APPROVAL", index=True, nullable=False)  # PENDING_APPROVAL | APPROVED_ADJUSTED | REJECTED
+    counted_by: Mapped[str] = mapped_column(String(250), nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class Warehouse3plInvoiceRecord(Base):
+    """Automated monthly 3PL multi-client storage, inbound handling & outbound pick/pack invoice."""
+
+    __tablename__ = "warehouse_3pl_invoices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    warehouse_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    invoice_number: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    billing_month: Mapped[str] = mapped_column(String(7), index=True, nullable=False)  # YYYY-MM
+    active_bins_billed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    billing_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    inbound_units_billed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    outbound_units_billed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    orders_packed_billed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    storage_charge_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    inbound_charge_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    outbound_charge_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    packing_charge_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    subtotal_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    gst_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    total_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    line_items_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    audit_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class InventoryUatRecord(Base):
+    """Persistent PostgreSQL/SQLite warehouse operator UAT log (replaces in-memory list)."""
+
+    __tablename__ = "inventory_uat_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    operator_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    discrepancy_reported: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)

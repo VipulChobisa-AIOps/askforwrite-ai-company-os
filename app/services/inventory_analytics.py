@@ -264,14 +264,32 @@ def compute_reorder_recommendations(
         annual_demand = float(item.get("annual_demand", 1000))
         holding_cost = float(item.get("holding_cost_annual", 50.0))
 
-        # True single exponential smoothing when historical observations are supplied;
-        # otherwise use current observed daily demand without pretending smoothing occurred.
+        # Holt double exponential smoothing (level + trend) + backtest MAE/MAPE when history supplied
         history = item.get("daily_demand_history")
+        forecast_mae: float | None = None
+        forecast_mape_pct: float | None = None
+        forecast_method = "OBSERVED_STATIC_DAILY_DEMAND"
         if isinstance(history, list) and len(history) >= 2:
-            smoothed = float(history[0])
-            for obs in history[1:]:
-                smoothed = forecast_alpha * float(obs) + (1.0 - forecast_alpha) * smoothed
-            forecast_next = round(smoothed, 2)
+            obs_vals = [float(x) for x in history]
+            beta = min(0.5, max(0.05, forecast_alpha * 0.5))
+            level = obs_vals[0]
+            trend = (obs_vals[1] - obs_vals[0]) if len(obs_vals) >= 3 else 0.0
+            abs_errors: list[float] = []
+            pct_errors: list[float] = []
+            for obs in obs_vals[1:]:
+                pred = max(0.0, level + trend)
+                err = abs(obs - pred)
+                abs_errors.append(err)
+                if obs > 0:
+                    pct_errors.append((err / obs) * 100.0)
+                prev_level = level
+                level = forecast_alpha * obs + (1.0 - forecast_alpha) * (level + trend)
+                if len(obs_vals) >= 3:
+                    trend = beta * (level - prev_level) + (1.0 - beta) * trend
+            forecast_next = round(max(0.0, level + trend), 2)
+            forecast_mae = round(sum(abs_errors) / len(abs_errors), 3) if abs_errors else 0.0
+            forecast_mape_pct = round(sum(pct_errors) / len(pct_errors), 2) if pct_errors else 0.0
+            forecast_method = "HOLT_DOUBLE_EXPONENTIAL_SMOOTHING" if len(obs_vals) >= 3 else "SINGLE_EXPONENTIAL_SMOOTHING"
         else:
             forecast_next = round(daily_d, 2)
 
@@ -314,6 +332,9 @@ def compute_reorder_recommendations(
             "stock_status": stock_status,
             "reorder_needed": reorder_needed,
             "forecast_daily_demand": forecast_next,
+            "forecast_method": forecast_method,
+            "forecast_mae": forecast_mae,
+            "forecast_mape_pct": forecast_mape_pct,
             "lead_time_days": int(lead_time),
             "priority": priority,
             "recommended_order_quantity": eoq if reorder_needed else 0,
@@ -497,14 +518,38 @@ def log_inventory_uat(
     rating: int,
     notes: str,
     discrepancy_reported: bool = False,
+    *,
+    db: Session | None = None,
+    org_id: str | None = None,
 ) -> dict[str, Any]:
-    """Record human warehouse manager field UAT survey into operational memory."""
+    """Record human warehouse manager field UAT survey persistently in DB (with in-memory mirror)."""
+    from app.db.models import InventoryUatRecord
+
+    rec_id = str(uuid.uuid4())
+    clamped_rating = max(1, min(5, int(rating)))
+    clean_notes = notes.strip()
+    persisted = False
+
+    if db is not None:
+        row = InventoryUatRecord(
+            id=rec_id,
+            org_id=org_id,
+            operator_id=operator_id,
+            rating=clamped_rating,
+            notes=clean_notes,
+            discrepancy_reported=bool(discrepancy_reported),
+        )
+        db.add(row)
+        db.commit()
+        persisted = True
+
     rec = {
-        "id": str(uuid.uuid4()),
+        "id": rec_id,
         "operator_id": operator_id,
-        "rating": max(1, min(5, int(rating))),
-        "notes": notes.strip(),
-        "discrepancy_reported": discrepancy_reported,
+        "rating": clamped_rating,
+        "notes": clean_notes,
+        "discrepancy_reported": bool(discrepancy_reported),
+        "persisted_in_db": persisted,
         "logged_at": uuid.uuid4().hex[:8],
     }
     INVENTORY_UAT_LOG.append(rec)

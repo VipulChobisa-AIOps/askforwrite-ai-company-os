@@ -47,6 +47,7 @@ from app.api.v1.p7_workforce import router as p7_workforce_router
 from app.api.v1.p8_marketplace import ops_scorecard_router, router as p8_marketplace_router
 from app.api.v1.neon_api import router as neon_router
 from app.api.v1.subscriptions import router as subscriptions_router
+from app.api.v1.stocksense_wms import router as stocksense_wms_router
 from app.api.v1.watchdog import router as watchdog_router
 from app.api.v1.webhooks import router as webhooks_router
 from app.api.v1.workflows import router as workflows_router
@@ -272,6 +273,7 @@ app.include_router(legal_router)
 app.include_router(mobile_bridge_router)
 app.include_router(growth_suite_router)
 app.include_router(inventory_analytics_router)
+app.include_router(stocksense_wms_router)
 app.include_router(registry_router)
 app.include_router(workflows_router)
 app.include_router(commercial_router)
