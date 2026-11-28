@@ -132,6 +132,56 @@ def register_paypal_webhook(base_url: str) -> dict:
         return {"status": "error", "error": str(exc)}
 
 
+def register_resend_webhook(base_url: str) -> dict:
+    """Register Svix-signed Resend email deliverability webhook (sent/delivered/bounced/complained)."""
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    webhook_url = f"{base_url.rstrip('/')}/v1/webhooks/resend"
+    if not api_key:
+        return {"status": "skipped", "reason": "RESEND_API_KEY not set in .env"}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "AskforWrite-Company-OS/0.2.0",
+    }
+    try:
+        list_req = urllib.request.Request("https://api.resend.com/webhooks", headers=headers)
+        with urllib.request.urlopen(list_req, timeout=15) as lr:
+            existing = json.loads(lr.read().decode()).get("data", [])
+        for h in existing:
+            if h.get("endpoint") == webhook_url:
+                print(f"  [OK] Resend Webhook already registered: {h.get('id')}")
+                return {"status": "already_exists", "id": h.get("id"), "url": webhook_url}
+
+        payload = {
+            "endpoint": webhook_url,
+            "events": [
+                "email.sent",
+                "email.delivered",
+                "email.delivery_delayed",
+                "email.bounced",
+                "email.complained",
+            ],
+        }
+        create_req = urllib.request.Request(
+            "https://api.resend.com/webhooks",
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(create_req, timeout=15) as cr:
+            data = json.loads(cr.read().decode())
+        print(f"  [OK] Resend Webhook created: {data.get('id')} (set RESEND_WEBHOOK_SECRET in Render Env)")
+        return {"status": "success", "id": data.get("id"), "url": webhook_url}
+    except urllib.error.HTTPError as exc:
+        err_body = exc.read().decode()
+        print(f"  [INFO] Resend API Response ({exc.code}): {err_body[:200]}")
+        return {"status": "api_response", "code": exc.code, "body": err_body}
+    except Exception as exc:
+        print(f"  [WARN] Resend connection: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
 def verify_local_webhook_signature():
     """Verify HMAC-SHA256 signature verification locally."""
     secret = "test_webhook_secret_key"
@@ -156,13 +206,16 @@ def main():
     verify_local_webhook_signature()
     rzp_res = register_razorpay_webhook(args.base_url)
     pp_res = register_paypal_webhook(args.base_url)
+    resend_res = register_resend_webhook(args.base_url)
 
     print("\nSummary:")
     print(f"  Razorpay Status: {rzp_res.get('status')}")
     print(f"  PayPal Status:   {pp_res.get('status')}")
-    print("\nWebhook URLs ready to receive live payments:")
+    print(f"  Resend Status:   {resend_res.get('status')}")
+    print("\nWebhook URLs ready:")
     print(f"  • {args.base_url}/v1/webhooks/razorpay")
-    print(f"  • {args.base_url}/v1/webhooks/paypal\n")
+    print(f"  • {args.base_url}/v1/webhooks/paypal")
+    print(f"  • {args.base_url}/v1/webhooks/resend\n")
 
 
 if __name__ == "__main__":

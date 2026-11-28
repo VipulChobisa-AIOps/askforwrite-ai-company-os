@@ -54,10 +54,21 @@ services:
         value: "auto"
       - key: RESEND_API_KEY
         sync: false
+      - key: RESEND_WEBHOOK_SECRET
+        sync: false
+      - key: P2_OUTREACH_MAX_DAILY
+        value: "10"
       - key: RESEND_FROM_EMAIL
         value: "AskforWrite AI Solutions <info@os.askforwrite.com>"
       - key: OUTREACH_REPLY_TO_EMAIL
         value: "info@askforwrite.in"
+      # Optional Phase 2 FieldGuard durable media storage & road-snapping
+      - key: FIELD_EVIDENCE_S3_BUCKET
+        sync: false
+      - key: FIELD_EVIDENCE_S3_ENDPOINT
+        sync: false
+      - key: OSRM_BASE_URL
+        sync: false
       - key: BREVO_API_KEY
         sync: false
       - key: IMAP_HOST
