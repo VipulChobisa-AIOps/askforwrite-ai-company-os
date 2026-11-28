@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4f46e5">
+  <title>FieldGuard Mobile PWA — AskforWrite Company OS</title>
+  <link rel="manifest" href="/mobile/manifest.json">
+  <style>
+    :root { --bg: #0b0f19; --card: #131a2a; --border: #24304a; --accent: #4f46e5; --green: #10b981; --amber: #f59e0b; --red: #ef4444; --text: #f3f4f6; --muted: #9ca3af; }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); padding-bottom: 84px; }
+    header { position: sticky; top: 0; z-index: 10; background: rgba(11,15,25,0.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+    .pill { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 600; }
+    .pill.online { background: rgba(16,185,129,0.18); color: #34d399; }
+    .pill.offline { background: rgba(245,158,11,0.2); color: #fbbf24; }
+    main { max-width: 540px; margin: 0 auto; padding: 14px; display: grid; gap: 14px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+    h2 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+    input, select, textarea { width: 100%; background: #0b1120; border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    button { width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
+    button.secondary { background: #1e293b; border: 1px solid var(--border); }
+    button.green { background: var(--green); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .log { font-size: 12px; color: #cbd5e1; background: #090d16; border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-height: 160px; overflow: auto; white-space: pre-wrap; margin-top: 10px; }
+    nav.bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #0f1626; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(4, 1fr); }
+    nav.bottom-bar button { margin: 0; border-radius: 0; background: transparent; padding: 12px 4px; font-size: 12px; color: var(--muted); }
+    nav.bottom-bar button.active { color: #fff; border-top: 2px solid var(--accent); }
+    .tab { display: none; }
+    .tab.active { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">🛰️ FieldGuard Mobile</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="queue-badge" class="pill offline" style="display:none">0 queued</span>
+      <span id="net-pill" class="pill online">ONLINE</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="auth-card">
+      <h2>🔐 Field Executive Sign-In</h2>
+      <label for="fg-email">Work Email</label>
+      <input id="fg-email" type="email" placeholder="rep@company.in" autocomplete="username">
+      <label for="fg-pass">Password</label>
+      <input id="fg-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+      <button id="btn-fg-login" type="button">Sign In &amp; Sync Offline Cache</button>
+      <div id="auth-status" class="log" style="display:none"></div>
+    </section>
+
+    <section class="card tab active" id="tab-attendance">
+      <h2>📍 Zero-Trust GPS Attendance</h2>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Anti-spoof GPS check-in &amp; check-out. Automatically queues in IndexedDB when offline.</p>
+      <div class="row">
+        <button id="btn-checkin" class="green" type="button">Check In</button>
+        <button id="btn-checkout" class="secondary" type="button">Check Out</button>
+      </div>
+      <div id="att-log" class="log">Ready for live GPS capture.</div>
+    </section>
+
+    <section class="card tab" id="tab-visit">
+      <h2>📸 Site Visit &amp; Geo-OTP Proof</h2>
+      <label for="visit-task-id">Field Task ID</label>
+      <input id="visit-task-id" type="text" placeholder="Task UUID">
+      <label for="visit-client-contact">Client Email (for 6-Digit Geo-OTP)</label>
+      <input id="visit-client-contact" type="email" placeholder="client@site.in">
+      <button id="btn-request-otp" class="secondary" type="button">Send Server-Issued 6-Digit Geo-OTP</button>
+      <label for="visit-otp">Client Geo-OTP (Required if &gt;250m)</label>
+      <input id="visit-otp" type="text" maxlength="6" placeholder="6-digit OTP">
+      <label for="visit-photo">Live Site Camera Capture (No Gallery Uploads)</label>
+      <input id="visit-photo" type="file" accept="image/*" capture="environment">
+      <button id="btn-submit-visit" type="button">Verify &amp; Seal Site Visit</button>
+      <div id="visit-log" class="log">Capture live site photo via rear camera.</div>
+    </section>
+
+    <section class="card tab" id="tab-claim">
+      <h2>⛽ Conveyance &amp; Receipt OCR</h2>
+      <div class="row">
+        <div>
+          <label for="claim-mode">Transport</label>
+          <select id="claim-mode">
+            <option value="TWO_WHEELER">Two-Wheeler</option>
+            <option value="FOUR_WHEELER">Four-Wheeler</option>
+            <option value="PUBLIC_TRANSIT">Public Transit</option>
+          </select>
+        </div>
+        <div>
+          <label for="claim-category">Receipt Category</label>
+          <select id="claim-category">
+            <option value="FUEL">Fuel</option>
+            <option value="TOLL">Toll</option>
+            <option value="HOTEL">Hotel Lodging</option>
+            <option value="DAILY_ALLOWANCE">Daily Allowance</option>
+            <option value="MEAL">Meal</option>
+          </select>
+        </div>
+      </div>
+      <label for="claim-amount">Receipt Amount (₹)</label>
+      <input id="claim-amount" type="number" step="0.01" placeholder="450.00">
+      <label for="claim-merchant">Merchant / Fuel Station</label>
+      <input id="claim-merchant" type="text" placeholder="Indian Oil Jaipur">
+      <label for="claim-tour-id">Tour Plan ID (Optional)</label>
+      <input id="claim-tour-id" type="text" placeholder="Link to Outstation Tour UUID">
+      <label for="claim-receipt-photo">Capture Bill / Receipt Photo (Camera Only)</label>
+      <input id="claim-receipt-photo" type="file" accept="image/*" capture="environment">
+      <button id="btn-submit-claim" type="button">Submit Audited Claim</button>
+      <div id="claim-log" class="log">Receipts are verified via Gemini Vision OCR &amp; perceptual duplicate check.</div>
+    </section>
+
+    <section class="card tab" id="tab-sync">
+      <h2>🔄 Offline IndexedDB Sync Queue</h2>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Events recorded without cellular signal persist safely on-device and sync automatically when online.</p>
+      <button id="btn-flush-queue" class="green" type="button">Sync Queued Events Now</button>
+      <div id="sync-log" class="log">Queue empty.</div>
+    </section>
+  </main>
+
+  <nav class="bottom-bar" aria-label="FieldGuard Navigation">
+    <button type="button" class="active" data-tab="tab-attendance">📍 Attend</button>
+    <button type="button" data-tab="tab-visit">📸 Visit</button>
+    <button type="button" data-tab="tab-claim">⛽ Claims</button>
+    <button type="button" data-tab="tab-sync">🔄 Sync</button>
+  </nav>
+
+  <script src="/mobile/mobile.js"></script>
+</body>
+</html>

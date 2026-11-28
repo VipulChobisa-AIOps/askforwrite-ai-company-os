@@ -140,15 +140,35 @@ class RouteOptimizationResponse(BaseModel):
 # ── Multimodal Proof-of-Execution & Visit Debrief Schemas ──────────────
 
 
+class VisitOtpIssueRequest(BaseModel):
+    task_id: str = Field(min_length=1, max_length=36)
+    client_contact: str | None = Field(default=None, max_length=250, description="Client email or phone for OTP delivery")
+    delivery_channel: str = Field(default="EMAIL", pattern="^(EMAIL|SMS|WHATSAPP|MANUAL_FALLBACK)$")
+
+
+class VisitOtpIssueResponse(BaseModel):
+    otp_id: str
+    task_id: str
+    delivery_channel: str
+    delivery_status: str
+    expires_at: datetime
+    masked_contact: str | None = None
+    otp_code_debug: str | None = Field(
+        default=None,
+        description="Returned only in non-production environments or MANUAL_FALLBACK for supervisor handoff",
+    )
+
+
 class ClientVisitVerifyRequest(BaseModel):
     task_id: str = Field(min_length=1, max_length=36)
     user_id: str = Field(min_length=1, max_length=36)
     latitude: float = Field(ge=-90.0, le=90.0)
     longitude: float = Field(ge=-180.0, le=180.0)
     accuracy_meters: float = Field(default=10.0, ge=0.0)
-    geo_otp_code: str | None = Field(default=None, max_length=10, description="Optional client verification OTP")
+    geo_otp_code: str | None = Field(default=None, max_length=10, description="Server-issued 6-digit client Geo-OTP")
     photo_evidence_base64_or_url: str | None = Field(default=None, description="Base64 or URL of captured photo")
     expected_photo_tags: list[str] | None = Field(default=None, description="Tags expected to verify (e.g. shelf, storefront)")
+    verify_scene: bool = Field(default=False, description="Run multimodal Gemini Vision scene check (1 AI Credit)")
     notes: str | None = Field(default=None)
 
 
@@ -200,14 +220,18 @@ class ConveyanceCalculateRequest(BaseModel):
     claim_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="YYYY-MM-DD")
     transport_mode: str = Field(default="TWO_WHEELER", pattern="^(TWO_WHEELER|FOUR_WHEELER|PUBLIC_TRANSIT)$")
     gps_breadcrumbs: list[GpsBreadcrumb] = Field(min_length=2, description="Chronological GPS route points")
+    use_road_snap: bool = Field(default=False, description="Optionally snap breadcrumbs to road network via OSRM/Google Routes")
 
 
 class ExpenseReceiptItem(BaseModel):
-    category: str = Field(pattern="^(FUEL|TOLL|PARKING|MEAL|OTHER)$")
+    category: str = Field(pattern="^(FUEL|TOLL|PARKING|MEAL|HOTEL|DAILY_ALLOWANCE|OTHER)$")
     amount: float = Field(gt=0.0)
     merchant_name: str | None = Field(default=None, max_length=200)
     receipt_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     receipt_base64_or_hash: str = Field(min_length=8)
+    invoice_number: str | None = Field(default=None, max_length=100)
+    gstin: str | None = Field(default=None, max_length=32)
+    city_tier: str | None = Field(default=None, pattern="^(TIER_1|TIER_2|TIER_3)$")
 
 
 class ConveyanceClaimSubmitRequest(BaseModel):
@@ -216,6 +240,9 @@ class ConveyanceClaimSubmitRequest(BaseModel):
     transport_mode: str = Field(default="TWO_WHEELER", pattern="^(TWO_WHEELER|FOUR_WHEELER|PUBLIC_TRANSIT)$")
     gps_breadcrumbs: list[GpsBreadcrumb] = Field(min_length=2)
     receipts: list[ExpenseReceiptItem] | None = Field(default=None)
+    tour_plan_id: str | None = Field(default=None, max_length=36)
+    employee_grade: str = Field(default="DEFAULT", max_length=32)
+    use_road_snap: bool = Field(default=False)
     notes: str | None = Field(default=None)
 
 
@@ -228,6 +255,8 @@ class ConveyanceClaimCreate(BaseModel):
     start_odometer_reading: float | None = Field(default=None)
     end_odometer_reading: float | None = Field(default=None)
     receipt_photo_url: str | None = Field(default=None)
+    tour_plan_id: str | None = Field(default=None, max_length=36)
+    employee_grade: str = Field(default="DEFAULT", max_length=32)
 
 
 class ConveyanceClaimResponse(BaseModel):
@@ -247,7 +276,106 @@ class ConveyanceClaimResponse(BaseModel):
     status: str  # "AUTO_APPROVED" | "FLAGGED_FOR_REVIEW" | "REJECTED" | "MANUALLY_APPROVED"
     discrepancy_flags: list[str]
     trust_block_hash: str | None
+    tour_plan_id: str | None = None
+    distance_method: str = "HAVERSINE_CURVATURE_ESTIMATE"
+    effective_status: str | None = None
+    effective_payout_amount: float | None = None
+    latest_review: dict[str, Any] | None = None
     created_at: datetime
+
+
+# ── Phase 2: Org Expense Policy, Multi-Day Tour Plans & Manager Adjudication ──
+
+
+class FieldExpensePolicyUpsert(BaseModel):
+    grade: str = Field(default="DEFAULT", min_length=2, max_length=32)
+    two_wheeler_rate_inr: float = Field(default=4.5, gt=0.0, le=50.0)
+    four_wheeler_rate_inr: float = Field(default=10.0, gt=0.0, le=100.0)
+    public_transit_rate_inr: float = Field(default=2.5, gt=0.0, le=50.0)
+    daily_auto_approve_limit_inr: float = Field(default=2000.0, ge=0.0, le=100000.0)
+    max_daily_distance_km: float = Field(default=250.0, gt=0.0, le=2000.0)
+    tier1_da_inr: float = Field(default=800.0, ge=0.0, le=20000.0)
+    tier2_da_inr: float = Field(default=600.0, ge=0.0, le=20000.0)
+    tier3_da_inr: float = Field(default=450.0, ge=0.0, le=20000.0)
+    tier1_hotel_cap_inr: float = Field(default=3500.0, ge=0.0, le=50000.0)
+    tier2_hotel_cap_inr: float = Field(default=2200.0, ge=0.0, le=50000.0)
+    tier3_hotel_cap_inr: float = Field(default=1500.0, ge=0.0, le=50000.0)
+    fuel_max_inr_per_km: float = Field(default=15.0, gt=0.0, le=100.0)
+    require_ocr_above_inr: float = Field(default=200.0, ge=0.0, le=10000.0)
+
+
+class FieldExpensePolicyResponse(FieldExpensePolicyUpsert):
+    id: str
+    org_id: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TourCityStop(BaseModel):
+    city: str = Field(min_length=2, max_length=120)
+    tier: str = Field(default="TIER_2", pattern="^(TIER_1|TIER_2|TIER_3)$")
+    nights: int = Field(default=1, ge=0, le=60)
+
+
+class FieldTourPlanCreate(BaseModel):
+    user_id: str | None = Field(default=None, max_length=36)
+    title: str = Field(min_length=3, max_length=250)
+    purpose: str = Field(min_length=5, max_length=2000)
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    cities: list[TourCityStop] = Field(min_length=1)
+    client_targets: list[str] = Field(default_factory=list)
+    estimated_budget_inr: float = Field(ge=0.0, le=1000000.0)
+    advance_requested_inr: float = Field(default=0.0, ge=0.0, le=500000.0)
+
+
+class FieldTourPlanApproveRequest(BaseModel):
+    decision: str = Field(pattern="^(APPROVE|REJECT)$")
+    advance_approved_inr: float | None = Field(default=None, ge=0.0, le=500000.0)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class FieldTourPlanResponse(BaseModel):
+    id: str
+    org_id: str | None
+    user_id: str
+    title: str
+    purpose: str
+    start_date: str
+    end_date: str
+    cities_json: list[dict[str, Any]]
+    client_targets_json: list[str]
+    estimated_budget_inr: float
+    advance_requested_inr: float
+    advance_approved_inr: float
+    status: str
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    approval_notes: str | None = None
+    settlement_summary_json: dict[str, Any] | None = None
+    settlement_trust_block_hash: str | None = None
+    created_at: datetime
+
+
+class ConveyanceClaimReviewRequest(BaseModel):
+    decision: str = Field(pattern="^(APPROVE|PARTIAL_APPROVE|REJECT)$")
+    approved_amount_inr: float | None = Field(default=None, ge=0.0)
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class ConveyanceClaimReviewResponse(BaseModel):
+    id: str
+    claim_id: str
+    org_id: str | None
+    decision: str
+    claimed_amount_inr: float
+    approved_amount_inr: float
+    reviewer_user_id: str | None
+    reviewer_email: str
+    reason: str
+    trust_block_hash: str | None
+    reviewed_at: datetime
 
 
 

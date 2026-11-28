@@ -532,26 +532,37 @@ class ConveyanceClaimRecord(Base):
     status: Mapped[str] = mapped_column(String(32), default="AUTO_APPROVED", index=True)  # "AUTO_APPROVED" | "FLAGGED_FOR_REVIEW" | "REJECTED" | "MANUALLY_APPROVED"
     discrepancy_flags: Mapped[list] = mapped_column(JSON, default=list)
     trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tour_plan_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    distance_method: Mapped[str] = mapped_column(String(64), default="HAVERSINE_CURVATURE_ESTIMATE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class ExpenseReceiptRecord(Base):
-    """Itemized receipt verified via OCR and cross-matched against shift route."""
+    """Itemized receipt verified via multimodal OCR, perceptual dedup, and shift route cross-check."""
     __tablename__ = "expense_receipt_records"
     __table_args__ = (
         Index("ix_expense_claim_id", "claim_id"),
+        Index("ix_expense_org_hash", "org_id", "receipt_hash"),
+        Index("ix_expense_org_phash", "org_id", "perceptual_hash"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     claim_id: Mapped[str] = mapped_column(String(36), index=True)
-    category: Mapped[str] = mapped_column(String(32))  # "FUEL" | "TOLL" | "PARKING" | "MEAL" | "OTHER"
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(32))  # "FUEL" | "TOLL" | "PARKING" | "MEAL" | "HOTEL" | "DAILY_ALLOWANCE" | "OTHER"
     amount: Mapped[float] = mapped_column(Float)
     merchant_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     receipt_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    receipt_hash: Mapped[str] = mapped_column(String(64))
+    receipt_hash: Mapped[str] = mapped_column(String(64), index=True)
+    perceptual_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ocr_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    storage_uri: Mapped[str | None] = mapped_column(String(500), nullable=True)
     ocr_extracted_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    is_verified: Mapped[bool] = mapped_column(default=True)
+    is_verified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
@@ -2143,3 +2154,118 @@ class DigitalQAReportRecord(Base):
     trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     trust_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+# ── Phase 2: FieldGuard Anti-Fraud, Travel Policy, Tours & Manager Adjudication ──
+
+
+class FieldVisitOtpRecord(Base):
+    """Server-issued time-bound single-use 6-digit Geo-OTP for client visit perimeter exceptions."""
+
+    __tablename__ = "field_visit_otps"
+    __table_args__ = (
+        Index("ix_field_visit_otps_task_status", "task_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    task_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    client_contact: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    delivery_channel: Mapped[str] = mapped_column(String(32), default="EMAIL", nullable=False)
+    otp_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="ACTIVE", nullable=False)  # ACTIVE | USED | EXPIRED | LOCKED
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+class FieldExpensePolicyRecord(Base):
+    """Per-organization and employee-grade configurable travel, DA, lodging & conveyance policy."""
+
+    __tablename__ = "field_expense_policies"
+    __table_args__ = (
+        UniqueConstraint("org_id", "grade", name="uq_field_expense_policy_org_grade"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    grade: Mapped[str] = mapped_column(String(32), default="DEFAULT", nullable=False)
+    two_wheeler_rate_inr: Mapped[float] = mapped_column(Float, default=4.5, nullable=False)
+    four_wheeler_rate_inr: Mapped[float] = mapped_column(Float, default=10.0, nullable=False)
+    public_transit_rate_inr: Mapped[float] = mapped_column(Float, default=2.5, nullable=False)
+    daily_auto_approve_limit_inr: Mapped[float] = mapped_column(Float, default=2000.0, nullable=False)
+    max_daily_distance_km: Mapped[float] = mapped_column(Float, default=250.0, nullable=False)
+    tier1_da_inr: Mapped[float] = mapped_column(Float, default=800.0, nullable=False)
+    tier2_da_inr: Mapped[float] = mapped_column(Float, default=600.0, nullable=False)
+    tier3_da_inr: Mapped[float] = mapped_column(Float, default=450.0, nullable=False)
+    tier1_hotel_cap_inr: Mapped[float] = mapped_column(Float, default=3500.0, nullable=False)
+    tier2_hotel_cap_inr: Mapped[float] = mapped_column(Float, default=2200.0, nullable=False)
+    tier3_hotel_cap_inr: Mapped[float] = mapped_column(Float, default=1500.0, nullable=False)
+    fuel_max_inr_per_km: Mapped[float] = mapped_column(Float, default=15.0, nullable=False)
+    require_ocr_above_inr: Mapped[float] = mapped_column(Float, default=200.0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class FieldTourPlanRecord(Base):
+    """Multi-day outstation business tour plan, advance tracking, and end-of-trip settlement voucher."""
+
+    __tablename__ = "field_tour_plans"
+    __table_args__ = (
+        Index("ix_field_tour_plans_org_status", "org_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(250), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    start_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
+    end_date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
+    cities_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    client_targets_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    estimated_budget_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    advance_requested_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    advance_approved_inr: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="SUBMITTED", nullable=False)  # SUBMITTED | APPROVED | REJECTED | SETTLED
+    approved_by: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approval_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settlement_summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    settlement_trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class ConveyanceClaimReviewRecord(Base):
+    """Append-only ECDSA-sealed manager adjudication record for flagged conveyance claims."""
+
+    __tablename__ = "conveyance_claim_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    claim_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    org_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)  # APPROVE | PARTIAL_APPROVE | REJECT
+    claimed_amount_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    approved_amount_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer_email: Mapped[str] = mapped_column(String(250), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    trust_block_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False)
+
+
+def _reject_claim_review_mutation(mapper, connection, target) -> None:
+    raise ValueError("Conveyance claim reviews are append-only and cryptographically immutable")
+
+
+event.listen(ConveyanceClaimReviewRecord, "before_update", _reject_claim_review_mutation)
+event.listen(ConveyanceClaimReviewRecord, "before_delete", _reject_claim_review_mutation)

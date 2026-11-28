@@ -104,22 +104,23 @@ CATALOG: dict[str, PackageDefinition] = {
     ),
     "field_force": PackageDefinition(
         key="field_force",
-        name="AskforWrite FieldGuard — GPS Attendance, Tour & Conveyance Audit (Phase 2 Beta)",
+        name="AskforWrite FieldGuard — GPS Attendance, Tour & Conveyance Audit",
         category="modular_tool",
-        description="On-ground field workforce & business tour operations: anti-spoof GPS check-ins, geofencing, tour conveyance claims, and tamper-evident audit trails. (Phase 2 commercial rollout — Design Partner Beta).",
+        description="Fraud-proof field workforce & business tour operations: anti-spoof GPS attendance, real Gemini Vision receipt OCR, perceptual duplicate receipt blocking, server-issued 6-digit Geo-OTP, configurable travel/hotel/DA policies, multi-day tour settlements, Tally XML / NEFT payout exports, and offline-first Mobile PWA.",
         target_buyer_persona="Distributors, FMCG/pharma field sales networks, service/AMC crews, and B2B teams managing employees on tour & travel.",
-        target_pain_point="Proxy attendance fraud, inflated petrol/conveyance claims, untracked tour itineraries, and slow supervisor reimbursement reviews.",
+        target_pain_point="Proxy attendance fraud, inflated petrol/conveyance claims, duplicate bills, untracked tour advances, and slow manual payroll reconciliation.",
         key_features=(
-            "Anti-spoofing GPS geofence attendance & teleportation velocity detection",
-            "Stationary GPS jitter filtering and road-curvature mileage audit",
-            "Field task dispatching, route sequencing, and client visit proof logging",
-            "ECDSA NIST P-256 linear hash-chain sealing for HR & Finance auditability",
-            "Phase 2 roadmap: Gemini Vision Receipt OCR, duplicate receipt blocking, multi-day tour policies & Tally/NEFT payout export",
+            "Anti-spoofing GPS geofence attendance, teleportation velocity detection & stationary drift filtering",
+            "Real Gemini Vision Receipt OCR (1 AI Credit) + exact SHA-256, perceptual dHash & invoice duplicate blocking",
+            "Server-issued single-use 6-digit Geo-OTP + real Pillow photo EXIF/blur forensics",
+            "Per-org & grade travel policies (2W/4W/Transit rates, Tier-1/2/3 DA & hotel caps) + multi-day tour settlement vouchers",
+            "Append-only ECDSA manager review queue (APPROVE/PARTIAL/REJECT) + 1-click CSV, Tally XML & ICICI/HDFC NEFT exports",
+            "Installable offline-first FieldGuard Mobile PWA (/mobile/) with IndexedDB sync queue & live camera capture",
         ),
         deliverables=(
-            "FieldGuard operations dashboard & mobile PWA API endpoints",
-            "Real-time attendance logs, geofence compliance reports & conveyance claim queues",
-            "Dedicated webhook endpoints for HRMS/CRM sync",
+            "FieldGuard operations dashboard, REST API & installable offline-first Mobile PWA (/mobile/)",
+            "Cryptographically sealed attendance logs, tour settlement vouchers & manager claim review queue",
+            "1-click monthly Tally XML, CSV & ICICI/HDFC NEFT bulk reimbursement exports with SHA-256 batch digest",
         ),
         seo_geo_aio_capabilities=(
             "Location-grounded local business schema markup",
@@ -266,7 +267,7 @@ CATALOG: dict[str, PackageDefinition] = {
         key_features=(
             "Deep scholarly literature retrieval across arXiv, bioRxiv, PubMed, and Europe PMC",
             "Formal academic citation formatting (APA, IEEE, Harvard)",
-            "NIST P-256 Merkle TrustBlock academic integrity cryptographic certification",
+            "NIST P-256 Tamper-Evident Linear Hash-Chain academic integrity cryptographic certification",
         ),
         deliverables=(
             "Full academic synthesis report (PDF & Markdown)",

@@ -428,9 +428,24 @@ class Sprint3LlmWordPressAndFulfillmentTests(unittest.TestCase):
         self.assertIn("checkout_link", closer)
         self.assertTrue(closer["checkout_link_attached"])
 
-        # 5. Field Verification Photo Evidence
+        # 5. Field Verification Photo Evidence (rejects fake non-image string, verifies real Pillow JPEG)
+        import base64
+        import io
+        from PIL import Image, ImageDraw
+
+        fake_status, _ = analyze_photo_evidence(photo_data="A" * 120, expected_tags=["storefront"])
+        self.assertEqual(fake_status, "FLAGGED")
+
+        img = Image.new("RGB", (160, 120), color=(240, 240, 240))
+        draw = ImageDraw.Draw(img)
+        for x in range(10, 150, 15):
+            draw.rectangle([x, 10, x + 7, 110], fill=(30, 80, 170))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        real_jpeg_uri = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
         status, photo_analysis = analyze_photo_evidence(
-            photo_data="A" * 120,
+            photo_data=real_jpeg_uri,
             expected_tags=["storefront", "shelf_inventory"],
         )
         self.assertEqual(status, "VERIFIED")

@@ -304,5 +304,97 @@ def generate(
     except Exception as exc:
         logger.warning(f"Gemini generation failed: {exc}. Utilizing deterministic fallback.")
         _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        if fail_closed_without_llm:
+            raise AICreditsRequiredError(
+                f"Live Gemini execution failed ({type(exc).__name__}); canned fallback disabled."
+            ) from exc
         return fallback_text if fallback_text is not None else _deterministic_fallback(prompt, system_instruction)
+
+
+def generate_multimodal_json(
+    prompt: str,
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    *,
+    model: str | None = None,
+    system_instruction: str | None = None,
+    temperature: float = 0.1,
+    max_output_tokens: int = 1024,
+) -> dict[str, Any] | None:
+    """Execute a real multimodal Gemini Vision call and parse structured JSON output.
+
+    Enforces the exact same BYOK + Managed AI Credits + Owner isolation contract as ``generate()``.
+    Returns ``None`` when no live LLM is authorized or available — NEVER invents fake OCR/vision facts.
+    """
+    import json
+    import re as _re
+
+    req_key = _REQUEST_GEMINI_KEY.get()
+    is_owner = _REQUEST_IS_OWNER.get()
+    managed_ok = _REQUEST_MANAGED_AI_AUTHORIZED.get()
+    eff_model = model or DEFAULT_MODEL
+
+    if req_key:
+        client = get_gemini_client_for_key(req_key)
+    elif not is_owner and not managed_ok:
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        return None
+    else:
+        client = get_gemini_client()
+
+    if client is None:
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        return None
+
+    try:
+        from google import genai
+        from google.genai.errors import APIError, ClientError, ServerError
+
+        image_part = genai.types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        config = genai.types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            response_mime_type="application/json",
+        )
+        if system_instruction:
+            config.system_instruction = system_instruction
+
+        used_model = eff_model
+        try:
+            response = client.models.generate_content(
+                model=used_model,
+                contents=[prompt, image_part],
+                config=config,
+            )
+        except (ServerError, APIError, ClientError):
+            used_model = "gemini-2.5-flash"
+            response = client.models.generate_content(
+                model=used_model,
+                contents=[prompt, image_part],
+                config=config,
+            )
+
+        usage = getattr(response, "usage_metadata", None)
+        total_tok = 0
+        if usage is not None:
+            total_tok = int(
+                getattr(usage, "total_token_count", None)
+                or ((getattr(usage, "prompt_token_count", 0) or 0) + (getattr(usage, "candidates_token_count", 0) or 0))
+                or 0
+            )
+        _record_llm_usage(model_name=used_model, tokens_total=total_tok, used_fallback=False)
+
+        raw_text = (getattr(response, "text", None) or "").strip()
+        if not raw_text:
+            return None
+        fence = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, _re.DOTALL)
+        parsed = json.loads(fence.group(1) if fence else raw_text)
+        if isinstance(parsed, dict):
+            parsed["_provider_model"] = used_model
+            return parsed
+        return None
+    except Exception as exc:
+        logger.warning("Gemini multimodal vision call failed (%s): %s", type(exc).__name__, exc)
+        _record_llm_usage(model_name=eff_model, tokens_total=0, used_fallback=True)
+        return None
 

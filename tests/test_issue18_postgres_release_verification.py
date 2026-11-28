@@ -58,7 +58,7 @@ def test_database_json_uniqueness_and_transaction_rollback(db_session):
     # 1. Verify Alembic head if running on migrated PostgreSQL
     if engine.dialect.name == "postgresql":
         rev = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert rev == "q7f2a3b4c5d6"
+        assert rev == "r8g3b4c5d6e7"
 
     # 2. JSON metadata round-trip on OrganizationRecord & SeoDraftRecord
     org = OrganizationRecord(

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -29,13 +29,22 @@ from app.schemas.field_force import (
     ClientVisitVerifyRequest,
     ConveyanceCalculateRequest,
     ConveyanceClaimResponse,
+    ConveyanceClaimReviewRequest,
+    ConveyanceClaimReviewResponse,
     ConveyanceClaimSubmitRequest,
+    FieldExpensePolicyResponse,
+    FieldExpensePolicyUpsert,
     FieldTaskCreate,
     FieldTaskResponse,
+    FieldTourPlanApproveRequest,
+    FieldTourPlanCreate,
+    FieldTourPlanResponse,
     GeofenceCreate,
     GeofenceResponse,
     RouteOptimizationRequest,
     RouteOptimizationResponse,
+    VisitOtpIssueRequest,
+    VisitOtpIssueResponse,
     VoiceDebriefRequest,
 )
 from app.security.auth import (
@@ -46,6 +55,7 @@ from app.security.auth import (
 )
 from app.services.field_conveyance import (
     calculate_fraud_proof_distance,
+    enrich_claim_with_review,
     list_conveyance_claims,
     submit_conveyance_and_expense_claim,
 )
@@ -62,7 +72,18 @@ from app.services.field_presence import (
     record_attendance_checkin,
     record_attendance_checkout,
 )
+from app.services.field_tours_and_exports import (
+    approve_tour_plan,
+    create_tour_plan,
+    export_monthly_reimbursements,
+    list_expense_policies,
+    list_tour_plans,
+    review_conveyance_claim,
+    settle_tour_plan,
+    upsert_expense_policy,
+)
 from app.services.field_verification import (
+    issue_visit_geo_otp,
     list_client_visits,
     process_voice_debrief,
     verify_client_visit,
@@ -389,6 +410,32 @@ def optimize_route_endpoint(
 
 
 @router.post(
+    "/visits/otp/issue",
+    response_model=VisitOtpIssueResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def issue_visit_otp_endpoint(
+    payload: VisitOtpIssueRequest,
+    principal: APIPrincipal = Depends(require_field_member),
+    db: Session = Depends(get_db),
+):
+    """Issues a server-generated, time-bound, single-use 6-digit Geo-OTP for perimeter exceptions."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    acting_uid = principal.user_id or principal.subject
+    try:
+        return issue_visit_geo_otp(
+            db=db,
+            org_id=principal.org_id,
+            user_id=acting_uid,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
     "/visits/verify",
     response_model=ClientVisitResponse,
     status_code=status.HTTP_201_CREATED,
@@ -482,7 +529,7 @@ def calculate_conveyance_endpoint(
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Calculates road-snapped travel distance and eliminates fake indoor stationary GPS jitter."""
+    """Calculates travel distance (Haversine curvature or optional OSRM road-snap) and filters indoor GPS drift."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
     effective_user_id = _enforce_member_self_ownership(
@@ -490,7 +537,10 @@ def calculate_conveyance_endpoint(
         payload.user_id,
         action_description="calculate conveyance distance",
     )
-    result = calculate_fraud_proof_distance(payload.gps_breadcrumbs)
+    result = calculate_fraud_proof_distance(
+        payload.gps_breadcrumbs,
+        use_road_snap=payload.use_road_snap,
+    )
     return {
         "user_id": effective_user_id or payload.user_id,
         "claim_date": payload.claim_date,
@@ -509,7 +559,7 @@ def submit_conveyance_endpoint(
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Submits a conveyance and expense claim for automated policy verification and settlement."""
+    """Submits a conveyance and expense claim with real Vision OCR, duplicate detection, and policy verification."""
     check_tenant_entitlement(principal, "delivery_field_force", db)
     _ensure_target_user_in_org(db, principal, payload.user_id)
     _enforce_member_self_ownership(
@@ -517,22 +567,28 @@ def submit_conveyance_endpoint(
         payload.user_id,
         action_description="submit conveyance claims",
     )
-    claim = submit_conveyance_and_expense_claim(
-        db=db,
-        org_id=principal.org_id,
-        req=payload,
-    )
-    return claim
+    try:
+        claim = submit_conveyance_and_expense_claim(
+            db=db,
+            org_id=principal.org_id,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    return enrich_claim_with_review(db, claim)
 
 
 @router.get("/conveyance/claims", response_model=list[ConveyanceClaimResponse])
 def list_conveyance_endpoint(
     user_id: str | None = Query(None, description="Filter by user"),
+    tour_plan_id: str | None = Query(None, description="Optional filter by tour plan ID"),
     limit: int = Query(50, ge=1, le=200),
     principal: APIPrincipal = Depends(require_field_member),
     db: Session = Depends(get_db),
 ):
-    """Lists conveyance claims and audit records."""
+    """Lists conveyance claims enriched with effective manager adjudication status and payout."""
     target_user_id = _authorize_field_read(
         db,
         principal,
@@ -543,5 +599,184 @@ def list_conveyance_endpoint(
         db=db,
         org_id=principal.org_id,
         user_id=target_user_id,
+        tour_plan_id=tour_plan_id,
         limit=limit,
     )
+
+
+@router.post(
+    "/conveyance/{claim_id}/review",
+    response_model=ConveyanceClaimReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def review_conveyance_claim_endpoint(
+    claim_id: str,
+    payload: ConveyanceClaimReviewRequest,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+):
+    """Manager adjudication (APPROVE, PARTIAL_APPROVE, REJECT) sealed into the ECDSA audit hash-chain."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    try:
+        return review_conveyance_claim(
+            db=db,
+            org_id=principal.org_id,
+            claim_id=claim_id,
+            reviewer_user_id=principal.user_id,
+            reviewer_email=principal.subject,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = status.HTTP_404_NOT_FOUND if "not found" in str(exc).lower() else status.HTTP_422_UNPROCESSABLE_CONTENT
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.get("/conveyance/export")
+def export_conveyance_payouts_endpoint(
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Billing/payroll month in YYYY-MM"),
+    export_format: str = Query("csv", alias="format", pattern="^(csv|tally_xml|neft_icici|neft_hdfc)$"),
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+):
+    """1-Click Monthly Reimbursement Finance Export (CSV, Tally XML, ICICI NEFT, HDFC NEFT) with SHA-256 batch audit digest."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    result = export_monthly_reimbursements(
+        db=db,
+        org_id=principal.org_id,
+        month=month,
+        export_format=export_format,
+    )
+    return Response(
+        content=result["content"],
+        media_type=result["media_type"],
+        headers={
+            "Content-Disposition": f'attachment; filename="{result["filename"]}"',
+            "X-AFW-Audit-Batch-SHA256": result["audit_batch_sha256"],
+            "X-AFW-Employee-Count": str(result["employee_count"]),
+            "X-AFW-Total-Payout-INR": f"{result['total_payout_inr']:.2f}",
+        },
+    )
+
+
+# ── Per-Org Configurable Travel & Conveyance Policies ──────────────────
+
+
+@router.get("/policies", response_model=list[FieldExpensePolicyResponse])
+def list_expense_policies_endpoint(
+    principal: APIPrincipal = Depends(require_field_member),
+    db: Session = Depends(get_db),
+):
+    """Lists active per-grade travel, DA, hotel lodging, and conveyance reimbursement policies for the organization."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    return list_expense_policies(db=db, org_id=principal.org_id)
+
+
+@router.put("/policies", response_model=FieldExpensePolicyResponse)
+def upsert_expense_policy_endpoint(
+    payload: FieldExpensePolicyUpsert,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+):
+    """Creates or updates an organization's travel, DA, hotel lodging, and conveyance policy for a given employee grade."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    return upsert_expense_policy(db=db, org_id=principal.org_id, req=payload)
+
+
+# ── Multi-Day Outstation Tour Management & Settlement ──────────────────
+
+
+@router.post("/tours", response_model=FieldTourPlanResponse, status_code=status.HTTP_201_CREATED)
+def create_tour_plan_endpoint(
+    payload: FieldTourPlanCreate,
+    principal: APIPrincipal = Depends(require_field_member),
+    db: Session = Depends(get_db),
+):
+    """Submits a multi-day outstation business tour plan with city tiers, budget estimate, and advance request."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    _ensure_target_user_in_org(db, principal, payload.user_id)
+    effective_uid = _enforce_member_self_ownership(
+        principal,
+        payload.user_id,
+        action_description="create tour plans",
+    ) or payload.user_id or principal.user_id or principal.subject
+    try:
+        return create_tour_plan(
+            db=db,
+            org_id=principal.org_id,
+            user_id=effective_uid,
+            req=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.get("/tours", response_model=list[FieldTourPlanResponse])
+def list_tour_plans_endpoint(
+    user_id: str | None = Query(None),
+    tour_status: str | None = Query(None, alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+    principal: APIPrincipal = Depends(require_field_member),
+    db: Session = Depends(get_db),
+):
+    """Lists multi-day business tour plans scoped to organization (and canonical user_id for field members)."""
+    target_user_id = _authorize_field_read(
+        db,
+        principal,
+        user_id,
+        action_description="list tour plans",
+    )
+    return list_tour_plans(
+        db=db,
+        org_id=principal.org_id,
+        user_id=target_user_id,
+        status=tour_status,
+        limit=limit,
+    )
+
+
+@router.post("/tours/{tour_id}/approve", response_model=FieldTourPlanResponse)
+def approve_tour_plan_endpoint(
+    tour_id: str,
+    payload: FieldTourPlanApproveRequest,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+):
+    """Manager 1-click approves or rejects a tour plan and travel advance."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    try:
+        return approve_tour_plan(
+            db=db,
+            org_id=principal.org_id,
+            tour_id=tour_id,
+            reviewer_subject=principal.subject,
+            req=payload,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = status.HTTP_404_NOT_FOUND if "not found" in str(exc).lower() else status.HTTP_422_UNPROCESSABLE_CONTENT
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@router.post("/tours/{tour_id}/settle")
+def settle_tour_plan_endpoint(
+    tour_id: str,
+    principal: APIPrincipal = Depends(require_tenant_manager),
+    db: Session = Depends(get_db),
+):
+    """Generates a single ECDSA-sealed Tour Settlement Voucher reconciling all linked claims against advance paid."""
+    check_tenant_entitlement(principal, "delivery_field_force", db)
+    try:
+        return settle_tour_plan(
+            db=db,
+            org_id=principal.org_id,
+            tour_id=tour_id,
+            settled_by=principal.subject,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = status.HTTP_404_NOT_FOUND if "not found" in str(exc).lower() else status.HTTP_422_UNPROCESSABLE_CONTENT
+        raise HTTPException(status_code=code, detail=str(exc)) from exc

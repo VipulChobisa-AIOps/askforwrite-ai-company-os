@@ -265,9 +265,10 @@ def mobile_submit_visit(
     from app.schemas.field_force import ClientVisitVerifyRequest
     from app.services.field_verification import verify_client_visit
 
-    photo_url = req.photo_evidence_url or (
-        f"data:image/jpeg;base64,{req.photo_base64[:30]}..." if req.photo_base64 else None
-    )
+    photo_url = req.photo_evidence_url
+    if not photo_url and req.photo_base64:
+        b64_raw = req.photo_base64.strip()
+        photo_url = b64_raw if b64_raw.startswith("data:image/") else f"data:image/jpeg;base64,{b64_raw}"
 
     task_id = req.task_id
     if task_id:
@@ -328,7 +329,10 @@ def mobile_submit_conveyance(
     from app.schemas.field_force import ConveyanceClaimCreate
     from app.services.field_conveyance import submit_conveyance_claim
 
-    receipt_url = f"data:image/jpeg;base64,{req.receipt_base64[:30]}..." if req.receipt_base64 else None
+    receipt_url = None
+    if req.receipt_base64:
+        rb = req.receipt_base64.strip()
+        receipt_url = rb if rb.startswith("data:image/") else f"data:image/jpeg;base64,{rb}"
 
     claim_req = ConveyanceClaimCreate(
         user_id=user.id,

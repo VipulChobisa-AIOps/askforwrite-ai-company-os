@@ -317,11 +317,15 @@ def solutions_slash_301() -> RedirectResponse:
     return RedirectResponse(url="/solutions", status_code=status.HTTP_301_MOVED_PERMANENTLY)
 
 
-# ── Admin & Customer Portal Static Frontend ──────────────────────────────────
+# ── Admin, Customer Portal & FieldGuard Mobile PWA Static Frontends ──────────
 dashboard_dir = Path(__file__).resolve().parent / "dashboard"
 if dashboard_dir.exists():
     app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
     app.mount("/static", StaticFiles(directory=str(dashboard_dir)), name="static")
+
+mobile_dir = Path(__file__).resolve().parent / "mobile"
+if mobile_dir.exists():
+    app.mount("/mobile", StaticFiles(directory=str(mobile_dir), html=True), name="mobile_pwa")
 
 
 def _resolve_health_db_timeout_seconds() -> float:
@@ -882,8 +886,8 @@ def llms_full_txt() -> PlainTextResponse:
     lines.extend([
         "## 6. Security, Governance, Privacy & Settlement Architecture",
         "- Human-in-the-Loop (HITL) Governance: All external outreach, commercial proposals, and manual payment settlements require explicit Owner/Admin approval before live execution.",
-        "- Cryptographic Provenance: Every workflow milestone, quality inspection, attendance check-in, and settlement receipt is sealed into an immutable ECDSA NIST P-256 Merkle Trust Ledger.",
-        "- Strict BYOK Gemini Privacy: Tenants provide their own Google Gemini API key (encrypted at rest, masked in all responses, strictly org_id-isolated, zero LLM token markup, zero model training on tenant data).",
+        "- Cryptographic Provenance: Every workflow milestone, Digital QA review receipt, FieldGuard attendance/tour proof, and settlement receipt is sealed into an immutable ECDSA NIST P-256 Tamper-Evident Linear Hash-Chain.",
+        "- Managed AI Credits + Optional BYOK Gemini: Paid plans include managed AI credits with atomic metering and daily spend caps, or tenants may bring their own Google Gemini API key (encrypted at rest, strictly org_id-isolated, 0 AI credit deduction).",
         "- Payment Rails: AFW DirectPay (0% aggregator fee via ISO Instant UPI QR to ask4write@icici, Web3 USDC on Polygon/Base/Solana, ICICI Bank Wire) plus Razorpay (INR) and PayPal (USD).",
         "- Statutory Protection: DPDPA 2023 compliant with 7-day unutilized plan refund guarantee and MSMED Act, 2006 statutory identity (UDYAM-RJ-14-0018404).",
     ])

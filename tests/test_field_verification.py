@@ -90,9 +90,23 @@ class FieldVerificationTests(unittest.TestCase):
         self.db.close()
         app.dependency_overrides.clear()
 
+    def _make_sample_jpeg_data_uri(self) -> str:
+        import base64
+        import io
+        from PIL import Image, ImageDraw
+
+        img = Image.new("RGB", (160, 120), color=(240, 240, 240))
+        draw = ImageDraw.Draw(img)
+        for i in range(0, 160, 16):
+            draw.rectangle([i, 10, i + 8, 110], fill=(20, 60, 180))
+            draw.line([0, i % 120, 160, 120 - (i % 120)], fill=(200, 30, 30), width=2)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
     def test_verified_client_visit_completes_task_and_seals_to_trust_chain(self):
         """Executive within 30m of client site captures valid photo evidence -> completed & sealed."""
-        sample_photo_b64 = "data:image/jpeg;base64," + ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" * 5)
+        sample_photo_b64 = self._make_sample_jpeg_data_uri()
         resp = self.client.post(
             "/v1/field-force/visits/verify",
             json={
@@ -128,13 +142,25 @@ class FieldVerificationTests(unittest.TestCase):
                 "latitude": 28.6139,  # 2.1 km away
                 "longitude": 77.2090,
                 "accuracy_meters": 10.0,
-                "photo_evidence_base64_or_url": "dummy_photo_data_which_is_long_enough_to_pass_minimum_length_checks_here",
+                "photo_evidence_base64_or_url": self._make_sample_jpeg_data_uri(),
             },
         )
         self.assertEqual(resp.status_code, 422)
 
     def test_visit_outside_radius_accepted_with_geo_otp(self):
-        """Executive slightly outside perimeter is accepted when client confirms Geo-OTP."""
+        """Executive slightly outside perimeter is accepted ONLY with a server-issued 6-digit Geo-OTP."""
+        otp_resp = self.client.post(
+            "/v1/field-force/visits/otp/issue",
+            json={
+                "task_id": self.task_id,
+                "client_contact": "clinic-head@fortis-test.in",
+                "delivery_channel": "EMAIL",
+            },
+        )
+        self.assertEqual(otp_resp.status_code, 201, otp_resp.text)
+        issued_code = otp_resp.json()["otp_code_debug"]
+        self.assertIsNotNone(issued_code)
+
         resp = self.client.post(
             "/v1/field-force/visits/verify",
             json={
@@ -143,11 +169,11 @@ class FieldVerificationTests(unittest.TestCase):
                 "latitude": 28.6300,  # 350m away
                 "longitude": 77.2170,
                 "accuracy_meters": 10.0,
-                "geo_otp_code": "849201",  # Verified OTP from client
-                "photo_evidence_base64_or_url": "dummy_photo_data_which_is_long_enough_to_pass_minimum_length_checks_here",
+                "geo_otp_code": issued_code,
+                "photo_evidence_base64_or_url": self._make_sample_jpeg_data_uri(),
             },
         )
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 201, resp.text)
         self.assertTrue(resp.json()["geo_otp_verified"])
 
     def test_voice_note_synthesizes_structured_crm_debrief(self):

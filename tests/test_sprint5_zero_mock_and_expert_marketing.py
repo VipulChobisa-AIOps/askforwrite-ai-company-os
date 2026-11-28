@@ -344,7 +344,7 @@ class Sprint5ZeroMockAndExpertMarketingTests(unittest.TestCase):
 
         heads = script_dir.get_heads()
         self.assertEqual(len(heads), 1)
-        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6", "h8c3d4e5f6a7", "i9d4e5f6a7b8", "j0e5f6a7b8c9", "k1f6a7b8c9d0", "l2a7b8c9d0e1", "m3b8c9d0e1f2", "n4c9d0e1f2a3", "o5d0e1f2a3b4", "p6e1f2a3b4c5", "q7f2a3b4c5d6"])
+        self.assertIn(heads[0], ["e5f6a1b2c3d4", "f6a1b2c3d4e5", "g7b2c3d4e5f6", "h8c3d4e5f6a7", "i9d4e5f6a7b8", "j0e5f6a7b8c9", "k1f6a7b8c9d0", "l2a7b8c9d0e1", "m3b8c9d0e1f2", "n4c9d0e1f2a3", "o5d0e1f2a3b4", "p6e1f2a3b4c5", "q7f2a3b4c5d6", "r8g3b4c5d6e7"])
 
         test_engine = create_engine("sqlite://", poolclass=StaticPool)
         with test_engine.connect() as conn:
